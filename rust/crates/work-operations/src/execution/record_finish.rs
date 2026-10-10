@@ -170,6 +170,23 @@ pub fn build_record_finish_candidates(
     let base = record_id.split('#').next().unwrap_or(record_id);
     let effective = effective_task(task, attempt)?;
     let kind = formal_record_kind(&effective, base)?;
+    if kind == "validation" && request["record"]["status"] != "skipped" {
+        let validation = effective["validations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|validation| validation["id"] == base)
+            .ok_or_else(|| {
+                issue(
+                    "validation_execution_unverified",
+                    "The formal VAL is missing.",
+                    json!({}),
+                )
+            })?;
+        let mut actual = request["record"].clone();
+        actual["id"] = json!(record_id);
+        super::verification::validate_record_provenance(validation, attempt, &actual)?;
+    }
     let expected = next_record_id(base, attempt)?;
     if record_id != expected {
         return Err(issue(
@@ -234,14 +251,19 @@ mod tests {
 
     #[test]
     fn failed_validation_requires_new_authorization_before_candidate_build() {
-        let task = json!({"commands":[],"operations":[],"validations":[{"id":"VAL-001"}]});
-        let attempt = json!({"attempt_id":"ATTEMPT-001","records":[],
+        let task = json!({"commands":[],"operations":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified."}]});
+        let attempt = json!({"task_id":"TASK-001","attempt_id":"ATTEMPT-001","records":[],
             "authorization":{"authorization_evidence":"Original","modifiable_files":[]}});
         let index = json!({"lock":{"kind":"execution","task_id":"TASK-001",
             "attempt_id":"ATTEMPT-001","record_id":"VAL-001",
             "execute_instructions_sha256":null}});
-        let request = json!({"schema":"work-record-finish-request",
-            "record":{"outcome":"failed","evidence":"Validation failed."}});
+        let request = crate::execution::verification::user_finish_fixture(
+            &attempt,
+            &task["validations"][0],
+            "VAL-001",
+            "failed",
+            "Validation failed.",
+        );
         assert_eq!(
             build_record_finish_candidates(&task, &attempt, &index, "TASK-001", &request)
                 .err()
@@ -263,7 +285,7 @@ mod tests {
     #[test]
     fn successful_validation_records_attempt_and_releases_record_lock() {
         let authorization = json!({"schema":"work-attempt-authorization",
-            "task_id":"TASK-001","commands":[],"validations":[{"id":"VAL-001","acceptance_ids":["ACCEPTANCE-001"]}],
+            "task_id":"TASK-001","commands":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001"]}],
             "modifiable_files":[],"working_directories":[],"external_operations":[],
             "allowed_deviations":[],"reapproval_conditions":["scope_expansion",
                 "source_or_worktree_drift","failure_divergence","retry","recovery","unknown_result"],
@@ -292,9 +314,14 @@ mod tests {
         index["tasks"][0]["latest_attempt"] = json!("ATTEMPT-001");
         index["lock"] = build_execution_lock("TASK-001", "ATTEMPT-001", &"e".repeat(64));
         index["lock"]["record_id"] = json!("VAL-001");
-        let task = json!({"id":"TASK-001","traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"commands":[],"operations":[],"validations":[{"id":"VAL-001","acceptance_ids":["ACCEPTANCE-001"]}]});
-        let request = json!({"schema":"work-record-finish-request",
-            "record":{"outcome":"passed","evidence":"Validation passed."}});
+        let task = json!({"id":"TASK-001","traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"commands":[],"operations":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001"]}]});
+        let request = crate::execution::verification::user_finish_fixture(
+            &attempt,
+            &task["validations"][0],
+            "VAL-001",
+            "passed",
+            "Validation passed.",
+        );
         let candidate =
             build_record_finish_candidates(&task, &attempt, &index, "TASK-001", &request).unwrap();
         assert_eq!(

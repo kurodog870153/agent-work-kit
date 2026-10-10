@@ -1,15 +1,8 @@
 //! Reviewed Specification update candidates and exact transaction evidence.
 
 pub mod artifact_migration;
-pub mod migration_prepare;
-pub mod migration_preview;
-pub mod migration_preview_project;
-pub mod migration_publication;
-pub mod migration_transaction;
-pub mod reconciliation_input;
-pub mod reconciliation_project;
-pub mod reconciliation_publication;
-pub mod reconciliation_semantic;
+pub mod migration;
+pub mod reconciliation;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -465,5 +458,3 @@ where
         transaction,
     })
 }
-
-pub mod reconciliation;

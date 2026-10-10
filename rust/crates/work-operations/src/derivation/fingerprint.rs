@@ -15,6 +15,34 @@ pub fn raw(raw: &[u8]) -> String {
     sha256_hex(raw)
 }
 
+/// Hash descriptor bytes with constant working memory, preserving the raw SHA-256 contract.
+pub fn raw_reader(mut reader: impl std::io::Read) -> std::io::Result<(u64, String)> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    let mut length = 0_u64;
+    let mut buffer = [0_u8; 65536];
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if count == 0 {
+            break;
+        }
+        length = length
+            .checked_add(count as u64)
+            .ok_or_else(|| std::io::Error::other("input length overflow"))?;
+        hash.update(&buffer[..count]);
+    }
+    let digest = hash.finalize();
+    let mut hexadecimal = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write;
+        write!(&mut hexadecimal, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    Ok((length, hexadecimal))
+}
+
 pub fn verify_raw(raw: &[u8], expected: &str) -> bool {
     self::raw(raw) == expected
 }
@@ -101,6 +129,74 @@ pub fn discussion_operation(value: &Value) -> String {
     structured(value).expect("JSON serializes")
 }
 
+/// Bind semantic review to current context, decisions and all transitive upstream plans.
+/// Review fields are excluded so that re-review does not recursively change the binding.
+pub fn discussion_planning(
+    session: &work_model::discussion::DiscussionSession,
+    task_id: &str,
+) -> String {
+    use std::collections::BTreeSet;
+    let mut ids = BTreeSet::from([task_id.to_owned()]);
+    loop {
+        let before = ids.len();
+        for task in &session.tasks {
+            if ids.contains(&task.id) {
+                ids.extend(task.dependencies.iter().cloned());
+            }
+        }
+        if before == ids.len() {
+            break;
+        }
+    }
+    let mut tasks: Vec<_> = session
+        .tasks
+        .iter()
+        .filter(|t| ids.contains(&t.id))
+        .cloned()
+        .collect();
+    tasks.sort_by(|a, b| a.id.cmp(&b.id));
+    for task in &mut tasks {
+        task.review = work_model::common::Nullable::Null;
+    }
+    let mut decisions: Vec<_> = session
+        .decisions
+        .iter()
+        .filter(|d| {
+            d.task_ids.iter().any(|id| ids.contains(id))
+                || tasks.iter().any(|t| t.decision_ids.contains(&d.id))
+                || tasks
+                    .iter()
+                    .flat_map(|t| &t.steps)
+                    .flat_map(|s| &s.references)
+                    .any(|r| {
+                        r.kind == work_model::task::candidate::CandidateReferenceKind::Decisions
+                            && (r.key == d.id || r.key == d.id.to_ascii_lowercase())
+                    })
+        })
+        .collect();
+    loop {
+        let ids: std::collections::BTreeSet<_> = decisions
+            .iter()
+            .flat_map(|d| d.dependencies.iter())
+            .collect();
+        let next: Vec<_> = session
+            .decisions
+            .iter()
+            .filter(|d| ids.contains(&d.id) && !decisions.iter().any(|old| old.id == d.id))
+            .collect();
+        if next.is_empty() {
+            break;
+        }
+        decisions.extend(next);
+    }
+    decisions.sort_by(|a, b| a.id.cmp(&b.id));
+    structured(
+        &json!({"requirement_id":session.requirement_id,"context":session.context,
+        "tasks":tasks,"decisions":decisions}),
+    )
+    .expect("review binding serializes")
+}
+
 pub fn discussion_approval(session_sha256: &str, approval_bytes: &[u8]) -> String {
     let mut bytes = b"WORK-DISCUSSION-PUBLICATION-V1\n".to_vec();
     bytes.extend_from_slice(session_sha256.as_bytes());
@@ -149,6 +245,47 @@ pub fn migration_source_approval(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_raw_hash_preserves_bytes_short_reads_and_io_failures() {
+        struct ShortReads {
+            bytes: std::io::Cursor<Vec<u8>>,
+            interrupted: bool,
+        }
+        impl std::io::Read for ShortReads {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if !self.interrupted {
+                    self.interrupted = true;
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                let limit = buffer.len().min(37);
+                std::io::Read::read(&mut self.bytes, &mut buffer[..limit])
+            }
+        }
+        let bytes: Vec<_> = (0..131079).map(|index| (index % 251) as u8).collect();
+        assert_eq!(
+            raw_reader(ShortReads {
+                bytes: std::io::Cursor::new(bytes.clone()),
+                interrupted: false
+            })
+            .unwrap(),
+            (bytes.len() as u64, raw(&bytes))
+        );
+        assert_eq!(
+            raw_reader(&b"abc"[..]).unwrap().1,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        struct Failed;
+        impl std::io::Read for Failed {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::PermissionDenied.into())
+            }
+        }
+        assert_eq!(
+            raw_reader(Failed).unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
 
     #[test]
     fn facade_preserves_raw_canonical_and_structured_hashes() {

@@ -2,8 +2,10 @@
 
 pub mod acceptance;
 pub mod attempt;
+pub mod command;
 pub mod correction;
 pub mod deviation;
+pub mod file_transaction;
 pub mod index;
 pub mod recovery;
 pub mod request;
@@ -15,6 +17,12 @@ mod tests {
     use serde::de::DeserializeOwned;
     use serde_json::Value;
 
+    #[test]
+    fn retired_policy_has_no_current_execution_model() {
+        let request = serde_json::json!({"schema":"work-command-run-request","timeout_seconds":60,"work_isolation":{}});
+        assert!(serde_json::from_value::<request::CommandRunRequest>(request).is_err());
+    }
+
     fn example<T: DeserializeOwned>(registry: &Value, id: &str) {
         let value = registry["items"][id]["description"]["example"].clone();
         serde_json::from_value::<T>(value)
@@ -23,7 +31,7 @@ mod tests {
 
     #[test]
     fn public_execution_examples_match_model_shapes() {
-        let registry: Value = crate::contract_data::registry_value();
+        let registry: Value = crate::contract::data::registry_value();
         example::<request::AttemptCloseRequest>(&registry, "work-attempt-close-request");
         example::<request::AttemptStartPrepareRequest>(
             &registry,

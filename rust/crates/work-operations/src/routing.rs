@@ -3,7 +3,7 @@
 use crate::canonical::canonical_json_sha256;
 use serde_json::{Value, json};
 
-const CATALOG: &str = include_str!("routing_catalog.json");
+const CATALOG: &str = include_str!("../resources/routing_catalog.json");
 const BOOTSTRAP: &str = "work.instruction-loading";
 
 #[derive(Debug, Clone)]
@@ -81,6 +81,7 @@ where
         "skill_load",
         "safety_rejection",
         "file_failure",
+        "project_files",
     ];
     for event in &events {
         if !known_events.contains(event) {

@@ -78,6 +78,7 @@ pub(crate) fn order(path: &[String]) -> &'static [&'static str] {
             "actual_command",
             "reason",
             "authorization_evidence",
+            "impact",
         ]
     } else if path
         .last()
@@ -566,7 +567,7 @@ fn validate_lock(lock: &Value) -> Result<(), ExecutionIssue> {
             {
                 return Err(issue(
                     "invalid_execution_lock_retry_evidence",
-                    "A reserved retry record requires fresh authorization evidence; a base record cannot carry it.",
+                    "A reserved retry record requires its effective authorization evidence; a base record cannot carry it.",
                     json!({}),
                 ));
             }
@@ -582,7 +583,7 @@ fn validate_lock(lock: &Value) -> Result<(), ExecutionIssue> {
                 ));
             }
             if let Some(correction) = lock.get("command_correction") {
-                crate::execution::command_correction::validate_command_correction(
+                crate::execution::command::correction::validate_command_correction(
                     correction,
                     "lock.command_correction",
                 )?;

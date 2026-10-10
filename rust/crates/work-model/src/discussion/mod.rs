@@ -285,6 +285,28 @@ mod tests {
     }
 
     #[test]
+    fn planning_review_retains_semantic_evidence_without_outcome_dtos() {
+        let current = json!({"context_revision":1,"decision_versions":{},
+            "semantic_consistency_evidence":"One outcome; interface and consumer are inseparable",
+            "needs_review":false});
+        let review: PlanningReview = serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(serde_json::to_value(review).unwrap(), current);
+        for field in [
+            "granularity",
+            "transaction_feasible",
+            "semantic",
+            "file_independence",
+        ] {
+            let mut obsolete = current.clone();
+            obsolete[field] = json!({});
+            assert!(
+                serde_json::from_value::<PlanningReview>(obsolete).is_err(),
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
     fn all_statuses_are_exact_and_invalid_status_is_rejected() {
         for status in [
             "pending",

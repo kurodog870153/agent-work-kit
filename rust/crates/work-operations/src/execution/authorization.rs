@@ -1,4 +1,5 @@
 //! Effective Attempt authorization, including approved supplemental scope.
+pub mod scope;
 
 use std::collections::{HashMap, HashSet};
 
@@ -31,7 +32,8 @@ fn action_target(action: &Value) -> &str {
 pub fn supplemental_authorizations(
     attempt: &Value,
 ) -> Result<HashMap<String, Value>, ExecutionIssue> {
-    let mut resolved = HashMap::new();
+    scope::from_attempt(attempt)?;
+    let mut resolved: HashMap<String, Value> = HashMap::new();
     for deviation in attempt["execution_deviations"]
         .as_array()
         .into_iter()
@@ -68,6 +70,9 @@ pub fn supplemental_authorizations(
             "add_command" => action["after_record_id"] == anchor,
             "adjust_operation" => action["operation"]["id"] == base,
             "add_validation" => true,
+            "add_files" => {
+                action["kind"] == "add_files" && proposal["anchor_record_id"] == attempt["task_id"]
+            }
             _ => false,
         };
         if !anchored {
@@ -77,17 +82,40 @@ pub fn supplemental_authorizations(
                 json!({"deviation_id":deviation["deviation_id"]}),
             ));
         }
-        let target = action_target(action);
-        if resolved
-            .insert(target.to_owned(), supplemental.clone())
-            .is_some()
-        {
-            return Err(issue(
-                "execution_authorization_supplemental_duplicate",
-                "More than one supplemental action targets the same record.",
-                json!({"record_id":target}),
-            ));
+        let scoped_target = if action["kind"] == "add_files" {
+            format!("files:{}", deviation["deviation_id"].as_str().unwrap_or(""))
+        } else if action["kind"] == "skip_record" {
+            format!("skip:{}", action["record_id"].as_str().unwrap_or(""))
+        } else {
+            action_target(action).to_owned()
+        };
+        let target = scoped_target.as_str();
+        if let Some(previous) = resolved.get(target) {
+            let prior_action: &Value = &previous["action"];
+            let prior_id = prior_action["record_id"].as_str().unwrap_or("");
+            let current_id = action["record_id"].as_str().unwrap_or("");
+            let next_adjustment =
+                action["kind"] == "replace_command"
+                    && (prior_action["kind"] == "add_command"
+                        || (prior_action["kind"] == "replace_command"
+                            && record_ordinal(current_id) > record_ordinal(prior_id)
+                            && attempt["records"].as_array().into_iter().flatten().any(
+                                |record| {
+                                    record["id"] == prior_id
+                                        && record["kind"] == "command"
+                                        && record["exit_code"].is_i64()
+                                },
+                            )));
+            if !next_adjustment {
+                return Err(issue(
+                    "execution_authorization_supplemental_duplicate",
+                    "More than one supplemental action targets the same record.",
+                    json!({"record_id":target}),
+                ));
+            }
+            resolved.insert(format!("history:{target}:{prior_id}"), previous.clone());
         }
+        resolved.insert(target.to_owned(), supplemental.clone());
     }
     Ok(resolved)
 }
@@ -118,8 +146,34 @@ pub fn authorization_evidence(
 }
 
 pub fn effective_task(task: &Value, attempt: &Value) -> Result<Value, ExecutionIssue> {
+    effective_task_for_record(task, attempt, None)
+}
+
+/// Blocking proposals remain history, but grant no supplemental execution authority.
+pub fn effective_authorization(attempt: &Value) -> Result<Value, ExecutionIssue> {
+    let mut history = attempt.clone();
+    if let Some(rows) = history["execution_deviations"].as_array_mut() {
+        rows.retain(|row| {
+            deviation_reconciliation_target(&row["proposal"]) != "task_and_execution"
+        });
+    }
+    effective_task(&attempt["authorization"], &history)
+}
+
+fn record_ordinal(id: &str) -> u64 {
+    id.split_once('#')
+        .and_then(|(_, n)| n.parse().ok())
+        .unwrap_or(0)
+}
+
+/// A historical CMD retains the replacement applicable to its exact instance.
+pub fn effective_task_for_record(
+    task: &Value,
+    attempt: &Value,
+    record_id: Option<&str>,
+) -> Result<Value, ExecutionIssue> {
     let mut result = task.clone();
-    let supplemental = supplemental_authorizations(attempt)?;
+    supplemental_authorizations(attempt)?;
     for deviation in attempt["execution_deviations"]
         .as_array()
         .into_iter()
@@ -128,14 +182,18 @@ pub fn effective_task(task: &Value, attempt: &Value) -> Result<Value, ExecutionI
         if deviation["decision"]["outcome"] != "approved" {
             continue;
         }
-        let target = action_target(&deviation["proposal"]["action"]);
-        let authorization = supplemental
-            .get(target)
-            .expect("validated supplemental target");
+        let authorization = &deviation["supplemental_authorization"];
         let action = &authorization["action"];
         match action["kind"].as_str().unwrap_or("") {
             "replace_command" => {
                 let id = action_target(action);
+                if record_id.is_some_and(|record| {
+                    record.split('#').next() == Some(id)
+                        && record_ordinal(action["record_id"].as_str().unwrap_or(""))
+                            > record_ordinal(record)
+                }) {
+                    continue;
+                }
                 if let Some(commands) = result["commands"].as_array_mut() {
                     for command in commands.iter_mut().filter(|command| command["id"] == id) {
                         let mut replacement = action["replacement"].clone();
@@ -144,14 +202,8 @@ pub fn effective_task(task: &Value, attempt: &Value) -> Result<Value, ExecutionI
                     }
                 }
             }
-            "add_command" => result["commands"]
-                .as_array_mut()
-                .expect("validated task commands")
-                .push(action["command"].clone()),
-            "add_validation" => result["validations"]
-                .as_array_mut()
-                .expect("validated task validations")
-                .push(action["validation"].clone()),
+            "add_command" => merge_addition(&mut result, "commands", &action["command"])?,
+            "add_validation" => merge_addition(&mut result, "validations", &action["validation"])?,
             "adjust_operation" => {
                 if let Some(operations) = result["operations"].as_array_mut() {
                     for operation in operations
@@ -168,7 +220,26 @@ pub fn effective_task(task: &Value, attempt: &Value) -> Result<Value, ExecutionI
     Ok(result)
 }
 
+fn merge_addition(task: &mut Value, field: &str, addition: &Value) -> Result<(), ExecutionIssue> {
+    if task.get(field).is_none() {
+        task[field] = json!([]);
+    }
+    let rows = task[field].as_array_mut().ok_or_else(|| {
+        issue(
+            "execution_effective_task_invalid",
+            "The effective Task collection must be an array.",
+            json!({"field":field}),
+        )
+    })?;
+    // Consumers may already hold the effective view; deriving it is idempotent.
+    if !rows.iter().any(|row| row["id"] == addition["id"]) {
+        rows.push(addition.clone());
+    }
+    Ok(())
+}
+
 pub fn require_record_scope(attempt: &Value, base_id: &str) -> Result<(), ExecutionIssue> {
+    scope::from_attempt(attempt)?;
     let field = if base_id.starts_with("CMD-") {
         "commands"
     } else if base_id.starts_with("VAL-") {
@@ -208,6 +279,11 @@ pub fn require_retry_evidence(
         }
         return Ok(());
     }
+    if scope::known_retry(attempt, record_id)?
+        && evidence.is_none_or(|text| !text.trim().is_empty())
+    {
+        return Ok(());
+    }
     if evidence.is_none_or(|text| text.trim().is_empty()) {
         return Err(issue(
             "execution_authorization_retry_required",
@@ -230,6 +306,7 @@ pub fn require_modified_files(
     paths: &[String],
     base_id: Option<&str>,
 ) -> Result<(), ExecutionIssue> {
+    let boundary = scope::from_attempt(attempt)?;
     let mut allowed: HashSet<_> = attempt["authorization"]["modifiable_files"]
         .as_array()
         .into_iter()
@@ -246,9 +323,25 @@ pub fn require_modified_files(
                 .filter_map(Value::as_str),
         );
     }
+    if boundary.is_some() && base_id.is_none() {
+        for authorization in supplemental.values() {
+            allowed.extend(
+                authorization["modifiable_files"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str),
+            );
+        }
+    }
     let mut outside: Vec<_> = paths
         .iter()
-        .filter(|path| !allowed.contains(path.as_str()))
+        .filter(|path| {
+            !allowed.contains(path.as_str())
+                || boundary
+                    .as_ref()
+                    .is_some_and(|scope| !scope::contains_path(scope, path))
+        })
         .collect();
     outside.sort();
     outside.dedup();
@@ -273,6 +366,19 @@ pub fn require_result_evidence(
         Some("validation") => record["outcome"] == "failed",
         _ => false,
     };
+    let scoped = scope::from_attempt(attempt)?;
+    let known_failure = match record["kind"].as_str() {
+        Some("command") => record["exit_code"].is_i64(),
+        Some("validation") => record["outcome"] == "failed",
+        _ => false,
+    };
+    if failed
+        && known_failure
+        && scoped.is_some()
+        && evidence.is_none_or(|text| !text.trim().is_empty())
+    {
+        return Ok(());
+    }
     if failed && evidence.is_none_or(|text| text.trim().is_empty()) {
         return Err(issue(
             "execution_authorization_result_required",
@@ -324,6 +430,50 @@ pub fn require_deviation(attempt: &Value, action: &Value) -> Result<(), Executio
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    #[test]
+    fn scoped_retry_requires_a_known_prior_result_and_preserves_original_authority() {
+        let mut attempt = json!({"authorization":{"task_id":"TASK-001","scope":scope::example_scope(),
+            "authorization_evidence":"Whole plan approved","commands":[{"id":"CMD-001"}]},
+            "records":[{"id":"CMD-001","kind":"command","exit_code":1}]});
+        require_retry_evidence(&attempt, "CMD-001#1", None).unwrap();
+        require_retry_evidence(&attempt, "CMD-001#1", Some("Whole plan approved")).unwrap();
+        require_result_evidence(&attempt, &json!({"kind":"command","exit_code":1}), None).unwrap();
+        attempt["records"][0]["exit_code"] = json!(null);
+        assert!(require_retry_evidence(&attempt, "CMD-001#1", None).is_err());
+        assert!(
+            require_result_evidence(
+                &attempt,
+                &json!({"kind":"operation","outcome":"unknown"}),
+                None
+            )
+            .is_err()
+        );
+        attempt["authorization"]["scope"]["revoked_reason"] = json!("Withdrawn");
+        assert!(require_record_scope(&attempt, "CMD-001").is_err());
+    }
+    #[test]
+    fn supplemental_file_list_is_recorded_before_use_and_respects_scope() {
+        let mut attempt = json!({"authorization":{"task_id":"TASK-001","scope":scope::example_scope(),
+            "modifiable_files":["src/old.rs"],"authorization_evidence":"Approved"}});
+        assert!(require_modified_files(&attempt, &["src/new.rs".into()], None).is_err());
+        let action =
+            json!({"kind":"add_command","after_record_id":"CMD-001","command":{"id":"CMD-002"}});
+        attempt["execution_deviations"] = json!([{
+            "decision":{"outcome":"approved","evidence":"Approved"},
+            "proposal":{"action":action,"anchor_record_id":"CMD-001","modifiable_files":["src/new.rs"]},
+            "approved_preview_sha256":"a".repeat(64),
+            "supplemental_authorization":{"preview_sha256":"a".repeat(64),"action":action,
+                "modifiable_files":["src/new.rs"],"authorization_evidence":"Approved"}}]);
+        require_modified_files(&attempt, &["src/new.rs".into()], None).unwrap();
+        assert!(require_modified_files(&attempt, &["other/new.rs".into()], None).is_err());
+        attempt["authorization"]["scope"]["exact_files"] = json!(["src/old.rs"]);
+        assert!(require_modified_files(&attempt, &["src/new.rs".into()], None).is_err());
+    }
 }
 
 #[cfg(test)]

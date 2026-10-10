@@ -382,6 +382,7 @@ pub fn validate_task_item(
         &[
             "command_ids",
             "pass_condition",
+            "verification",
             "confirmer",
             "criteria",
             "acceptance_ids",
@@ -391,12 +392,15 @@ pub fn validate_task_item(
         if validation.contains_key("acceptance_ids") {
             common.insert("acceptance_ids");
         }
+        if validation["kind"] == "automated" && validation.contains_key("verification") {
+            common.insert("verification");
+        }
         let expected: BTreeSet<_> = match validation["kind"].as_str() {
             Some("automated") => common
                 .union(&["command_ids", "pass_condition"].into_iter().collect())
                 .copied()
                 .collect(),
-            Some("manual") => common
+            Some("manual" | "ai_review") => common
                 .union(&["confirmer", "criteria"].into_iter().collect())
                 .copied()
                 .collect(),
@@ -425,6 +429,9 @@ pub fn validate_task_item(
                 ));
             }
             text(&validation["pass_condition"], "validation.pass_condition")?;
+            if let Some(condition) = validation.get("verification") {
+                super::verification::validate(condition, &validation["command_ids"])?;
+            }
         } else {
             text(&validation["confirmer"], "validation.confirmer")?;
             text(&validation["criteria"], "validation.criteria")?;
@@ -516,6 +523,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retired_sandbox_declarations_are_rejected() {
+        let command = json!({"id":"CMD-001","mode":"argv","argv":["tool"]});
+        let current: work_model::task::item::TaskCommand =
+            serde_json::from_value(command.clone()).unwrap();
+        assert_eq!(serde_json::to_value(current).unwrap(), command);
+        let mut retired = command;
+        retired["sandbox"] = json!({"project_inputs":[],"read_only_resources":[]});
+        assert!(serde_json::from_value::<work_model::task::item::TaskCommand>(retired).is_err());
+    }
+
+    #[test]
     fn strict_object_and_nonempty_text_keep_contract_field_boundaries() {
         let value = json!({"id":"ITEM-001","note":"Optional."});
         let object = strict(&value, "item", &["id"], &["note"]).unwrap();
@@ -549,6 +567,24 @@ mod tests {
         let typed: work_model::task::item::TaskItem = serde_json::from_value(item.clone()).unwrap();
         assert_eq!(serde_json::to_value(typed).unwrap(), item);
         assert_eq!(item, preserved);
+        let mut automated = item.clone();
+        automated["commands"] = json!([{"id":"CMD-001","mode":"argv","argv":["tool"]}]);
+        automated["steps"][0]["references"] = json!(["CMD-001", "VAL-001"]);
+        automated["validations"][0] = json!({"id":"VAL-001","kind":"automated",
+            "command_ids":["CMD-001"],"pass_condition":"The command exits successfully.",
+            "verification":{"kind":"exit_code","command":"CMD-001","equals":0},
+            "acceptance_ids":["ACCEPTANCE-001","TASK-001-ACCEPTANCE-001"]});
+        let automated_raw = render_task(&automated, TaskDocumentKind::Item).unwrap();
+        validate_task_item(&automated, &automated_raw, "TASK-001").unwrap();
+        let mut wrong = automated.clone();
+        wrong["validations"][0]["verification"]["command"] = json!("CMD-002");
+        let wrong_raw = render_task(&wrong, TaskDocumentKind::Item).unwrap();
+        assert!(validate_task_item(&wrong, &wrong_raw, "TASK-001").is_err());
+        let mut manual = item.clone();
+        manual["validations"][0]["verification"] =
+            automated["validations"][0]["verification"].clone();
+        let manual_raw = render_task(&manual, TaskDocumentKind::Item).unwrap();
+        assert!(validate_task_item(&manual, &manual_raw, "TASK-001").is_err());
         for id in [
             "GOAL-001",
             "ACCEPTANCE-000",

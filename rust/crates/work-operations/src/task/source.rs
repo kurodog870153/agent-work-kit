@@ -331,7 +331,7 @@ pub fn validate_formal_context(value: &Value, requirement: &str) -> Result<(), T
 
 #[cfg(test)]
 pub(crate) fn fixture_context() -> Value {
-    let index=work_model::contract_data::registry_value()["items"]["work-task-index"]["description"]["example"].clone();
+    let index=work_model::contract::data::registry_value()["items"]["work-task-index"]["description"]["example"].clone();
     json!({"snapshot":index["source"]["manifest"],"artifacts":index["artifacts"],"hierarchy_selection":index["hierarchy_selection"],"skill_selection":index["skill_selection"],"acceptance_criteria":index["acceptance_criteria"]})
 }
 

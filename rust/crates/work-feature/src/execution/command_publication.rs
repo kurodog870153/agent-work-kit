@@ -5,7 +5,7 @@ use crate::ports::{CommandOutcome, CommandRequest, CommandStatus};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::time::Duration;
-use work_operations::execution::command_run::{
+use work_operations::execution::command::run::{
     build_command_result, command_preview_approval_sha256, validate_command_run_request,
 };
 
@@ -41,6 +41,33 @@ pub fn command_completion_with_receipts(
     command_completion_scoped(preview, outcome, true)
 }
 
+pub fn command_completion_with_captures(
+    preview: &Value,
+    outcome: &CommandOutcome,
+    captures: Option<work_model::execution::command::capture::CommandCapturedEvidence>,
+) -> CommandCompletion {
+    let mut completion = command_completion_with_receipts(preview, outcome);
+    if let Some(captures) = captures {
+        let value = serde_json::to_value(captures).expect("capture evidence serializes");
+        completion.finished["captures"] = value.clone();
+        completion.response["captures"] = value;
+    }
+    if let Some(signal) = outcome.signal {
+        completion.finished["signal"] = json!(signal);
+        completion.response["signal"] = json!(signal);
+    }
+    if let Some(diagnostic) = &outcome.diagnostic {
+        completion.finished["diagnostic"] = diagnostic.clone();
+        completion.response["diagnostic"] = diagnostic.clone();
+    }
+    if let Some(timing) = &outcome.timing {
+        let timing = serde_json::to_value(timing).expect("observed timing serializes");
+        completion.finished["timing"] = timing.clone();
+        completion.response["timing"] = timing;
+    }
+    completion
+}
+
 fn command_completion_scoped(
     preview: &Value,
     outcome: &CommandOutcome,
@@ -50,12 +77,14 @@ fn command_completion_scoped(
         CommandStatus::Exited => "exited",
         CommandStatus::TimedOut => "timed_out",
         CommandStatus::LaunchFailed => "launch_failed",
+        CommandStatus::Interrupted => "interrupted",
+        CommandStatus::Unknown => "unknown",
     };
     let process = json!({"status":status,"exit_code":outcome.exit_code,
         "stdout_tail":outcome.stdout_tail,"stdout_truncated":outcome.stdout_truncated,
         "stderr_tail":outcome.stderr_tail,"stderr_truncated":outcome.stderr_truncated});
     let build_result = if receipt_directory {
-        work_operations::execution::command_run::build_command_result_with_receipts
+        work_operations::execution::command::run::build_command_result_with_receipts
     } else {
         build_command_result
     };
@@ -71,7 +100,7 @@ pub fn approved_receipt_paths(
     execution_dir: &str,
     approved_sha256: &str,
 ) -> Result<work_operations::derivation::publication::CommandReceiptPaths, WorkError> {
-    work_operations::execution::command_run::validate_command_receipt_preview(
+    work_operations::execution::command::run::validate_command_receipt_preview(
         preview,
         execution_dir,
         approved_sha256,
@@ -229,15 +258,22 @@ mod tests {
             (CommandStatus::Exited, Some(0), false),
             (CommandStatus::Exited, Some(7), true),
             (CommandStatus::TimedOut, None, true),
+            (CommandStatus::Interrupted, None, true),
+            (CommandStatus::Unknown, Some(0), true),
             (CommandStatus::LaunchFailed, None, true),
+            (CommandStatus::Exited, None, true),
         ] {
             let outcome = CommandOutcome {
+                diagnostic: None,
+                timing: None,
                 status,
                 exit_code,
                 stdout_tail: "observed output".into(),
                 stdout_truncated: false,
                 stderr_tail: "observed error".into(),
                 stderr_truncated: true,
+                signal: None,
+                complete_output: None,
             };
             let completion = command_completion_with_receipts(&preview, &outcome);
             assert!(completion.finished.get("receipt_dir").is_none());
@@ -254,7 +290,7 @@ mod tests {
             assert_eq!(response["exit_code"], json!(exit_code));
             assert_eq!(response["stderr_truncated"], true);
             assert_eq!(response["record_finish_required"], true);
-            if status != CommandStatus::Exited {
+            if status != CommandStatus::Exited || exit_code.is_none() {
                 assert!(response.get("record_finish_request").is_none());
             }
         }
@@ -282,12 +318,16 @@ mod tests {
         let completion = command_completion(
             &json!({}),
             &CommandOutcome {
+                diagnostic: None,
+                timing: None,
                 status: CommandStatus::Exited,
                 exit_code: Some(1),
                 stdout_tail: String::new(),
                 stdout_truncated: false,
                 stderr_tail: String::new(),
                 stderr_truncated: false,
+                signal: None,
+                complete_output: None,
             },
         );
         assert_eq!(

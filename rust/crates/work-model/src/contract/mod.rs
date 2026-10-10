@@ -1,0 +1,222 @@
+//! Public CLI envelope and contract catalog data shapes.
+
+pub mod data;
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::common::{CliStatus, ContractKind, Nullable, deserialize_required_nullable};
+use crate::schema::PublicSchema;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CliEnvelope {
+    pub schema: PublicSchema,
+    pub status: CliStatus,
+    pub reason_code: String,
+    pub message: String,
+    pub data: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkErrorData {
+    pub schema: PublicSchema,
+    pub code: String,
+    pub message: String,
+    pub details: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractCatalogEntry {
+    pub id: String,
+    pub kind: ContractKind,
+    pub caller_constructible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractCatalog {
+    pub schema: PublicSchema,
+    pub contracts: Vec<ContractCatalogEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    pub required: bool,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub reference: Nullable<String>,
+    pub constraints: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractDescription {
+    pub schema: PublicSchema,
+    pub id: String,
+    pub kind: ContractKind,
+    pub caller_constructible: bool,
+    pub required: Vec<String>,
+    pub optional: Vec<String>,
+    pub canonical_order: Vec<String>,
+    pub fields: Vec<ContractField>,
+    pub example: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractScaffold {
+    pub schema: PublicSchema,
+    pub id: String,
+    pub canonical_order: Vec<String>,
+    pub scaffold: Value,
+    pub example: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractScaffoldError {
+    pub reason_code: String,
+    pub message: String,
+    pub details: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractRecord {
+    pub description: ContractDescription,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scaffold: Option<ContractScaffold>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scaffold_error: Option<ContractScaffoldError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContractRegistrySnapshot {
+    pub schema: String,
+    pub catalog: ContractCatalog,
+    pub items: BTreeMap<String, ContractRecord>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_contract_examples_and_registry_match_models() {
+        let snapshot: Value = crate::contract::data::registry_value();
+        serde_json::from_value::<ContractRegistrySnapshot>(snapshot.clone()).unwrap();
+        let items = &snapshot["items"];
+        for (id, model) in [
+            ("work-cli-result", "cli"),
+            ("work-error", "error"),
+            ("work-contract-catalog", "catalog"),
+            ("work-contract-description", "description"),
+            ("work-contract-scaffold", "scaffold"),
+        ] {
+            let example = items[id]["description"]["example"].clone();
+            match model {
+                "cli" => {
+                    serde_json::from_value::<CliEnvelope>(example).unwrap();
+                }
+                "error" => {
+                    serde_json::from_value::<WorkErrorData>(example).unwrap();
+                }
+                "catalog" => {
+                    serde_json::from_value::<ContractCatalog>(example).unwrap();
+                }
+                "description" => {
+                    serde_json::from_value::<ContractDescription>(example).unwrap();
+                }
+                "scaffold" => {
+                    serde_json::from_value::<ContractScaffold>(example).unwrap();
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+    #[test]
+    fn task_contract_has_no_sandbox_and_keeps_structured_verification() {
+        let snapshot = crate::contract::data::registry_value();
+        let task = &snapshot["items"]["work-task-item"]["description"];
+        let command = task["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "commands")
+            .unwrap();
+        assert!(command["constraints"].get("sandbox").is_none());
+        let example = task["example"].clone();
+        let validation = task["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "validations")
+            .unwrap();
+        assert_eq!(
+            validation["constraints"]["verification"]["automated_only"],
+            true
+        );
+        assert_eq!(
+            validation["constraints"]["verification"]["composition"],
+            serde_json::json!(["all", "any", "not"])
+        );
+        let parsed: crate::task::item::TaskItem = serde_json::from_value(example.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), example);
+    }
+
+    #[test]
+    fn public_work_examples_use_supported_routes_roles_and_publication_targets() {
+        let snapshot = crate::contract::data::registry_value();
+        let items = &snapshot["items"];
+        assert_eq!(
+            items["work-hierarchy"]["description"]["example"]["work_directory"],
+            "task"
+        );
+        assert_eq!(
+            items["work-instructions"]["description"]["example"]["hierarchy"]["work_directory"],
+            "task"
+        );
+        assert_eq!(
+            items["work-delegation-validation"]["description"]["example"]["role"],
+            "task-coordinator"
+        );
+        let route = &items["work-instruction-selection-manifest"]["description"]["example"]["routing_input"];
+        assert_eq!(route["mode"], "task");
+        assert_eq!(route["status"], "source_required");
+        assert_eq!(route["operation"], "capture_source");
+        assert_eq!(
+            items["work-operation-envelope"]["description"]["example"]["operation"],
+            route["operation"]
+        );
+        for publication in [
+            &items["work-spec-migration-publication"]["description"]["example"],
+            &items["work-spec-reconciliation-publication"]["description"]["example"]["publication"],
+        ] {
+            serde_json::from_value::<crate::specification::SpecMigrationPublication>(
+                publication.clone(),
+            )
+            .unwrap();
+            for path in publication["documents"].as_array().unwrap() {
+                let path = path.as_str().unwrap();
+                assert!(
+                    path.starts_with("outputs/work/tasks/")
+                        || path.starts_with("outputs/work/executions/")
+                );
+            }
+        }
+        assert_eq!(
+            items["work-spec-reconciliation-prepare-request"]["scaffold"]["scaffold"]["edits"][0]["target"]
+                ["artifact"],
+            "task_index"
+        );
+    }
+}

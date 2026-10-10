@@ -201,7 +201,7 @@ mod tests {
     use super::*;
 
     fn manifest(bytes: &[u8]) -> SourceSnapshot {
-        let value = work_model::contract_data::registry_value()["items"]["work-source-snapshot"]
+        let value = work_model::contract::data::registry_value()["items"]["work-source-snapshot"]
             ["description"]["example"]
             .clone();
         let mut manifest: SourceSnapshot = serde_json::from_value(value).unwrap();

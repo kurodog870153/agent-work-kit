@@ -52,9 +52,9 @@ use work_infrastructure::specification::artifact_migration::{
     prepare_request as prepare_artifact_migration, preview as preview_artifact_migration,
     recover as recover_artifact_migration, verify as verify_artifact_migration,
 };
+use work_infrastructure::specification::migration::publication::publish_migration;
+use work_infrastructure::specification::migration::verification::verify_semantic_migration;
 use work_infrastructure::specification::migration::{prepare_revision_request, preview_migration};
-use work_infrastructure::specification::migration_publication::publish_migration;
-use work_infrastructure::specification::migration_verification::verify_semantic_migration;
 use work_infrastructure::specification::reconciliation_storage::{
     LocalReconciliationArtifacts, LocalSemanticReconciliation, publish_ledger_only,
     publish_with_migration, recover_ledger_only, recover_with_migration,
@@ -1399,6 +1399,25 @@ fn dispatch_with_writer_family(
         ),
         [
             "execute",
+            operation @ ("file-prepare" | "file-apply" | "file-recovery-prepare" | "file-restore"),
+        ] => {
+            let configs = skill_configs(&string_list(parsed, "skill_root"))?;
+            let target = ExecutionProjectTarget {
+                task_path: argument(parsed, "task_path")?,
+                execution_dir: argument(parsed, "execution_dir")?,
+                task_id: argument(parsed, "task_id")?,
+            };
+            let context = prepare_execution_writer_context(root, skill_root, &configs, target)?;
+            let repository=work_infrastructure::execution::file_transaction::storage::LocalFileTransactions::for_project(root.to_path_buf(),skill_root.to_path_buf());
+            work_flow::execution::run_file_transaction(
+                &repository,
+                &context,
+                operation,
+                &input_json(input)?,
+            )
+        }
+        [
+            "execute",
             "preflight"
             | "worktree"
             | "attempt-start"
@@ -1528,6 +1547,7 @@ fn brief_field(name: &str) -> bool {
         "confirmation_required",
         "recovery_required",
         "required_checks",
+        "validation_context",
         "routing_status",
         "required_instruction_sources",
         "source_order",
@@ -1551,6 +1571,9 @@ fn brief(value: &Value) -> Value {
         value["schema"].as_str(),
         Some(
             "work-source-read"
+                | "work-file-transaction-preview"
+                | "work-file-recovery-preview"
+                | "work-file-transaction-result"
                 | "work-source-validation"
                 | "work-artifact-migration-analysis"
                 | "work-discussion-result"
@@ -1640,6 +1663,10 @@ mod tests {
     #[test]
     fn candidate_writer_context_is_verified_and_read_only() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let baseline = work_infrastructure::fixture_support::historical_execute_skill_root(
+            &repo.join("../skills/work"),
+        )
+        .unwrap();
         let fixture = repo.join(
             "crates/work-infrastructure/fixtures/cases/specification/update/item-goal/project",
         );
@@ -1674,9 +1701,7 @@ mod tests {
             execution_dir: "outputs/work/executions/example",
             task_id: "TASK-001",
         };
-        let context =
-            prepare_execution_writer_context(&project, &repo.join("../skills/work"), &[], target)
-                .unwrap();
+        let context = prepare_execution_writer_context(&project, &baseline, &[], target).unwrap();
         assert_eq!(context.writer().canonical_project_root, project);
         assert_eq!(context.writer().requirement_id.as_str(), "example");
         let mut parsed = ParsedCommand {
@@ -1687,12 +1712,8 @@ mod tests {
                 ("task_id".into(), json!(target.task_id)),
             ]),
         };
-        let legacy =
-            dispatch_with_writer_family(&parsed, &project, None, &repo.join("../skills/work"))
-                .unwrap();
-        let candidate =
-            dispatch_with_writer_family(&parsed, &project, None, &repo.join("../skills/work"))
-                .unwrap();
+        let legacy = dispatch_with_writer_family(&parsed, &project, None, &baseline).unwrap();
+        let candidate = dispatch_with_writer_family(&parsed, &project, None, &baseline).unwrap();
         assert_eq!(candidate, legacy);
         parsed.path[1] = "record-begin".into();
         parsed.arguments.insert(
@@ -2610,7 +2631,10 @@ mod tests {
             repo.to_string_lossy().into_owned(),
             "--verbose".to_owned(),
         ];
-        let input = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/hierarchy_request.json");
+        let input = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/hierarchy/request.json"
+        );
         let (build_exit, built) = run_with_skill_root(
             &[
                 prefix.as_slice(),
@@ -2626,11 +2650,11 @@ mod tests {
         );
         assert_eq!(build_exit, 0);
         let expected: Value =
-            serde_json::from_str(include_str!("../tests/hierarchy_selection.json")).unwrap();
+            serde_json::from_str(include_str!("../fixtures/hierarchy/selection.json")).unwrap();
         assert_eq!(built.data, expected);
         let validated_input = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/tests/hierarchy_selection.json"
+            "/fixtures/hierarchy/selection.json"
         );
         let (validate_exit, validated) = run_with_skill_root(
             &[
@@ -3268,6 +3292,10 @@ mod tests {
     #[test]
     fn task_collection_validation_matches_current_contract_reference() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let baseline = work_infrastructure::fixture_support::historical_execute_skill_root(
+            &repo.join("../skills/work"),
+        )
+        .unwrap();
         let fixture = repo.join(
             "crates/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/project",
         );
@@ -3283,7 +3311,7 @@ mod tests {
                 "--user-config-root".into(),
                 ".".into(),
             ],
-            &repo.join("../skills/work"),
+            &baseline,
         );
         assert_eq!(exit, 0);
         assert_eq!(result.data["task_count"], 2);
@@ -3326,7 +3354,10 @@ mod tests {
             root.to_string_lossy().into_owned(),
             "--verbose".to_owned(),
         ];
-        let skill_root = repo.join("../skills/work");
+        let skill_root = work_infrastructure::fixture_support::historical_execute_skill_root(
+            &repo.join("../skills/work"),
+        )
+        .unwrap();
         let invoke = |tail: Vec<String>| {
             run_with_skill_root(
                 &base.iter().cloned().chain(tail).collect::<Vec<_>>(),

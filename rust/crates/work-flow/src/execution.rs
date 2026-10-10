@@ -1,14 +1,23 @@
 //! Execution command flows.
 
+pub fn run_file_transaction(
+    repository: &impl work_feature::execution::file_transaction::FileTransactionRepository,
+    context: &ExecutionWriterContext,
+    operation: &str,
+    request: &serde_json::Value,
+) -> Result<serde_json::Value, WorkError> {
+    work_feature::execution::file_transaction::run(repository, context, operation, request)
+}
+
 use serde_json::{Value, json};
 use work_feature::artifact_paths::ArtifactPathRepository;
 use work_feature::error::{ExitCode, WorkError};
 use work_feature::execution::document;
 use work_feature::execution::{
     AttemptCloseRepository, AttemptStartRepository, CommandCorrectionRepository,
-    CommandPrepareRepository, CorrectionRepository, DeviationRecordRepository,
-    ExecutionIndexRepository, ExecutionWorktreeRepository, RecordBeginRepository,
-    RecordFinishRepository, RecoveryPrepareRepository,
+    CorrectionRepository, DeviationRecordRepository, ExecutionIndexRepository,
+    ExecutionWorktreeRepository, RecordBeginRepository, RecordFinishRepository,
+    RecoveryPrepareRepository,
 };
 use work_feature::instruction::InstructionSourceRepository;
 use work_feature::ports::SourceSnapshotReader;
@@ -16,8 +25,9 @@ use work_feature::skill::SkillSnapshotRepository;
 use work_feature::task::TaskCollectionRepository;
 
 pub use work_feature::execution::{
-    CommandProjectRequest, CommandProjectSources, ExecutionProjectTarget, ExecutionWriterContext,
-    RuntimeExecutionReadiness, ScopedExecutionPublication, load_execution_writer_context,
+    CommandPrepareRepository, CommandProjectRequest, CommandProjectSources, ExecutionProjectTarget,
+    ExecutionWriterContext, RuntimeExecutionReadiness, ScopedExecutionPublication,
+    load_execution_writer_context,
 };
 use work_feature::execution::{
     DeviationProjectRequest, begin_record_from_project, close_attempt_from_project,

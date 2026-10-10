@@ -25,6 +25,7 @@ pub enum CandidateCommandMode {
 pub enum CandidateValidationKind {
     Automated,
     Manual,
+    AiReview,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +133,8 @@ pub struct CandidateValidation {
     pub command_keys: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pass_condition: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<super::verification::VerificationCondition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confirmer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

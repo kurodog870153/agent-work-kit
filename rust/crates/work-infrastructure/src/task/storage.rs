@@ -285,7 +285,10 @@ mod tests {
         crate::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
         fs::write(root.join("src.txt"), b"original\n").unwrap();
         let work = LocalHierarchyCatalog {
-            skill_root: repo.join("../skills/work"),
+            skill_root: crate::fixture_support::historical_task_skill_root(
+                &repo.join("../skills/work"),
+            )
+            .unwrap(),
         };
         let skills = LocalSkillCatalog { roots: vec![] };
         let paths = crate::artifact_paths::LocalArtifactPaths {
@@ -557,7 +560,10 @@ mod tests {
             .mutate(&root, &["init".into(), "-q".into()])
             .unwrap();
         let work = LocalHierarchyCatalog {
-            skill_root: PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../skills/work")),
+            skill_root: crate::fixture_support::historical_task_skill_root(&PathBuf::from(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../../skills/work"),
+            ))
+            .unwrap(),
         };
         let skills = LocalSkillCatalog { roots: vec![] };
         let paths = crate::artifact_paths::LocalArtifactPaths {
@@ -1225,17 +1231,20 @@ mod tests {
             prepare_command_from_project(&sources, &execution_storage, input).unwrap_err();
         assert_eq!(rejected.reason_code, "command_correction_command_not_found");
         let (os, shell, original_argv, reviewed_argv) = if cfg!(windows) {
+            let powershell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+                .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+            assert!(powershell.is_file());
             (
                 "windows",
                 "powershell",
                 json!([
-                    "powershell.exe",
+                    powershell,
                     "-NoProfile",
                     "-Command",
                     "[Console]::Write('verified')"
                 ]),
                 json!([
-                    "powershell.exe",
+                    powershell,
                     "-NoProfile",
                     "-Command",
                     "[Console]::Write('reviewed')"
@@ -1334,19 +1343,28 @@ mod tests {
             load_context: &load_command_context,
         };
         let command_lock_before = fs::read(&command_lock).ok();
-        let preview = prepare_command_from_project(&sources, &command_storage, input).unwrap();
+        let observed = prepare_command_from_project(&sources, &command_storage, input).unwrap();
+        assert_eq!(observed["execution"]["host"]["mode"], "inherited");
+        assert!(observed["execution"].get("work_isolation").is_none());
+        assert!(observed["execution"]["capture"]["report_paths"].is_array());
+        let approval_rejection = "command_run_approval_changed";
         assert_eq!(
             fs::read(&execution_index_file).unwrap(),
             command_index_before
         );
         assert_eq!(fs::read(&attempt_path).unwrap(), command_attempt_before);
         assert_eq!(fs::read(&command_lock).ok(), command_lock_before);
-        let approved = preview["approved_sha256"].as_str().unwrap();
-        let command_result = command_storage
-            .run_command_from_project(&sources, input, approved)
-            .unwrap();
-        assert_eq!(command_result["stdout_tail"], "verified");
-        assert_eq!(command_result["record_finish_required"], true);
+        // A fabricated preview hash or repeated request cannot grant a capability.
+        let approved = "a".repeat(64);
+        let rejected = command_storage
+            .run_command_from_project(&sources, input, &approved)
+            .unwrap_err();
+        assert_eq!(rejected.reason_code, approval_rejection);
+        assert!(
+            !root
+                .join(format!("{execution_dir}/TASK-001/ATTEMPT-001/receipts"))
+                .exists()
+        );
         assert_eq!(
             fs::read(&execution_index_file).unwrap(),
             command_index_before
@@ -1354,10 +1372,10 @@ mod tests {
         assert_eq!(fs::read(&attempt_path).unwrap(), command_attempt_before);
         assert_eq!(
             command_storage
-                .run_command_from_project(&sources, input, approved)
+                .run_command_from_project(&sources, input, &approved)
                 .unwrap_err()
                 .reason_code,
-            "command_run_already_started"
+            approval_rejection
         );
         let index_before_correction = fs::read(&execution_index_file).unwrap();
         let rejected_correction = record_command_correction_from_project(
@@ -1752,18 +1770,40 @@ mod tests {
         )
         .unwrap();
         assert_eq!(finished["record_status"], "recorded");
-        let reserved =
-            begin_record_from_project(&sources, &execution_storage, target, "VAL-001", None)
-                .unwrap();
-        assert_eq!(reserved["record_id"], "VAL-001");
-        let validated = finish_record_from_project(
-            &sources,
-            &execution_storage,
-            target,
-            &json!({"schema":"work-record-finish-request",
-                "record":{"outcome":"passed","evidence":"Reviewed."}}),
+        let load_context =
+            || work_feature::execution::load_execution_writer_context(&sources, target);
+        let validation_storage = crate::execution::storage::RuntimeExecutionSession {
+            storage: &execution_storage,
+            load_context: &load_context,
+        };
+        assert_eq!(
+            begin_record_from_project(&sources, &validation_storage, target, "VAL-001", None)
+                .unwrap_err()
+                .reason_code,
+            "legacy_writer_lock_present"
+        );
+        // This synthetic actor owns the released legacy kernel-lock fixture and
+        // explicitly decommissions its path offline; production never infers a dead owner.
+        assert_eq!(fs::read(&recovery_lock).ok(), before_recovery_lock);
+        fs::rename(
+            &recovery_lock,
+            root.join("fixture-retained-legacy-writer-lock"),
         )
         .unwrap();
+        let reserved =
+            begin_record_from_project(&sources, &validation_storage, target, "VAL-001", None)
+                .unwrap();
+        assert_eq!(reserved["record_id"], "VAL-001");
+        let user_finish = crate::fixture_support::user_confirmation_fixture(
+            &root,
+            &reserved["validation_context"],
+            work_model::execution::attempt::ValidationOutcome::Passed,
+            "Designated synthetic user reviewed this context",
+        )
+        .unwrap();
+        let validated =
+            finish_record_from_project(&sources, &validation_storage, target, &user_finish)
+                .unwrap();
         assert_eq!(validated["record_kind"], "validation");
         let validation_attempt_raw = fs::read(&attempt_path).unwrap();
         let validation_attempt: Value = serde_json::from_slice(&validation_attempt_raw).unwrap();
@@ -1860,7 +1900,7 @@ mod tests {
             serde_json::from_slice(&correction_index_before).unwrap();
         let correction_attempt: serde_json::Value =
             serde_json::from_slice(&correction_attempt_before).unwrap();
-        let retry_prepared = prepare_attempt_start_from_project(
+        let retry_error = prepare_attempt_start_from_project(
             &sources,
             &execution_storage,
             target,
@@ -1870,15 +1910,17 @@ mod tests {
                 "allowed_deviations":[],"authorization_evidence":"Fresh retry approval",
                 "carried_records":[{"position":2,"evidence":"Review remains valid."}]}),
         )
-        .unwrap();
+        .unwrap_err();
         assert_eq!(
-            retry_prepared["request"]["continuation"]["source_attempt_id"],
-            "ATTEMPT-001"
+            retry_error.reason_code,
+            "attempt_start_validation_reconciliation_required"
         );
+        assert_eq!(retry_error.details["deviation_id"], "DEVIATION-002");
         assert_eq!(
-            retry_prepared["request"]["continuation"]["carried_records"][0]["record_id"],
-            "VAL-001"
+            fs::read(&execution_index_file).unwrap(),
+            correction_index_before
         );
+        assert_eq!(fs::read(&attempt_path).unwrap(), correction_attempt_before);
         let second_request = json!({"schema":"work-correction-create-request",
             "target_attempt_id":"ATTEMPT-001","field":"records[1].evidence",
             "correct_value":"Reviewed again","reason":"Correct validation narrative.",

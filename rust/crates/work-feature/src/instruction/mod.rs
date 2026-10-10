@@ -1,8 +1,6 @@
 //! Instruction resolution and selection validation over source repositories.
 
 pub mod refresh;
-pub mod refresh_build;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};

@@ -66,7 +66,7 @@ pub fn migration_prepare(
     preview: impl FnOnce(&Value) -> Result<Value, WorkError>,
     write: impl FnOnce(&str, &Value) -> Result<(), WorkError>,
 ) -> Result<Value, WorkError> {
-    work_feature::specification::migration_prepare::validate_semantic_request(input.request)?;
+    work_feature::specification::migration::prepare::validate_semantic_request(input.request)?;
     let prepared = if input.request["mode"] == "revision" {
         prepare_revision(input.raw, input.date)?
     } else {

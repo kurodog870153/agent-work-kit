@@ -96,7 +96,7 @@ mod tests {
     use serde_json::json;
 
     fn example() -> serde_json::Value {
-        crate::contract_data::registry_value()["items"]["work-source-snapshot"]
+        crate::contract::data::registry_value()["items"]["work-source-snapshot"]
             ["description"]["example"]
             .clone()
     }
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn read_and_validation_examples_match_models_and_binary_transport_is_lossless() {
-        let registry = crate::contract_data::registry_value();
+        let registry = crate::contract::data::registry_value();
         let mut read: SourceRead = serde_json::from_value(
             registry["items"]["work-source-read"]["description"]["example"].clone(),
         )
@@ -178,7 +178,7 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<SnapshotSource>(source).is_err());
         }
-        let registry = crate::contract_data::registry_value();
+        let registry = crate::contract::data::registry_value();
         let source = registry["items"]["work-source-snapshot"]["description"]["fields"]
             .as_array()
             .unwrap()

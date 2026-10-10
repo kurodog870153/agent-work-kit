@@ -28,16 +28,20 @@ metadata:
 ## 3. 輸入、檔案與步驟
 
 1. [強制] `inputs[]` 使用 `id`、`kind`、`source`、`precondition`；kind 為 `task_output`、`project_state`、`user_provided` 或 `external`，不得保存機密值。
-2. [強制] `task_output.source` 使用 `<TASK-ID>/<FILE-ID>`，來源 TASK 必須為直接相依。`project_state.source` 是 normalized project-relative path；其他 source 只保存非機密識別或描述。
+2. [強制] `task_output.source` 使用 `<TASK-ID>/<FILE-ID>`，來源 TASK 必須在完整 DAG 祖先中，不為傳遞相依另加冗餘 direct edge；semantic candidate 的 dependency_position 仍依既有直接相依位置解析。`project_state.source` 使用 normalized project-relative path 表達前置狀態，但自由文字 source／precondition 不自動授予 CMD 讀取權限；其他 source 只保存非機密識別或描述。
 3. [強制] `files[]` 的 action 為 `create`、`modify` 或 `move`；前兩者使用 `path`，move 使用 `source` 與 `destination`，不支援 delete。跨 TASK 檔案衝突須明確驗證相依。
 4. [強制] `risks[]` 保存 `condition`、`impact`、`mitigation`。`steps[]` 保存 `id`、`action`、非空 `references`，陣列順序就是執行順序；每個 FILE、CMD、OP、VAL 都須被 STEP 引用。
 
 ## 4. CMD、OP 與驗收 VAL
 
-1. [強制] `execution_defaults` 與命令的完整 `execution` 覆寫使用 `working_directory`、`os`、`shell`；OS 為 windows／macos／linux，shell 為 powershell／pwsh／cmd／bash／zsh／sh。
+1. [強制] `execution_defaults` 與命令的完整 `execution` 覆寫使用 `working_directory`、`os`、`shell`；契約可描述 windows／macos／linux 與 powershell／pwsh／cmd／bash／zsh／sh，但目前一般 argv runner 只執行 Windows／macOS；Linux 與 shell-mode 拒絕。Work 繼承宿主限制，不建立原生隔離政策或安裝工具鏈。
 2. [強制] `commands[]` 使用 `mode: argv` 與 `argv`，或 `mode: shell` 與 `script`；專屬欄位互斥。`operations[]` 描述 local_state／external_state 副作用，保存 action、target、validation_id，命令執行時加入 command_id。
-3. [強制] automated VAL 保存 `command_ids`、`pass_condition`；manual VAL 保存 `confirmer`、`criteria`。`acceptance_ids` 可以引用需求層或本 TASK 子驗收，不能引用另一個 TASK 的子驗收；每項驗收至少由一個有效 VAL 覆蓋。
+3. [強制] automated VAL 保存 `command_ids`、`pass_condition` 及選用的 `verification`；未指定條件時核對全部宣告命令的實際退出碼為零。明確條件支援 all／any／not、實際非零退出碼、完整 stdout／stderr 或宣告報告的比對／hash／JSON Pointer；引用集合須與 command_ids 相符，未知不可通過。ai_review 與 manual 均保存 `confirmer`、`criteria`，前者明確表示 AI 審查，後者表示指定使用者實際確認，不依名稱猜測來源，不帶 verification。Candidate 使用 command keys，語意偏差使用 command positions，正式化沿既有映射，JSON assertion 值不改寫為引用。`acceptance_ids` 可引用需求層或本 TASK 子驗收，不能引用其他 TASK 子驗收；全部必要條件須有正確來源及目前版本的完整證據通過。
 4. [強制] Validator 只檢查契約，不執行 CMD／OP。執行或具副作用預檢必須先取得授權，結果保存於 Attempt／Correction；不把指令成功啟動等同驗收完成。
+5. [強制] argv CMD 在宿主環境使用專案原有工具、依賴與設定，保留實際建置／測試產物。Task 使用檔案相依與 DAG 明確安排跨 Task 讀寫；自由文字輸入不自動授予操作權限。預覽固定實際 executable／batch launcher、argv、cwd、來源、宿主環境、退出時間與目前檔案版本；相關內容漂移須重新核對，不以 hash 取代既有授權。
+6. [強制] 工具、套件、動態函式庫與本地相依由宿主及原專案管理；Work 不複製工具快照、重寫動態載入、建立私人簽章或強制搬移產物。宿主拒絕、工具缺漏或實際失敗須保留證據，依既有範圍處理；不得自動安裝、擴權或繞過限制。
+
+7. [強制] cargo、mvn、npm 等一般開發命令使用同一 argv 入口；依原專案規則生成產物，不建立各工具專用適配流程。未實際執行或結果不明時不宣告成功，不為探知結果而自動重跑。
 
 ## 5. Canonical 路徑與指紋
 
@@ -62,3 +66,9 @@ metadata:
 
 1. [強制] 使用 `<work-cli> contract describe work-task-index`、`work-task-item`、`work-task-collection-fingerprint` 查詢欄位、canonical 順序、constraints、nested references 與有效例子。
 2. [強制] Source、Execution、Specification、Migration 與 Reconciliation 使用各自 registered CLI contracts；以實際 contract descriptions 與 validator 為結構權威，不複製維護完整 JSON 模板。
+
+## 8. 最小成果與共用檔案審查
+
+1. [強制] 每個 Task 產生單一可驗證成果；AI 審查獨立成果並拆分，不可分割的多檔成果在既有 Discussion 語意審查保存理由，不以檔案數、行數或步驟數切分。
+2. [強制] 正式化須有完整規劃結構、目前 context／decision 版本、非空語意審查證據及已完成審查狀態；Work 不另要求成果映射或交易可行宣告。必要目標、步驟、驗收、決策或審查缺漏時阻擋正式化，有疑問逐項確認。
+3. [強制] 同檔不同區域的修改仍屬寫入衝突，所有寫寫／讀寫衝突都須有合法祖先順序；讀讀共用不需相依，不提供獨立性豁免。Task inputs 必須表達必要專案來源；間接相依足夠時不得新增冗餘 direct edge，Work 不自動補邊。

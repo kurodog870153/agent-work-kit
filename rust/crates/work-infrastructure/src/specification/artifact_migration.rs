@@ -46,7 +46,7 @@ pub(crate) fn resolved_artifact_paths(
     id: &RequirementId,
 ) -> Result<BTreeMap<String, String>, WorkError> {
     let defaults = artifact_paths(id);
-    let discovered = crate::instruction::refresh_storage::discover_requirements(root)?;
+    let discovered = crate::instruction::refresh::storage::discover_requirements(root)?;
     let Some(routes) = discovered.get(id.as_str()) else {
         return Ok(defaults);
     };
@@ -943,7 +943,7 @@ pub fn preview(
             .all(|item| item["status"] != "blocked" && item["status"] != "recovery_required");
     let relationship_error = if ready {
         match approved_candidates(&request).and_then(|candidates| {
-            crate::specification::migration_reconciliation_publication::validate_expected(
+            crate::specification::migration::reconciliation_publication::validate_expected(
                 root,
                 skill_root,
                 configs,
@@ -1156,7 +1156,7 @@ fn execute_scoped_with_fault(
     })?;
     checked_sources(root, &request, execution, approved_sha256)?;
     let candidates = approved_candidates(&request)?;
-    crate::specification::migration_reconciliation_publication::validate_expected(
+    crate::specification::migration::reconciliation_publication::validate_expected(
         root,
         skill_root,
         configs,
@@ -1264,7 +1264,7 @@ fn execute_scoped_with_fault(
         .iter()
         .all(|row| row["status"] == "published" || row["status"] == "skipped");
     let reconciliation = if complete {
-        match crate::specification::migration_reconciliation_publication::reconcile_scoped(
+        match crate::specification::migration::reconciliation_publication::reconcile_scoped(
             root,
             skill_root,
             configs,
@@ -1320,7 +1320,7 @@ fn recover_scoped(
     }
     checked_sources(root, &request, execution, approved_sha256)?;
     let candidates = approved_candidates(&request)?;
-    crate::specification::migration_reconciliation_publication::validate_expected(
+    crate::specification::migration::reconciliation_publication::validate_expected(
         root,
         skill_root,
         configs,
@@ -1404,7 +1404,7 @@ fn recover_scoped(
         .iter()
         .all(|row| row["status"] == "published" || row["status"] == "skipped");
     let reconciliation = if complete {
-        match crate::specification::migration_reconciliation_publication::reconcile_scoped(
+        match crate::specification::migration::reconciliation_publication::reconcile_scoped(
             root,
             skill_root,
             configs,
@@ -1454,7 +1454,7 @@ pub fn verify(
         let journal = item_journal(execution, approved_sha256, position);
         checked_journal(root, &journal, &request, approved_sha256, decision)?;
         results.push(
-            crate::specification::migration_verification::verify_published_transaction(
+            crate::specification::migration::verification::verify_published_transaction(
                 root, &journal, None,
             )?,
         );
@@ -1468,14 +1468,14 @@ pub fn verify(
     if storage_path(root, &reconciliation)?.is_file() {
         let expected = json!({"request_sha256":approved_sha256,"phase":"reconciliation"});
         results.push(
-            crate::specification::migration_verification::verify_published_transaction(
+            crate::specification::migration::verification::verify_published_transaction(
                 root,
                 &reconciliation,
                 Some(&expected),
             )?,
         );
     }
-    let chain = crate::specification::migration_reconciliation_publication::verify_final_chain(
+    let chain = crate::specification::migration::reconciliation_publication::verify_final_chain(
         root,
         skill_root,
         configs,
@@ -1669,7 +1669,9 @@ mod tests {
         let skipped = prepare_request(&root, &analysis, &skip).unwrap();
         assert_eq!(skipped["executable"], false);
         let repo = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
-        let skill_root = repo.join("../skills/work");
+        let skill_root =
+            crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap();
         assert_eq!(
             execute(
                 &root,
@@ -1926,7 +1928,8 @@ mod tests {
         assert_eq!(
             preview(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 request_path,
                 approved
@@ -1938,7 +1941,8 @@ mod tests {
         assert_eq!(
             execute(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 request_path,
                 approved
@@ -1950,7 +1954,8 @@ mod tests {
         fs::write(&plan_path, plan_bytes).unwrap();
         let result = execute(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             request_path,
             approved,
@@ -2024,7 +2029,10 @@ mod tests {
             assert!(
                 execute(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     prepared["request_path"].as_str().unwrap(),
                     approved
@@ -2054,7 +2062,7 @@ mod tests {
                 requirement_id: "example".parse().unwrap(),
             };
             work_feature::ports::with_runtime_writer(&LocalWriterLock,&context,work_model::runtime::LockClass::Execution,
-                |owner|execute_scoped_with_fault(&root,&repo.join("../skills/work"),&[],prepared["request_path"].as_str().unwrap(),approved,Some(owner),&mut |position,stage| {
+                |owner|execute_scoped_with_fault(&root,&crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work")).unwrap(),&[],prepared["request_path"].as_str().unwrap(),approved,Some(owner),&mut |position,stage| {
                     if position==1 && stage==crate::transaction_storage::JournalRuntimeStage::JournalInitialized {
                         Err(fail("injected_item_fault","injected"))
                     } else {Ok(())}
@@ -2069,9 +2077,10 @@ mod tests {
         assert_eq!(fs::read(root.join(paths[1])).unwrap(), originals[1]);
         assert_ne!(fs::read(root.join(paths[2])).unwrap(), originals[2]);
         assert!(
-            crate::specification::migration_reconciliation_publication::validate_expected(
+            crate::specification::migration::reconciliation_publication::validate_expected(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 "example",
                 &BTreeMap::new(),
@@ -2100,7 +2109,8 @@ mod tests {
             .unwrap();
             let rejected = recover(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 approved,
@@ -2127,7 +2137,8 @@ mod tests {
             fs::write(&journal_path, b"foreign partial journal").unwrap();
             let rejected = recover(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 approved,
@@ -2151,7 +2162,8 @@ mod tests {
             fs::write(&journal_path, pending_raw).unwrap();
             let recovered = recover(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 approved,
@@ -2182,7 +2194,8 @@ mod tests {
                 .collect::<Vec<_>>();
             let again = recover(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 approved,
@@ -2261,7 +2274,8 @@ mod tests {
         assert_eq!(
             recover(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 approved,
@@ -2276,7 +2290,8 @@ mod tests {
         fs::write(&evidence_path, original_evidence).unwrap();
         let recovered = recover(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             prepared["request_path"].as_str().unwrap(),
             approved,
@@ -2400,7 +2415,8 @@ mod tests {
             let prepared = prepare_request(&root, &analysis, &choices).unwrap();
             let result = execute(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 prepared["request_path"].as_str().unwrap(),
                 prepared["request_sha256"].as_str().unwrap(),

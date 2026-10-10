@@ -173,8 +173,67 @@ fn command_shape(value: &Value, replacement: bool) -> Result<(), ExecutionIssue>
     Ok(())
 }
 
+/// Commands added to a Task without defaults must supply complete execution settings.
+pub fn validate_command_settings(action: &Value, defaults: &Value) -> Result<(), ExecutionIssue> {
+    let command = match action["kind"].as_str() {
+        Some("add_command") => &action["command"],
+        Some("replace_command") => &action["replacement"],
+        _ => return Ok(()),
+    };
+    let settings = command.get("execution").unwrap_or(defaults);
+    let invalid = || {
+        issue(
+            "deviation_command_execution_invalid",
+            "A command requires complete execution settings and a valid invocation.",
+        )
+    };
+    let settings: work_model::task::index::TaskExecutionDefaults =
+        serde_json::from_value(settings.clone()).map_err(|_| invalid())?;
+    if settings.os.trim().is_empty()
+        || settings.shell.trim().is_empty()
+        || (settings.working_directory != "."
+            && !crate::derivation::identity::runtime_relative_path(&settings.working_directory))
+        || match command["mode"].as_str() {
+            Some("argv") => !command["argv"].as_array().is_some_and(|args| {
+                !args.is_empty()
+                    && args[0].as_str().is_some_and(|s| !s.is_empty())
+                    && args
+                        .iter()
+                        .all(|arg| arg.as_str().is_some_and(|s| !s.contains('\0')))
+            }),
+            Some("shell") => !nonempty(&command["script"]),
+            _ => true,
+        }
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 fn action_shape(action: &Value) -> Result<(), ExecutionIssue> {
     match action["kind"].as_str() {
+        Some("add_files") => {
+            fields(action, &["kind", "modification_types"], &[])?;
+            let rows = action["modification_types"].as_array().ok_or_else(|| {
+                issue(
+                    "invalid_execution_deviation_fields",
+                    "File modification types are required.",
+                )
+            })?;
+            let mut seen = std::collections::BTreeSet::new();
+            if rows.is_empty()
+                || rows.iter().any(|row| {
+                    !matches!(row.as_str(), Some("create" | "modify" | "move"))
+                        || !seen.insert(row.as_str())
+                })
+            {
+                return Err(issue(
+                    "invalid_execution_deviation_fields",
+                    "File modification types must be distinct current operations.",
+                ));
+            }
+            Ok(())
+        }
         Some("replace_command") => {
             fields(action, &["kind", "record_id", "replacement"], &[])?;
             if !record_id(&action["record_id"]) {
@@ -204,18 +263,36 @@ fn action_shape(action: &Value) -> Result<(), ExecutionIssue> {
                 &[
                     "command_ids",
                     "pass_condition",
+                    "verification",
                     "confirmer",
                     "criteria",
                     "acceptance_ids",
                 ],
             )?;
             if !validation["id"].is_string()
-                || !matches!(validation["kind"].as_str(), Some("automated" | "manual"))
+                || !matches!(
+                    validation["kind"].as_str(),
+                    Some("automated" | "manual" | "ai_review")
+                )
             {
                 return Err(issue(
                     "invalid_execution_deviation_fields",
                     "The validation is invalid.",
                 ));
+            }
+            if let Some(condition) = validation.get("verification") {
+                if validation["kind"] != "automated" {
+                    return Err(issue(
+                        "validation_verification_invalid",
+                        "Only automated validations have verification conditions.",
+                    ));
+                }
+                crate::task::verification::validate(condition, &validation["command_ids"])
+                    .map_err(|error| ExecutionIssue {
+                        reason_code: error.reason_code,
+                        message: error.message,
+                        details: error.details,
+                    })?;
             }
             Ok(())
         }
@@ -318,6 +395,7 @@ pub fn validate_semantic_deviation_request(value: &Value) -> Result<(), Executio
     }
     let action = &value["action"];
     match action["kind"].as_str() {
+        Some("add_files") => action_shape(action)?,
         Some("replace_command") => {
             fields(action, &["kind", "replacement"], &[])?;
             command_shape(&action["replacement"], true)?;
@@ -344,12 +422,16 @@ pub fn validate_semantic_deviation_request(value: &Value) -> Result<(), Executio
                 &[
                     "command_positions",
                     "pass_condition",
+                    "verification",
                     "confirmer",
                     "criteria",
                     "acceptance_positions",
                 ],
             )?;
-            if !matches!(validation["kind"].as_str(), Some("automated" | "manual")) {
+            if !matches!(
+                validation["kind"].as_str(),
+                Some("automated" | "manual" | "ai_review")
+            ) {
                 return Err(issue(
                     "invalid_execution_deviation_fields",
                     "The semantic validation kind is invalid.",
@@ -379,6 +461,13 @@ pub fn validate_semantic_deviation_request(value: &Value) -> Result<(), Executio
                     ));
                 }
             }
+            crate::task::verification::validate_positions(validation).map_err(|error| {
+                ExecutionIssue {
+                    reason_code: error.reason_code,
+                    message: error.message,
+                    details: error.details,
+                }
+            })?;
         }
         Some("adjust_operation") => {
             fields(action, &["kind", "operation"], &[])?;
@@ -439,7 +528,9 @@ pub fn validate_deviation_proposal(proposal: &Value) -> Result<(), ExecutionIssu
     }
     if !numbered_id(&proposal["task_id"], "TASK-")
         || !numbered_id(&proposal["attempt_id"], "ATTEMPT-")
-        || !record_id(&proposal["anchor_record_id"])
+        || !(record_id(&proposal["anchor_record_id"])
+            || (proposal["action"]["kind"] == "add_files"
+                && proposal["anchor_record_id"] == proposal["task_id"]))
         || !nonempty(&proposal["gap"])
         || !proposal["side_effects"]
             .as_array()
@@ -500,6 +591,7 @@ pub fn validate_deviation_proposal(proposal: &Value) -> Result<(), ExecutionIssu
         "add_command" => action["after_record_id"] == anchor,
         "adjust_operation" => action["operation"]["id"] == base,
         "add_validation" => true,
+        "add_files" => anchor == proposal["task_id"].as_str().unwrap_or(""),
         _ => false,
     };
     if !matches_anchor {
@@ -536,7 +628,7 @@ pub fn validate_deviation_preview(value: &Value) -> Result<(), ExecutionIssue> {
     validate_deviation_proposal(&value["proposal"])?;
     if !matches!(
         value["record_kind"].as_str(),
-        Some("command" | "operation" | "validation")
+        Some("task" | "command" | "operation" | "validation")
     ) || value["action_validation"] != "passed"
         || value["semantic_review"] != "required"
         || !sha(&value["preview_sha256"])
@@ -595,7 +687,10 @@ pub fn validate_deviation_record_response(value: &Value) -> Result<(), Execution
             Some("task_only" | "task_and_execution")
         )
         || value["record_status"] != "recorded"
-        || value["lock_status"] != "record_reserved"
+        || !matches!(
+            value["lock_status"].as_str(),
+            Some("record_reserved" | "attempt_held")
+        )
     {
         return Err(issue(
             "invalid_execution_deviation_fields",
@@ -744,7 +839,7 @@ pub fn build_deviation_preview(
     record_kind: &str,
     sources: &BTreeMap<String, String>,
 ) -> Result<Value, ExecutionIssue> {
-    if !matches!(record_kind, "command" | "operation" | "validation") {
+    if !matches!(record_kind, "task" | "command" | "operation" | "validation") {
         return Err(issue(
             "deviation_active_record",
             "A formal reserved record is required for deviation review.",
@@ -777,7 +872,20 @@ pub fn append_approved_deviation(
     evidence: &str,
     execution_dir: &str,
 ) -> Result<(Value, Value), ExecutionIssue> {
-    if evidence.trim().is_empty() || evidence == attempt["authorization"]["authorization_evidence"]
+    let scoped = crate::execution::authorization::scope::permits_adjustment(
+        attempt,
+        &preview["proposal"]["action"],
+        &preview["proposal"]["impact"],
+        &preview["proposal"]["modifiable_files"],
+    )? && preview["blocking"] == false;
+    if preview["proposal"]["action"]["kind"] == "add_files" && !scoped {
+        return Err(issue(
+            "execution_authorization_scope_expansion",
+            "File-only registration requires existing additional_files authority and cannot expand it.",
+        ));
+    }
+    if evidence.trim().is_empty()
+        || (!scoped && evidence == attempt["authorization"]["authorization_evidence"])
     {
         return Err(issue(
             "deviation_record_authorization_evidence_reused",
@@ -844,7 +952,7 @@ pub fn append_approved_deviation(
         "classification":preview["classification"],
         "blocking":preview["blocking"],
         "record_status":"recorded",
-        "lock_status":"record_reserved",
+        "lock_status":if proposal["action"]["kind"] == "add_files" {"attempt_held"} else {"record_reserved"},
     });
     validate_deviation_record_response(&response)?;
     Ok((
@@ -966,6 +1074,7 @@ pub fn formalize_semantic_action(
         Ok(format!("{prefix}-{:03}", maximum + 1))
     };
     match action["kind"].as_str().unwrap_or("") {
+        "add_files" => Ok(action.clone()),
         "replace_command" => {
             if prefix != "CMD" {
                 return Err(issue(
@@ -985,6 +1094,23 @@ pub fn formalize_semantic_action(
         }
         "add_validation" => {
             let mut validation = action["validation"].clone();
+            if let Some(condition) = validation.get("verification").filter(|v| !v.is_null()) {
+                let mapped = crate::task::verification::map_commands(condition, |value| {
+                    position("commands", value).map_err(|error| crate::task::TaskIssue {
+                        reason_code: error.reason_code,
+                        message: error.message,
+                        details: error.details,
+                    })
+                })
+                .map_err(|error| ExecutionIssue {
+                    reason_code: error.reason_code,
+                    message: error.message,
+                    details: error.details,
+                })?;
+                validation["verification"] = mapped;
+            } else {
+                validation.as_object_mut().unwrap().remove("verification");
+            }
             if let Some(values) = validation
                 .as_object_mut()
                 .and_then(|object| object.remove("command_positions"))
@@ -1080,7 +1206,8 @@ pub fn build_deviation_staging(
         || lock["kind"] != "execution"
         || lock["task_id"] != input.task_id
         || lock["attempt_id"] != input.attempt_id
-        || lock["record_id"] != input.record_id
+        || (lock["record_id"] != input.record_id
+            && !(lock["record_id"].is_null() && input.record_id == input.task_id))
         || lock["execute_instructions_sha256"] != before["execute_instructions_sha256"]
     {
         return Err(issue(
@@ -1107,11 +1234,16 @@ pub fn build_deviation_staging(
             "The deviation proposal identifies another record.",
         ));
     }
-    let kind = crate::execution::formal_record_kind(
-        input.task,
-        input.record_id.split('#').next().unwrap_or(""),
-    )?;
-    crate::execution::validate_deviation_action(proposal, input.task, kind)?;
+    let effective = crate::execution::authorization::effective_task(input.task, &before)?;
+    let kind = if proposal["action"]["kind"] == "add_files" {
+        "task"
+    } else {
+        crate::execution::formal_record_kind(
+            &effective,
+            input.record_id.split('#').next().unwrap_or(""),
+        )?
+    };
+    crate::execution::validate_deviation_action(proposal, &effective, kind)?;
     let index_path = format!("{}/index.json", input.execution_dir);
     let attempt_path = format!(
         "{}/{}/{}/attempt.json",
@@ -1393,13 +1525,18 @@ mod tests {
         assert_eq!(added_command["command"]["argv"], json!(["tool"]));
         let added_validation = formalize_semantic_action(
             &json!({"kind":"add_validation","validation":{"kind":"automated",
-                "command_positions":[1],"acceptance_positions":[1],"pass_condition":"Success."}}),
+                "command_positions":[1],"acceptance_positions":[1],"pass_condition":"Success.",
+                "verification":{"kind":"all","conditions":[{"kind":"exit_code","command":1,"equals":0}]}}}),
             &task,
             &attempt,
             "CMD-001",
         )
         .unwrap();
         assert_eq!(added_validation["validation"]["id"], "VAL-002");
+        assert_eq!(
+            added_validation["validation"]["verification"]["conditions"][0]["command"],
+            "CMD-001"
+        );
         assert_eq!(
             added_validation["validation"]["command_ids"],
             json!(["CMD-001"])
@@ -1534,6 +1671,61 @@ mod tests {
             .reason_code,
             "deviation_record_authorization_evidence_reused"
         );
+    }
+
+    #[test]
+    fn scope_authority_records_reviewed_adjustments_before_use() {
+        use crate::execution::authorization::{require_modified_files, scope};
+        for task_id in ["TASK-001", "TASK-002"] {
+            let attempt = json!({"authorization":{"task_id":task_id,"scope":scope::example_scope(),
+                "authorization_evidence":"Approved plan","modifiable_files":["src/main.rs"]}});
+            let mut proposal = json!({"schema":"work-execution-deviation-proposal","task_id":task_id,
+                "attempt_id":"ATTEMPT-001","anchor_record_id":"CMD-001","task_basis":["CMD-001"],
+                "gap":"The same fix requires a related module and narrower test command.",
+                "action":{"kind":"replace_command","record_id":"CMD-001",
+                    "replacement":{"mode":"argv","argv":["tool","test","module"]}},
+                "modifiable_files":["src/related.rs"],"impact":scope::example_impact(),
+                "side_effects":["Run the approved local tests."]});
+            assert!(require_modified_files(&attempt, &["src/related.rs".into()], None).is_err());
+            let sources = BTreeMap::from([("task.json".to_owned(), "a".repeat(64))]);
+            let preview = build_deviation_preview(&proposal, "command", &sources).unwrap();
+            let (recorded, _) = append_approved_deviation(
+                &attempt,
+                &preview,
+                preview["preview_sha256"].as_str().unwrap(),
+                "Approved plan",
+                "executions",
+            )
+            .unwrap();
+            require_modified_files(&recorded, &["src/related.rs".into()], None).unwrap();
+            assert_eq!(
+                recorded["execution_deviations"][0]["proposal"]["task_id"],
+                task_id
+            );
+            assert_eq!(
+                recorded["execution_deviations"][0]["supplemental_authorization"]["authorization_evidence"],
+                "Approved plan"
+            );
+            for field in [
+                "scope_changed",
+                "external_side_effect_boundary_changed",
+                "safety_boundary_changed",
+            ] {
+                proposal["impact"] = scope::example_impact();
+                proposal["impact"][field] = json!(true);
+                let preview = build_deviation_preview(&proposal, "command", &sources).unwrap();
+                assert!(
+                    append_approved_deviation(
+                        &attempt,
+                        &preview,
+                        preview["preview_sha256"].as_str().unwrap(),
+                        "Approved plan",
+                        "executions"
+                    )
+                    .is_err()
+                );
+            }
+        }
     }
 
     #[test]

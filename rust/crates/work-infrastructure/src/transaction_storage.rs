@@ -25,6 +25,7 @@ fn runtime_operation(
 ) -> Result<work_operations::derivation::publication::RuntimeOperation, WorkError> {
     use work_operations::derivation::publication::RuntimeOperation as O;
     Ok(match name {
+        "project-files" => O::ProjectFiles,
         "attempt-start" => O::AttemptStart,
         "record-begin" => O::RecordBegin,
         "command-correction" => O::CommandCorrection,
@@ -189,6 +190,8 @@ pub fn update_runtime_progress(
         P::Publishing => 1,
         P::PublishedVerified => 2,
         P::Cleaning => 3,
+        P::Restoring => 4,
+        P::Restored => 5,
     };
     let current = read_runtime_manifest(store, root, expected)?;
     if published_count < current.published_count || rank(phase) < rank(current.phase) {
@@ -355,7 +358,9 @@ pub fn cleanup_runtime_transaction(
     update_runtime_progress(store, root, expected, current.targets.len(), P::Cleaning)?;
     for path in inventory.keys() {
         match fs::symlink_metadata(path) {
-            Ok(_) => store.remove(path)?,
+            Ok(_) => {
+                store.remove(path)?;
+            }
             Err(issue) if issue.kind() == std::io::ErrorKind::NotFound => {}
             Err(_) => return Err(io_error("runtime_cleanup_failed", path)),
         }
@@ -1061,14 +1066,43 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[test]
+    fn retired_unknown_operation_is_rejected_and_all_existing_bytes_are_preserved() {
+        let root = root().canonicalize().unwrap();
+        let (mut manifest, _) = runtime_case(&root);
+        manifest.operation = "command-isolation".into();
+        let directory = root.join("outputs/work/runtime/staging/example/command-isolation/old");
+        fs::create_dir_all(&directory).unwrap();
+        let raw = serde_json::to_vec(&manifest).unwrap();
+        fs::write(directory.join("transaction.json"), &raw).unwrap();
+        fs::write(
+            directory.join("profile-generation-created.json"),
+            b"unknown old evidence",
+        )
+        .unwrap();
+        assert!(manifest.validate_shape().is_err());
+        assert!(
+            prepare_runtime_transaction(&LocalFiles, &root, &manifest, &Default::default())
+                .is_err()
+        );
+        assert!(cleanup_runtime_transaction(&LocalFiles, &root, &manifest).is_err());
+        assert_eq!(fs::read(directory.join("transaction.json")).unwrap(), raw);
+        assert_eq!(
+            fs::read(directory.join("profile-generation-created.json")).unwrap(),
+            b"unknown old evidence"
+        );
+    }
+
     fn root() -> std::path::PathBuf {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "work-rust-transaction-{}-{}",
+            "work-rust-transaction-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
         root

@@ -3,12 +3,12 @@
 use serde_json::{Value, json};
 
 use crate::derivation::identity::next_record_id;
+use crate::execution::attempt::close::build_close_candidates;
 use crate::execution::attempt::{render_attempt, validate_attempt_bytes};
-use crate::execution::attempt_close::build_close_candidates;
 use crate::execution::authorization::{
     effective_task, require_record_finish_result_evidence, require_retry_evidence,
 };
-use crate::execution::command_correction::validate_command_correction;
+use crate::execution::command::correction::validate_command_correction;
 use crate::execution::deviation::validate_deviation_artifact;
 use crate::execution::index::{render_execution_index, validate_execution_index};
 use crate::execution::record_finish::build_record_finish_candidates;
@@ -305,6 +305,8 @@ pub fn execution_control_candidates(
         P::Publishing => 1,
         P::PublishedVerified => 2,
         P::Cleaning => 3,
+        P::Restoring => 4,
+        P::Restored => 5,
     };
     let mut candidates = Vec::new();
     for phase in [
@@ -1125,7 +1127,7 @@ mod tests {
     #[test]
     fn record_finish_recovery_rejects_tampered_prepared_attempt() {
         let authorization = json!({"schema":"work-attempt-authorization",
-            "task_id":"TASK-001","commands":[],"validations":[{"id":"VAL-001","acceptance_ids":["ACCEPTANCE-001"]}],
+            "task_id":"TASK-001","commands":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001"]}],
             "modifiable_files":[],"working_directories":[],"external_operations":[],
             "allowed_deviations":[],"reapproval_conditions":["scope_expansion",
                 "source_or_worktree_drift","failure_divergence","retry","recovery","unknown_result"],
@@ -1154,8 +1156,14 @@ mod tests {
         index["tasks"][0]["latest_attempt"] = json!("ATTEMPT-001");
         index["lock"] = build_execution_lock("TASK-001", "ATTEMPT-001", &"e".repeat(64));
         index["lock"]["record_id"] = json!("VAL-001");
-        let task = json!({"id":"TASK-001","traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"commands":[],"operations":[],"validations":[{"id":"VAL-001","acceptance_ids":["ACCEPTANCE-001"]}]});
-        let request = json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"Passed"}});
+        let task = json!({"id":"TASK-001","traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"commands":[],"operations":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001"]}]});
+        let request = crate::execution::verification::user_finish_fixture(
+            &attempt,
+            &task["validations"][0],
+            "VAL-001",
+            "passed",
+            "Passed",
+        );
         let prepared =
             build_record_finish_candidates(&task, &attempt, &index, "TASK-001", &request)
                 .unwrap()
@@ -1199,7 +1207,14 @@ mod tests {
             .reason_code,
             "execution_recovery_record_finish_target_mismatch"
         );
-        let failed_request = json!({"schema":"work-record-finish-request","record":{"outcome":"failed","evidence":"Failed"},"authorization_evidence":"Fresh failure authorization"});
+        let mut failed_request = crate::execution::verification::user_finish_fixture(
+            &attempt,
+            &task["validations"][0],
+            "VAL-001",
+            "failed",
+            "Failed",
+        );
+        failed_request["authorization_evidence"] = json!("Fresh failure authorization");
         let failed_candidate =
             build_record_finish_candidates(&task, &attempt, &index, "TASK-001", &failed_request)
                 .unwrap();
@@ -1232,7 +1247,13 @@ mod tests {
         retry_index["lock"]["record_id"] = json!("VAL-001#1");
         retry_index["lock"]["retry_authorization_evidence"] = json!("Fresh retry authorization");
         let retry_index_raw = render_execution_index(&retry_index).unwrap();
-        let retry_request = json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"Retry passed"}});
+        let retry_request = crate::execution::verification::user_finish_fixture(
+            &failed,
+            &task["validations"][0],
+            "VAL-001#1",
+            "passed",
+            "Retry passed",
+        );
         let retried = build_record_finish_candidates(
             &task,
             &failed,
@@ -1286,8 +1307,7 @@ mod tests {
         let index_raw = render_execution_index(&index).unwrap();
         let attempt = json!({"records":[{"id":"VAL-001"}],
             "authorization":{"authorization_evidence":"Original"}});
-        let task =
-            json!({"id":"TASK-001","commands":[],"operations":[],"validations":[{"id":"VAL-001"}]});
+        let task = json!({"id":"TASK-001","commands":[],"operations":[],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified."}]});
         let mut prepared = index.clone();
         prepared["lock"]["record_id"] = json!("VAL-001#1");
         prepared["lock"]["retry_authorization_evidence"] = json!("Approved retry");

@@ -92,6 +92,7 @@ fn group_fields(group: &str) -> (&'static [&'static str], &'static [&'static str
             &[
                 "command_keys",
                 "pass_condition",
+                "verification",
                 "confirmer",
                 "criteria",
                 "acceptance_ids",
@@ -286,6 +287,16 @@ pub fn validate_semantic_candidate(value: &Value, refined: bool) -> Result<(), T
                 }
             }
             if group == "validations" {
+                if let Some(condition) = row.get("verification") {
+                    if row["kind"] != "automated" {
+                        return Err(issue(
+                            "validation_verification_invalid",
+                            "Only automated validations have verification conditions.",
+                            json!({}),
+                        ));
+                    }
+                    super::verification::validate(condition, &row["command_keys"])?;
+                }
                 if let Some(command_keys) = row.get("command_keys") {
                     if command_keys.as_array().is_none_or(Vec::is_empty) {
                         return Err(issue(
@@ -442,6 +453,12 @@ pub fn build_semantic_candidate(
                     row.insert("references".into(), Value::Array(references));
                 }
                 "validations" => {
+                    if let Some(condition) = row.get("verification") {
+                        let condition = super::verification::map_commands(condition, |key| {
+                            lookup("commands", key).map(|id| json!(id))
+                        })?;
+                        row.insert("verification".into(), condition);
+                    }
                     if let Some(commands) = row.remove("command_keys") {
                         let ids = commands
                             .as_array()
@@ -708,6 +725,12 @@ pub fn build_semantic_patch(
                     formal.insert("references".into(), Value::Array(resolved));
                 }
                 "validations" => {
+                    if let Some(condition) = formal.get("verification") {
+                        let condition = super::verification::map_commands(condition, |key| {
+                            lookup("commands", key).map(|id| json!(id))
+                        })?;
+                        formal.insert("verification".into(), condition);
+                    }
                     if let Some(commands) = formal.remove("command_keys") {
                         let ids = commands
                             .as_array()
@@ -802,7 +825,8 @@ mod tests {
             {"key":"old","existing_position":1,"mode":"argv","argv":["tool","old"]},
             {"key":"rerun","mode":"argv","argv":["tool","new"]}],
             "validations":[{"key":"verify","kind":"automated","command_keys":["rerun"],
-                "pass_condition":"Exit zero","acceptance_ids":["ACCEPTANCE-001"]}]});
+                "pass_condition":"Exit zero","acceptance_ids":["ACCEPTANCE-001"],
+                "verification":{"kind":"exit_code","command":"rerun","equals":0}}]});
         let built = build_semantic_patch(
             &current,
             &replacements,
@@ -815,6 +839,10 @@ mod tests {
         assert_eq!(built["commands"][1]["id"], "CMD-002");
         assert_eq!(built["validations"][0]["id"], "VAL-002");
         assert_eq!(built["validations"][0]["command_ids"], json!(["CMD-002"]));
+        assert_eq!(
+            built["validations"][0]["verification"]["command"],
+            "CMD-002"
+        );
         assert_eq!(
             built["validations"][0]["acceptance_ids"],
             json!(["ACCEPTANCE-001"])
@@ -907,6 +935,20 @@ mod tests {
         assert_eq!(
             crate::canonical::sha256_hex(&crate::canonical::canonical_json(&formal).unwrap()),
             "0c5d6dd7197651b224ab6b1c363e659c95d24ca8151020a9117af0af06631ee9"
+        );
+        let mut modern = candidate.clone();
+        modern["validations"][0]["verification"] =
+            json!({"kind":"exit_code","command":"check","equals":0});
+        let modern = build_semantic_candidate(
+            &modern,
+            &["ACCEPTANCE-001".into()],
+            &["TASK-001".into()],
+            &files,
+        )
+        .unwrap();
+        assert_eq!(
+            modern["validations"][0]["verification"]["command"],
+            "CMD-001"
         );
         let local = json!({
             "acceptance_ids":[],"acceptance_criteria":[{"id":"TASK-001-ACCEPTANCE-001","criterion":"Verified."}],

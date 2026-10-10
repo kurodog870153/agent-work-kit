@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn public_hierarchy_examples_match_models() {
-        let registry: Value = crate::contract_data::registry_value();
+        let registry: Value = crate::contract::data::registry_value();
         let items = &registry["items"];
         assert!(
             serde_json::from_value::<Hierarchy>(

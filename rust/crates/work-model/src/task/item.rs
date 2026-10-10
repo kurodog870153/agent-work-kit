@@ -130,9 +130,18 @@ pub enum TaskValidation {
         command_ids: Vec<String>,
         pass_condition: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        verification: Option<super::verification::VerificationCondition>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         acceptance_ids: Option<Vec<String>>,
     },
     Manual {
+        id: String,
+        confirmer: String,
+        criteria: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        acceptance_ids: Option<Vec<String>>,
+    },
+    AiReview {
         id: String,
         confirmer: String,
         criteria: String,

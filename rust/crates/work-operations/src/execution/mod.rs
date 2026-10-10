@@ -1,4 +1,7 @@
 //! Pure execution identity, sequencing, and state transitions.
+pub mod attempt;
+pub mod command;
+pub mod file_transaction;
 
 use std::collections::{HashMap, HashSet};
 
@@ -225,6 +228,9 @@ pub fn record_begin_candidate(
     candidate["lock"]["record_id"] = json!(record_id);
     if let Some(evidence) = authorization_evidence {
         candidate["lock"]["retry_authorization_evidence"] = json!(evidence);
+    } else if record_id.contains('#') && authorization::scope::known_retry(attempt, &record_id)? {
+        candidate["lock"]["retry_authorization_evidence"] =
+            attempt["authorization"]["authorization_evidence"].clone();
     }
     Ok((candidate, record_id, kind))
 }
@@ -478,6 +484,34 @@ pub fn validate_authorization_scope(
             "The authorization must target the selected TASK.",
             json!({}),
         ));
+    }
+    if let Some(scope) = authorization::scope::from_authorization(manifest)? {
+        for file in task["files"].as_array().into_iter().flatten() {
+            let modification = match file["action"].as_str() {
+                Some("create") => work_model::execution::attempt::ScopeModification::Create,
+                Some("modify") => work_model::execution::attempt::ScopeModification::Modify,
+                Some("move") => work_model::execution::attempt::ScopeModification::Move,
+                _ => {
+                    return Err(issue(
+                        "attempt_authorization_scope_expansion",
+                        "Unsupported modification type.",
+                        json!({}),
+                    ));
+                }
+            };
+            if !scope.modification_types.contains(&modification)
+                || ["path", "source", "destination"]
+                    .iter()
+                    .filter_map(|key| file[*key].as_str())
+                    .any(|path| !authorization::scope::contains_path(&scope, path))
+            {
+                return Err(issue(
+                    "attempt_authorization_scope_expansion",
+                    "Task files exceed the fixed authorization boundary.",
+                    json!({}),
+                ));
+            }
+        }
     }
     for (field, formal_field, external_only) in [
         ("commands", "commands", false),
@@ -812,58 +846,73 @@ pub fn finish_attempt_candidate(
     Ok(candidate)
 }
 
+pub fn start_index_with_attempt(
+    index: &Value,
+    task_id: &str,
+    attempt_id: &str,
+    attempt: &Value,
+) -> Result<Value, ExecutionIssue> {
+    let started = start_index(index, task_id, attempt_id)?;
+    acceptance::update_index_attempt(&started, attempt)
+}
+
 pub fn validate_completed_coverage(task: &Value, attempt: &Value) -> Result<(), ExecutionIssue> {
-    let mut outcomes: HashMap<&str, &str> = HashMap::new();
-    for carried in attempt["carried_records"].as_array().into_iter().flatten() {
-        if let Some(base) = carried["record_id"]
-            .as_str()
-            .map(|id| id.split('#').next().unwrap_or(id))
-            .filter(|id| id.starts_with("VAL-"))
-        {
-            outcomes.insert(base, "passed");
-        }
-    }
-    for record in attempt["records"].as_array().into_iter().flatten() {
-        if record["kind"] == "validation" {
-            if let Some(base) = record["id"]
-                .as_str()
-                .map(|id| id.split('#').next().unwrap_or(id))
+    let effective = authorization::effective_task(task, attempt)?;
+    let task = &effective;
+    let mut missing = Vec::new();
+    let mut failed = Vec::new();
+    for validation in task["validations"].as_array().into_iter().flatten() {
+        let id = validation["id"].as_str().unwrap_or("");
+        let direct = attempt["records"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .rev()
+            .find(|r| {
+                r["kind"] == "validation"
+                    && r["id"]
+                        .as_str()
+                        .is_some_and(|r| r.split('#').next() == Some(id))
+            });
+        if let Some(record) = direct {
+            if record["status"] == "skipped"
+                || record["outcome"] != "passed"
+                || verification::validate_record_provenance(validation, attempt, record).is_err()
             {
-                outcomes.insert(
-                    base,
-                    if record["status"] == "skipped" {
-                        "skipped"
-                    } else {
-                        record["outcome"].as_str().unwrap_or("")
-                    },
-                );
+                failed.push(id);
+            }
+        } else {
+            let carried = attempt["carried_records"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|r| {
+                    r["record_id"]
+                        .as_str()
+                        .is_some_and(|r| r.split('#').next() == Some(id))
+                })
+                .max_by_key(|r| {
+                    r["record_id"]
+                        .as_str()
+                        .and_then(|r| r.split_once('#'))
+                        .and_then(|(_, n)| n.parse::<u64>().ok())
+                        .unwrap_or(0)
+                });
+            match carried {
+                None => missing.push(id),
+                Some(record)
+                    if verification::validate_carried_validation_evidence(
+                        validation, attempt, record,
+                    )
+                    .is_ok() => {}
+                Some(_) => failed.push(id),
             }
         }
     }
-    let required: Vec<_> = task["validations"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|row| row["id"].as_str())
-        .collect();
-    let missing: Vec<_> = required
-        .iter()
-        .filter(|id| !outcomes.contains_key(**id))
-        .copied()
-        .collect();
-    let failed: Vec<_> = required
-        .iter()
-        .filter(|id| {
-            outcomes
-                .get(**id)
-                .is_some_and(|outcome| !matches!(*outcome, "passed" | "skipped"))
-        })
-        .copied()
-        .collect();
     if !missing.is_empty() || !failed.is_empty() {
         return Err(issue(
             "attempt_close_incomplete_validations",
-            "A completed Attempt requires every formal validation to pass or have approved skipped evidence.",
+            "A completed Attempt requires every necessary validation to pass with its declared evidence source.",
             json!({"missing":missing,"failed":failed}),
         ));
     }
@@ -894,6 +943,18 @@ pub fn validate_deviation_action(
     task: &Value,
     record_kind: &str,
 ) -> Result<(), ExecutionIssue> {
+    if proposal["action"]["kind"] == "add_files" {
+        if proposal["anchor_record_id"] != task["id"]
+            || proposal["task_basis"] != json!([task["id"]])
+        {
+            return Err(issue(
+                "deviation_action_anchor",
+                "A file-only adjustment belongs to the idle Task.",
+                json!({}),
+            ));
+        }
+        return Ok(());
+    }
     let formal_ids: HashSet<_> = [
         "steps",
         "commands",
@@ -1211,37 +1272,64 @@ mod tests {
 
     #[test]
     fn completed_validation_coverage_follows_task_order_and_current_retry() {
-        let task = json!({"validations":[{"id":"VAL-001"},{"id":"VAL-002"},{"id":"VAL-003"}]});
-        let passed = json!({"records":[
-            {"id":"VAL-001","kind":"validation","outcome":"passed"},
-            {"id":"VAL-002","kind":"validation","outcome":"passed"},
-            {"id":"VAL-003","kind":"validation","outcome":"passed"}]});
+        let validation =
+            |id: &str| json!({"id":id,"kind":"manual","confirmer":"user","criteria":"Verified"});
+        let task = json!({"validations":[validation("VAL-001"),validation("VAL-002"),validation("VAL-003")]});
+        let mut passed = json!({"task_id":"TASK-001","attempt_id":"ATTEMPT-001","records":[]});
+        passed["records"] = json!(
+            (1..=3)
+                .map(|n| {
+                    let id = format!("VAL-{n:03}");
+                    verification::user_record_fixture(
+                        &passed,
+                        &validation(&id),
+                        &id,
+                        "passed",
+                        "Actual user statement",
+                    )
+                })
+                .collect::<Vec<_>>()
+        );
         validate_completed_coverage(&task, &passed).unwrap();
-        let incomplete = json!({"records":[
-            {"id":"VAL-001","kind":"validation","outcome":"failed"},
-            {"id":"VAL-003","kind":"validation","outcome":"passed"}]});
+        let mut incomplete = passed.clone();
+        incomplete["records"] = json!([
+            verification::user_record_fixture(
+                &passed,
+                &validation("VAL-001"),
+                "VAL-001",
+                "failed",
+                "Actual rejection"
+            ),
+            passed["records"][2]
+        ]);
         let error = validate_completed_coverage(&task, &incomplete).unwrap_err();
         assert_eq!(error.reason_code, "attempt_close_incomplete_validations");
-        assert_eq!(
-            error.message,
-            "A completed Attempt requires every formal validation to pass or have approved skipped evidence."
-        );
         assert_eq!(error.details["missing"], json!(["VAL-002"]));
         assert_eq!(error.details["failed"], json!(["VAL-001"]));
-        let one = json!({"validations":[{"id":"VAL-001"}]});
-        validate_completed_coverage(
-            &one,
-            &json!({"carried_records":[{"record_id":"VAL-001"}],"records":[]}),
-        )
-        .unwrap();
-        validate_completed_coverage(
-            &one,
-            &json!({"records":[{"id":"VAL-001","kind":"validation","status":"skipped",
-                "reason":"Not applicable.","deviation_id":"DEVIATION-001"}]}),
-        )
-        .unwrap();
-        let retry = json!({"carried_records":[{"record_id":"VAL-001"}],
-            "records":[{"id":"VAL-001#2","kind":"validation","outcome":"failed"}]});
+        let one = json!({"validations":[validation("VAL-001")]});
+        for unsupported in [
+            json!({"carried_records":[{"record_id":"VAL-001"}],"records":[]}),
+            json!({"records":[{"id":"VAL-001","kind":"validation","status":"skipped","reason":"Not applicable.","deviation_id":"DEVIATION-001"}]}),
+            json!({"records":[{"id":"VAL-001","kind":"validation","outcome":"passed","evidence":"Unsubstantiated label"}]}),
+        ] {
+            assert_eq!(
+                validate_completed_coverage(&one, &unsupported)
+                    .unwrap_err()
+                    .details["failed"],
+                json!(["VAL-001"])
+            );
+        }
+        let mut retry = passed.clone();
+        retry["records"]
+            .as_array_mut()
+            .unwrap()
+            .push(verification::user_record_fixture(
+                &passed,
+                &validation("VAL-001"),
+                "VAL-001#1",
+                "failed",
+                "Latest actual rejection",
+            ));
         let error = validate_completed_coverage(&one, &retry).unwrap_err();
         assert_eq!(error.details["missing"], json!([]));
         assert_eq!(error.details["failed"], json!(["VAL-001"]));
@@ -1391,13 +1479,7 @@ mod tests {
 }
 
 pub mod acceptance;
-pub mod attempt;
-pub mod attempt_close;
-pub mod attempt_prepare;
-pub mod attempt_start;
 pub mod authorization;
-pub mod command_correction;
-pub mod command_run;
 pub mod correction;
 pub mod deviation;
 pub mod index;
@@ -1405,4 +1487,5 @@ pub mod preflight;
 pub mod record_finish;
 pub mod recovery;
 pub mod requests;
+pub mod verification;
 pub mod worktree;

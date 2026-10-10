@@ -52,7 +52,7 @@
     },
     "routing_status": "VALID",
     "schema": "work-instruction-selection-manifest",
-    "selection_sha256": "cfd72e0d25dbee7b47d0deba7709e2e95c1cec9a11672ee03e5858bca561a884",
+    "selection_sha256": "23a1c9b87b7a2b9aef89235ff9f06455460304d3d7af9c742308a166b59bc148",
     "sources": [
       {
         "canonical_sha256": "816283719f5864d235cd41c91a3164342535288dbb66edbf603f3e1073f79649",
@@ -95,7 +95,7 @@
         "path": "references/workflows/execute.md"
       },
       {
-        "canonical_sha256": "0b8483d02d30a56b12257a620ac346c249400655f7a1cb83803e773200259750",
+        "canonical_sha256": "bf8898275cdb4d72495b2680b8da02ecaa85f9f5078916449525761497318961",
         "logical_name": "work.workflow.execute.apply-one-attempt-authorization-boundary",
         "path": "references/workflows/execute/apply-one-attempt-authorization-boundary.md"
       },
@@ -116,7 +116,7 @@
       }
     ]
   },
-  "selection_sha256": "cfd72e0d25dbee7b47d0deba7709e2e95c1cec9a11672ee03e5858bca561a884",
+  "selection_sha256": "23a1c9b87b7a2b9aef89235ff9f06455460304d3d7af9c742308a166b59bc148",
   "semantic_input_contract": null,
   "source_order": [
     "work.instruction-loading",

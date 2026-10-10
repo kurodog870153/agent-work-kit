@@ -27,11 +27,50 @@ pub enum ReapprovalCondition {
     UnknownResult,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScopeModification {
+    Create,
+    Modify,
+    Move,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScopeAdjustment {
+    CommandAdjustment,
+    ValidationAdjustment,
+    AdditionalFiles,
+    Retry,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScopeAuthorization {
+    pub project_root: String,
+    pub requirement_id: String,
+    pub goal: String,
+    pub module_paths: Vec<String>,
+    pub modification_types: Vec<ScopeModification>,
+    pub risk_boundary: String,
+    pub validation_scope: Vec<String>,
+    pub task_ids: Vec<String>,
+    pub adjustments: Vec<ScopeAdjustment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exact_files: Option<Vec<String>>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    pub revoked_reason: Nullable<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollback_on_write_failure: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttemptAuthorization {
     pub schema: PublicSchema,
     pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<ScopeAuthorization>,
     pub commands: Vec<AuthorizationScopeEntry>,
     pub validations: Vec<AuthorizationScopeEntry>,
     pub modifiable_files: Vec<String>,
@@ -74,6 +113,18 @@ pub struct CarriedRecord {
     pub source_attempt_id: String,
     pub record_id: String,
     pub evidence: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_evidence: Option<Box<CarriedValidationEvidence>>,
+}
+
+/// Producer-owned provenance of an existing VAL; this does not create a new record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CarriedValidationEvidence {
+    pub source_attempt_sha256: String,
+    pub owner_attempt_id: String,
+    pub owner_attempt_sha256: String,
+    pub record: ValidationRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +137,8 @@ pub enum BareCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommandCorrection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impact: Option<super::deviation::DeviationImpact>,
     pub original_command: BareCommand,
     pub actual_command: BareCommand,
     pub reason: String,
@@ -124,6 +177,8 @@ pub struct CommandRecord {
     pub exit_code: i64,
     pub result: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_evidence: Option<Box<super::command::capture::CommandExecutionEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correction: Option<CommandCorrection>,
 }
 
@@ -154,10 +209,19 @@ pub enum ValidationOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ValidationRecord {
+    pub source: super::acceptance::ValidationEvidenceSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_evidence: Option<super::acceptance::AiReviewEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmation_evidence: Option<super::acceptance::UserConfirmationEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_version: Option<String>,
     pub id: String,
     pub kind: RecordKind,
     pub outcome: ValidationOutcome,
     pub evidence: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_evidence: Option<super::command::capture::ValidationExecutionEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
