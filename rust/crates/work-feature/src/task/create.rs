@@ -432,7 +432,7 @@ mod tests {
         let raw = serde_json::to_vec(&json!({
             "schema":"work-task-collection-projection",
             "requirement_id":"example","spec_id":null,"status":null,"title":null,
-            "summary":null,"artifacts":{"source":"outputs/work/sources/example","task":"outputs/work/tasks/example/index.json","execution":"outputs/work/executions/example"},"source":{"kind":"snapshot","manifest":work_model::contract_data::registry_value()["items"]["work-source-snapshot"]["description"]["example"]},"hierarchy_selection":null,"skill_selection":null,"acceptance_criteria":null,
+            "summary":null,"artifacts":{"source":"outputs/work/sources/example","task":"outputs/work/tasks/example/index.json","execution":"outputs/work/executions/example"},"source":{"kind":"snapshot","manifest":work_model::contract::data::registry_value()["items"]["work-source-snapshot"]["description"]["example"]},"hierarchy_selection":null,"skill_selection":null,"acceptance_criteria":null,
             "instruction_selection":null,"tasks":null,"readiness":null
         }))
         .unwrap();

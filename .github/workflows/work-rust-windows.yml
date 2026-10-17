@@ -7,14 +7,22 @@ on:
 
 jobs:
   rust-windows:
+    name: rust-windows (${{ matrix.target }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - x86_64-pc-windows-gnu
     env:
       RUSTUP_TOOLCHAIN: 1.85.0
+      WORK_RUST_TARGET: ${{ matrix.target }}
     defaults:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         env:
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: core.autocrlf
@@ -44,15 +52,30 @@ jobs:
               throw "Checkout changed batch line endings for ${path}: $entry"
             }
           }
-      - name: Install Rust 1.85 components
+      - name: Set up Rust 1.85 toolchain
         run: |
           rustup toolchain install 1.85.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup component add clippy rustfmt --toolchain 1.85.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add $env:WORK_RUST_TARGET --toolchain 1.85.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:WORK_RUST_TARGET -eq 'x86_64-pc-windows-gnu') {
+            $gcc = (Get-Command gcc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+            $machine = & $gcc -dumpmachine
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($machine.Trim() -ne 'x86_64-w64-mingw32') {
+              throw "Expected a Windows x86_64 MinGW linker, found ${machine}: $gcc"
+            }
+            "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gcc" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Split-Path -Parent $gcc | Out-File -FilePath $env:GITHUB_PATH -Append
+            & $gcc --version
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Record runner environment
         run: |
           "Runner: $env:RUNNER_OS / $env:RUNNER_ARCH" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "Rust target: $env:WORK_RUST_TARGET" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $commit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "Checkout commit: $commit" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -63,12 +86,12 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Check all Rust targets
-        run: cargo check --workspace --all-targets --locked
+        run: cargo check --workspace --all-targets --locked --target $env:WORK_RUST_TARGET
       - name: Check Rust lints
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked --target $env:WORK_RUST_TARGET -- -D warnings
       - name: Test Rust workspace
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --target $env:WORK_RUST_TARGET
       - name: Build Work release binary
-        run: cargo build --release --locked -p work-cli
+        run: cargo build --release --locked -p work-cli --target $env:WORK_RUST_TARGET
       - name: Smoke test Rust binary
-        run: .\target\release\work.exe --help
+        run: '& ".\target\$env:WORK_RUST_TARGET\release\work.exe" --help'

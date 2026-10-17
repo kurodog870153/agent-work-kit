@@ -58,7 +58,8 @@ fn manifest() -> &'static Manifest {
     static MANIFEST: OnceLock<Manifest> = OnceLock::new();
     MANIFEST.get_or_init(|| {
         let value: Manifest =
-            serde_json::from_str(include_str!("commands.json")).expect("valid command inventory");
+            serde_json::from_str(include_str!("../../resources/parser/commands.json"))
+                .expect("valid command inventory");
         assert_eq!(value.schema, "work-command-tree");
         value
     })
@@ -196,7 +197,7 @@ mod tests {
 
     #[test]
     fn command_manifest_keeps_all_current_contract_public_leaves() {
-        assert_eq!(leaves(&manifest().root), 82);
+        assert_eq!(leaves(&manifest().root), 86);
         command(&manifest().root).debug_assert();
     }
 

@@ -2,6 +2,7 @@
 
 pub mod command_publication;
 pub mod document;
+pub mod file_transaction;
 pub mod recovery;
 
 use std::collections::{HashMap, HashSet};
@@ -17,17 +18,19 @@ use work_operations::canonical::{JsonContractIssue, parse_json_contract};
 use work_operations::derivation::fingerprint;
 use work_operations::derivation::fingerprint::skill_selection as skill_selection_sha256;
 use work_operations::execution::ExecutionIssue;
-use work_operations::execution::attempt::{render_attempt, validate_attempt_bytes};
-use work_operations::execution::attempt_close::build_close_candidates;
-use work_operations::execution::attempt_prepare::{build_prepare_request, validate_prepare_choice};
-use work_operations::execution::attempt_start::{
+use work_operations::execution::attempt::close::build_close_candidates;
+use work_operations::execution::attempt::prepare::{
+    build_prepare_request, validate_prepare_choice,
+};
+use work_operations::execution::attempt::start::{
     build_attempt_candidate, validate_attempt_namespace,
 };
+use work_operations::execution::attempt::{render_attempt, validate_attempt_bytes};
 use work_operations::execution::authorization::{authorization_evidence, effective_task};
-use work_operations::execution::command_correction::{
+use work_operations::execution::command::correction::{
     build_command_correction_candidate, validate_command_correction_request,
 };
-use work_operations::execution::command_run::{
+use work_operations::execution::command::run::{
     select_reserved_argv_command, validate_command_run_request,
 };
 use work_operations::execution::correction::{build_correction_candidates, render_correction};
@@ -51,7 +54,7 @@ use work_operations::execution::requests::{
 use work_operations::execution::worktree::inspect_records;
 use work_operations::execution::{
     build_execution_lock, deviation_reconciliation_target, formal_record_kind,
-    record_begin_candidate, start_index, validate_authorization_scope, validate_completed_coverage,
+    record_begin_candidate, validate_authorization_scope, validate_completed_coverage,
     validate_deviation_action, validate_execution_identity, validate_preflight_identity,
 };
 pub fn validate_record_id(raw: &str) -> Result<&str, WorkError> {
@@ -67,6 +70,13 @@ pub fn validate_record_id(raw: &str) -> Result<&str, WorkError> {
 }
 
 pub trait ExecutionIndexRepository {
+    fn continuation_baseline(
+        &self,
+        _task: &Value,
+        _index: &Value,
+    ) -> Result<std::collections::BTreeMap<String, bool>, WorkError> {
+        Ok(std::collections::BTreeMap::new())
+    }
     fn read_index(&self, relative_path: &str) -> Result<Vec<u8>, WorkError>;
     fn inspect_path(&self, relative_path: &str) -> Result<FileState, WorkError>;
     fn check_execution_ready(&self, task_path: &str, execution_dir: &str) -> Result<(), WorkError>;
@@ -78,6 +88,17 @@ pub trait ExecutionIndexRepository {
 }
 
 pub trait AttemptStartRepository {
+    /// A closed Attempt's accepted requirements need an explicit reconciliation decision.
+    fn check_continuation_requirements(
+        &self,
+        _path: &str,
+        attempt: &Value,
+    ) -> Result<(), WorkError> {
+        require_reconciled_validations(attempt, &json!([]))
+    }
+    fn finalize_attempt_candidate(&self, candidate: &Value) -> Result<Value, WorkError> {
+        Ok(candidate.clone())
+    }
     fn attempt_names(&self, execution_dir: &str, task_id: &str) -> Result<Vec<String>, WorkError>;
     fn read_attempt(&self, relative_path: &str) -> Result<Vec<u8>, WorkError>;
     fn publish_attempt_start(
@@ -86,17 +107,62 @@ pub trait AttemptStartRepository {
     ) -> Result<(), WorkError>;
 }
 
+pub fn require_reconciled_validations(attempt: &Value, resolved: &Value) -> Result<(), WorkError> {
+    for deviation in attempt["execution_deviations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if deviation["decision"]["outcome"] == "approved"
+            && deviation["proposal"]["action"]["kind"] == "add_validation"
+            && !resolved
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|id| *id == deviation["deviation_id"])
+        {
+            return Err(error(
+                ExitCode::WorkflowState,
+                "attempt_start_validation_reconciliation_required",
+                "Reconcile accepted additional validations before starting another Attempt; carrying results does not settle requirements.",
+                json!({"deviation_id":deviation["deviation_id"]}),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub trait ExecutionWorktreeRepository {
     fn read_file(&self, relative_path: &str) -> Result<Vec<u8>, WorkError>;
     fn git_status(&self) -> Result<Vec<Value>, WorkError>;
 }
 
 pub trait CommandPrepareRepository {
+    fn supplemental_attempt_sources(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, Vec<u8>>, WorkError> {
+        Ok(std::collections::BTreeMap::new())
+    }
+    /// Bind executor settings to the exact receipt, replacing caller declarations.
+    fn execution_settings(
+        &self,
+        settings: &Value,
+        _receipt: &str,
+        _record: &str,
+    ) -> Result<Value, WorkError> {
+        Ok(settings.clone())
+    }
     fn check_ready(&self, execution_dir: &str, require_idle: bool) -> Result<(), WorkError>;
     fn runtime_os(&self) -> &'static str;
     fn read_source(&self, relative_path: &str) -> Result<Vec<u8>, WorkError>;
     fn working_directory(&self, relative_path: &str) -> Result<String, WorkError>;
-    fn resolve_invocation(&self, argv: &[String], cwd: &str) -> Result<Value, WorkError>;
+    fn resolve_invocation(
+        &self,
+        argv: &[String],
+        cwd: &str,
+        receipt: &str,
+        record: &str,
+    ) -> Result<Value, WorkError>;
     fn receipt_exists(&self, prefix: &str) -> Result<bool, WorkError>;
 }
 
@@ -218,7 +284,6 @@ fn prepare_command_context(
         .iter()
         .map(|value| value.as_str().expect("validated argument").to_owned())
         .collect();
-    let invocation = repository.resolve_invocation(&argv, &cwd)?;
     let receipt = {
         work_operations::derivation::publication::command_receipt_paths(
             execution_dir,
@@ -236,6 +301,16 @@ fn prepare_command_context(
         })?
         .directory
     };
+    let mut observed_settings = settings.clone();
+    observed_settings["capture"] = serde_json::to_value(
+        work_operations::execution::command::capture::policy(&effective, &selected.base_record_id)
+            .map_err(rule)?,
+    )
+    .expect("capture policy serializes");
+    let settings =
+        repository.execution_settings(&observed_settings, &receipt, &selected.base_record_id)?;
+    let invocation =
+        repository.resolve_invocation(&argv, &cwd, &receipt, &selected.base_record_id)?;
     if repository.receipt_exists(&receipt)? {
         return Err(error(
             ExitCode::WorkflowState,
@@ -271,15 +346,15 @@ fn prepare_command_context(
         source_hashes.insert(path.clone(), json!(fingerprint::raw(bytes)));
     }
 
-    work_operations::execution::command_run::build_command_preview_with_receipts(
-        work_operations::execution::command_run::CommandReceiptPreviewInput {
+    work_operations::execution::command::run::build_command_preview_with_receipts(
+        work_operations::execution::command::run::CommandReceiptPreviewInput {
             request,
             execution_dir,
             task_id,
             attempt_id: &selected.attempt_id,
             record_id: &selected.record_id,
             working_directory: &cwd,
-            execution: settings,
+            execution: &settings,
             invocation: &invocation,
             sources: &Value::Object(source_hashes),
         },
@@ -1217,6 +1292,35 @@ where
     Ok(result)
 }
 
+fn check_scope_project(
+    paths: &impl ArtifactPathRepository,
+    task_path: &str,
+    requirement: &str,
+    task_id: &str,
+    scope: Option<&Value>,
+) -> Result<(), WorkError> {
+    let Some(scope) = scope.filter(|value| !value.is_null()) else {
+        return Ok(());
+    };
+    let mut root = paths.resolve(task_path)?;
+    for _ in task_path.split('/') {
+        if !root.pop() {
+            return Err(error(
+                ExitCode::ArtifactIntegrity,
+                "execution_authorization_project_mismatch",
+                "The Task path must bind the authorized project.",
+                json!({}),
+            ));
+        }
+    }
+    work_operations::execution::authorization::scope::check_project(
+        &json!({"task_id":task_id,"scope":scope}),
+        &root.to_string_lossy(),
+        requirement,
+    )
+    .map_err(rule)
+}
+
 pub fn prepare_attempt_start_from_project<H, S, P, T, E>(
     sources: &CommandProjectSources<'_, H, S, P, T>,
     repository: &E,
@@ -1292,6 +1396,7 @@ where
         .map(|(raw, path)| {
             let value = parse_execution_document(raw, path)?;
             validate_attempt_bytes(&value, raw).map_err(rule)?;
+            repository.check_continuation_requirements(path, &value)?;
             if source_path.as_ref().is_some_and(|path| {
                 !path.ends_with(&format!(
                     "/{}/attempt.json",
@@ -1308,6 +1413,13 @@ where
             Ok::<_, WorkError>(value)
         })
         .transpose()?;
+    check_scope_project(
+        sources.paths,
+        target.task_path,
+        context.index["requirement_id"].as_str().unwrap_or(""),
+        target.task_id,
+        choice.get("scope"),
+    )?;
     let prepared = build_prepare_request(
         choice,
         task,
@@ -1391,6 +1503,13 @@ where
                 json!({}),
             )
         })?;
+    check_scope_project(
+        sources.paths,
+        target.task_path,
+        context.index["requirement_id"].as_str().unwrap_or(""),
+        target.task_id,
+        request["authorization"].get("scope"),
+    )?;
     validate_authorization_scope(
         &request["authorization"],
         formal,
@@ -1723,14 +1842,17 @@ where
     let index = parse_execution_document(&index_raw, &index_path)?;
     validate_execution_index(&index, &index_raw).map_err(rule)?;
     let lock = &index["lock"];
-    let anchor = lock["record_id"].as_str().ok_or_else(|| {
-        error(
-            ExitCode::WorkflowState,
-            "deviation_active_record",
-            "A matching reserved execution record is required.",
-            json!({}),
-        )
-    })?;
+    let anchor = lock["record_id"]
+        .as_str()
+        .or_else(|| (semantic["action"]["kind"] == "add_files").then_some(target.task_id))
+        .ok_or_else(|| {
+            error(
+                ExitCode::WorkflowState,
+                "deviation_active_record",
+                "A matching reserved execution record is required.",
+                json!({}),
+            )
+        })?;
     let attempt_id = lock["attempt_id"].as_str().unwrap_or("");
     if lock["kind"] != "execution" || lock["task_id"] != target.task_id {
         return Err(error(
@@ -1748,7 +1870,7 @@ where
     let attempt = parse_execution_document(&attempt_raw, &attempt_path)?;
     validate_attempt_bytes(&attempt, &attempt_raw).map_err(rule)?;
     let row = validate_execution_identity(
-        &context.contract,
+        &context.collection,
         &context.validation,
         &index,
         &attempt,
@@ -1792,8 +1914,9 @@ where
             }
         }
     }
-    let action =
-        formalize_semantic_action(&semantic["action"], task, &attempt, anchor).map_err(rule)?;
+    let effective = effective_task(task, &attempt).map_err(rule)?;
+    let action = formalize_semantic_action(&semantic["action"], &effective, &attempt, anchor)
+        .map_err(rule)?;
     let proposal = work_model::execution::response::verified::<
         work_model::execution::deviation::DeviationProposal,
     >(json!({"schema":"work-execution-deviation-proposal",
@@ -1903,6 +2026,9 @@ where
         &references,
     )?);
     let mut source_files = context.sources.clone();
+    if input.proposal["action"]["kind"] == "add_files" {
+        source_files.extend(repository.supplemental_attempt_sources()?);
+    }
     for path in task::source::evidence_paths(&context.contract)? {
         source_files.insert(path.clone(), repository.read_source(&path)?);
     }
@@ -2229,6 +2355,35 @@ pub struct RecordFinishPublication<'a> {
 }
 
 pub trait RecordFinishRepository {
+    fn verify_record_result(
+        &self,
+        task: &Value,
+        attempt: &Value,
+        index: &Value,
+        request: &Value,
+    ) -> Result<Value, WorkError> {
+        let effective = effective_task(task, attempt).map_err(rule)?;
+        let base = index["lock"]["record_id"]
+            .as_str()
+            .unwrap_or("")
+            .split('#')
+            .next()
+            .unwrap_or("");
+        if effective["validations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|validation| validation["id"] == base)
+        {
+            return Err(error(
+                ExitCode::WorkflowState,
+                "validation_execution_unverified",
+                "VAL requires a provider that verifies its declared evidence source.",
+                json!({}),
+            ));
+        }
+        Ok(request.clone())
+    }
     fn publish_record_finish(
         &self,
         publication: &RecordFinishPublication<'_>,
@@ -2243,6 +2398,14 @@ pub trait AttemptCloseRepository {
 }
 
 pub trait RecordBeginRepository {
+    fn validation_context(
+        &self,
+        _task: &Value,
+        _attempt: &Value,
+        _record_id: &str,
+    ) -> Result<Option<Value>, WorkError> {
+        Ok(None)
+    }
     fn publish_record_begin(
         &self,
         publication: &RecordBeginPublication<'_>,
@@ -2351,7 +2514,10 @@ fn prepare_deviation_context(
         || lock["kind"] != "execution"
         || lock["task_id"] != task_id
         || lock["attempt_id"] != attempt_id
-        || lock["record_id"] != record_id
+        || (lock["record_id"] != record_id
+            && !(proposal["action"]["kind"] == "add_files"
+                && lock["record_id"].is_null()
+                && record_id == task_id))
         || lock["execute_instructions_sha256"] != attempt["execute_instructions_sha256"]
     {
         return Err(error(
@@ -2372,9 +2538,70 @@ fn prepare_deviation_context(
             json!({}),
         ));
     }
-    let record_kind =
-        formal_record_kind(task, record_id.split('#').next().unwrap_or(record_id)).map_err(rule)?;
-    validate_deviation_action(proposal, task, record_kind).map_err(rule)?;
+    let effective = effective_task(task, attempt).map_err(rule)?;
+    let record_kind = if proposal["action"]["kind"] == "add_files" {
+        "task"
+    } else {
+        formal_record_kind(&effective, record_id.split('#').next().unwrap_or(record_id))
+            .map_err(rule)?
+    };
+    validate_deviation_action(proposal, &effective, record_kind).map_err(rule)?;
+    if proposal["action"]["kind"] == "add_files" {
+        if !lock["record_id"].is_null()
+            || !work_operations::execution::authorization::scope::permits_adjustment(
+                attempt,
+                &proposal["action"],
+                &proposal["impact"],
+                &proposal["modifiable_files"],
+            )
+            .map_err(rule)?
+        {
+            return Err(file_transaction::error(
+                "execution_authorization_scope_expansion",
+            ));
+        }
+        let mut accepted = std::collections::BTreeMap::<String, Vec<String>>::new();
+        for (path, raw) in source_files {
+            if !path.ends_with("/attempt.json") {
+                continue;
+            }
+            let saved = parse_execution_document(raw, path)?;
+            validate_attempt_bytes(&saved, raw).map_err(rule)?;
+            for deviation in saved["execution_deviations"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                if deviation["decision"]["outcome"] != "approved"
+                    || work_operations::execution::deviation_reconciliation_target(
+                        &deviation["proposal"],
+                    ) != "task_only"
+                {
+                    continue;
+                }
+                accepted
+                    .entry(saved["task_id"].as_str().unwrap_or("").into())
+                    .or_default()
+                    .extend(
+                        deviation["supplemental_authorization"]["modifiable_files"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|p| p.as_str().map(str::to_owned)),
+                    );
+            }
+        }
+        accepted.entry(task_id.into()).or_default().extend(
+            proposal["modifiable_files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p.as_str().map(str::to_owned)),
+        );
+        let effective = file_transaction::effective_scope_collection(collection, &accepted)?;
+        work_operations::task::file_dependencies::validate(&effective)
+            .map_err(|e| file_transaction::error(e.reason_code))?;
+    }
     let mut sources = std::collections::BTreeMap::new();
     for (path, raw) in source_files {
         if repository.read_source(path)? != *raw {
@@ -2387,6 +2614,11 @@ fn prepare_deviation_context(
         }
         sources.insert(path.clone(), fingerprint::raw(raw));
     }
+    work_operations::execution::deviation::validate_command_settings(
+        &proposal["action"],
+        &collection["execution_defaults"],
+    )
+    .map_err(rule)?;
     build_deviation_preview(proposal, record_kind, &sources).map_err(rule)
 }
 
@@ -2413,7 +2645,7 @@ pub fn record_deviation_from_context<R: CommandPrepareRepository + DeviationReco
         execution_dir: lifecycle.execution_dir,
         task_id: lifecycle.task_id,
         attempt_id: lifecycle.attempt["attempt_id"].as_str().unwrap_or(""),
-        record_id: lifecycle.index["lock"]["record_id"].as_str().unwrap_or(""),
+        record_id: proposal["anchor_record_id"].as_str().unwrap_or(""),
         attempt_before: lifecycle.attempt_raw,
         attempt_after: &rendered,
         sources: context.source_files,
@@ -2497,6 +2729,7 @@ pub fn begin_record_from_context(
         )
     })?;
     validate_execution_index(&candidate, &index_after).map_err(rule)?;
+    let validation_context = repository.validation_context(task, attempt, &record_id)?;
     repository.publish_record_begin(&RecordBeginPublication {
         execution_dir,
         task_id,
@@ -2506,12 +2739,15 @@ pub fn begin_record_from_context(
         attempt_before: attempt_raw,
         index_after: &index_after,
     })?;
+    let mut response = json!({"schema":"work-record-begin","task_id":task_id,
+        "attempt_id":attempt_id,"base_record_id":base_record_id,"record_id":record_id,
+        "record_kind":record_kind,"index_path":format!("{execution_dir}/index.json"),"lock_status":"record_reserved"});
+    if let Some(context) = validation_context {
+        response["validation_context"] = context;
+    }
     Ok(work_model::execution::response::verified::<
         work_model::execution::response::RecordBeginResponse,
-    >(json!({"schema":"work-record-begin","task_id":task_id,
-        "attempt_id":attempt_id,"base_record_id":base_record_id,"record_id":record_id,
-        "record_kind":record_kind,"index_path":format!("{execution_dir}/index.json"),
-        "lock_status":"record_reserved"})))
+    >(response))
 }
 
 pub fn finish_record_from_context(
@@ -2520,6 +2756,24 @@ pub fn finish_record_from_context(
     request: &Value,
 ) -> Result<Value, WorkError> {
     validate_record_finish_request(request).map_err(rule)?;
+    if request["record"].get("execution_evidence").is_some()
+        || [
+            "source",
+            "file_version",
+            "review_evidence",
+            "confirmation_evidence",
+        ]
+        .iter()
+        .any(|key| request["record"].get(*key).is_some())
+        || request["record"].get("verification_evidence").is_some()
+    {
+        return Err(error(
+            ExitCode::Contract,
+            "record_finish_machine_fields",
+            "Execution and verification evidence are derived by the trusted executor.",
+            json!({}),
+        ));
+    }
     let RecordBeginContext {
         collection,
         validation,
@@ -2572,6 +2826,8 @@ pub fn finish_record_from_context(
             json!({}),
         ));
     }
+    let verified_request = repository.verify_record_result(task, attempt, index, request)?;
+    let request = &verified_request;
     let candidates =
         build_record_finish_candidates(task, attempt, index, task_id, request).map_err(rule)?;
     work_model::execution::request::verified::<work_model::execution::request::RecordFinishRequest>(
@@ -3120,6 +3376,7 @@ pub fn start_attempt_from_preflight(
             )
         })?;
         validate_attempt_bytes(&value, &raw).map_err(rule)?;
+        repository.check_continuation_requirements(&path, &value)?;
         Some(value)
     } else {
         None
@@ -3133,6 +3390,7 @@ pub fn start_attempt_from_preflight(
         source_attempt.as_ref(),
     )
     .map_err(rule)?;
+    let attempt = repository.finalize_attempt_candidate(&attempt)?;
     let attempt_raw = render_attempt(&attempt).map_err(rule)?;
     let mut locked = index.clone();
     locked["lock"] = build_execution_lock(
@@ -3151,7 +3409,13 @@ pub fn start_attempt_from_preflight(
         )
     })?;
     validate_execution_index(&locked, &locked_raw).map_err(rule)?;
-    let started = start_index(&locked, task_id, &attempt_id).map_err(rule)?;
+    let started = work_operations::execution::start_index_with_attempt(
+        &locked,
+        task_id,
+        &attempt_id,
+        &attempt,
+    )
+    .map_err(rule)?;
     let started_raw = render_execution_index(&started).map_err(|_| {
         error(
             ExitCode::InternalError,
@@ -3269,6 +3533,7 @@ pub fn preflight_index<R: ExecutionIndexRepository>(
     validate_preflight_identity(&index, collection, validation).map_err(rule)?;
     let task = check_task_eligibility(collection, &index, task_id, allowed_lock, eligible_statuses)
         .map_err(rule)?;
+    let continued = repository.continuation_baseline(&task, &index)?;
     check_confirmed_inputs(&task, confirmed_inputs).map_err(rule)?;
     let mut present_sources = HashSet::new();
     for input in task["inputs"].as_array().into_iter().flatten() {
@@ -3296,7 +3561,11 @@ pub fn preflight_index<R: ExecutionIndexRepository>(
             _ => None,
         };
         if let Some(source) = source {
-            if repository.inspect_path(source)?.exists {
+            if continued
+                .get(source)
+                .copied()
+                .unwrap_or(repository.inspect_path(source)?.exists)
+            {
                 present_sources.insert(source.to_owned());
             }
         }
@@ -3307,7 +3576,11 @@ pub fn preflight_index<R: ExecutionIndexRepository>(
         for field in ["path", "source", "destination"] {
             if let Some(path) = file[field].as_str() {
                 if !file_state.contains_key(path) {
-                    file_state.insert(path.to_owned(), repository.inspect_path(path)?);
+                    let mut state = repository.inspect_path(path)?;
+                    if let Some(exists) = continued.get(path) {
+                        state.exists = *exists;
+                    }
+                    file_state.insert(path.to_owned(), state);
                 }
             }
         }
@@ -3677,7 +3950,13 @@ mod tests {
         fn working_directory(&self, _path: &str) -> Result<String, WorkError> {
             Ok("/project".into())
         }
-        fn resolve_invocation(&self, argv: &[String], _cwd: &str) -> Result<Value, WorkError> {
+        fn resolve_invocation(
+            &self,
+            argv: &[String],
+            _cwd: &str,
+            _receipt: &str,
+            _record: &str,
+        ) -> Result<Value, WorkError> {
             Ok(json!({"kind":"direct","executable":"/usr/bin/printf",
                 "executable_sha256":"a".repeat(64),"argv":argv}))
         }
@@ -3721,7 +4000,7 @@ mod tests {
         let task = json!({"id":"TASK-001","commands":[{"id":"CMD-001","mode":"argv",
             "argv":["printf","ok"]}],"operations":[],"validations":[],
             "instruction_selection":{"selected_paths":[],"resolved_paths":[]}});
-        let mut manifest=work_model::contract_data::registry_value()["items"]["work-source-snapshot"]["description"]["example"].clone();
+        let mut manifest=work_model::contract::data::registry_value()["items"]["work-source-snapshot"]["description"]["example"].clone();
         manifest["requirement_id"] = json!("demo");
         manifest["content"] =
             json!({"path":"source.txt","size":12,"sha256":sha256_hex(b"requirements")});
@@ -3834,6 +4113,27 @@ mod tests {
             corrected_index["lock"]["command_correction"]["actual_command"],
             replacement
         );
+        repository
+            .sources
+            .insert("execution/index.json".into(), corrected_raw.clone());
+        {
+            let corrected_context = || {
+                let mut context = make_context();
+                context.lifecycle.index = &corrected_index;
+                context.lifecycle.index_raw = corrected_raw;
+                context
+            };
+            let preview =
+                prepare_command_from_context(&repository, corrected_context(), &request).unwrap();
+            assert_eq!(
+                preview["invocation"]["argv"],
+                json!(["printf", "corrected"])
+            );
+            assert!(preview["execution"]["capture"]["report_paths"].is_array());
+        }
+        repository
+            .sources
+            .insert("execution/index.json".into(), index_raw.clone());
         repository.receipt = true;
         assert_eq!(
             prepare_command_from_context(&repository, make_context(), &request)
@@ -4448,7 +4748,7 @@ mod tests {
             )
             .unwrap_err()
             .reason_code,
-            "execute_preflight_create_target_exists"
+            "execute_preflight_file_set_conflict"
         );
     }
 

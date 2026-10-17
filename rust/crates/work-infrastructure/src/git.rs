@@ -41,7 +41,21 @@ impl LocalGit {
         } else {
             "execute_git"
         };
+        if result.status == CommandStatus::Exited && !result.stdout_complete {
+            return Err(WorkError::new(
+                ExitCode::IoFailure,
+                format!("{prefix}_incomplete"),
+                "Git output is incomplete; it cannot be used as a project baseline.",
+                json!({}),
+            ));
+        }
         match result.status {
+            CommandStatus::Interrupted | CommandStatus::Unknown => Err(WorkError::new(
+                ExitCode::IoFailure,
+                format!("{prefix}_unknown"),
+                "Git did not produce a known completed result; do not retry automatically.",
+                json!({}),
+            )),
             CommandStatus::LaunchFailed => Err(WorkError::new(
                 ExitCode::IoFailure,
                 format!("{prefix}_missing"),

@@ -153,15 +153,11 @@ impl work_feature::ports::RuntimeWriterLock for LocalWriterLock {
     ) -> Result<Self::Guard, WorkError> {
         let (root, relative) = runtime_lock_context(context, class)?;
         require_no_legacy_locks(context, None)?;
-        let inspect = || {
-            crate::files::resolve_runtime_path(&root, &relative).map_err(|error| {
-                if error.reason_code == "runtime_path_changed" {
-                    busy()
-                } else {
-                    error
-                }
-            })
-        };
+        let (parent, leaf) = relative.rsplit_once('/').expect("derived lock parent");
+        // Inspect ancestors, then acquire the leaf atomically. Inspecting an existing
+        // leaf races its owner's release (including Windows delete-pending handles).
+        // create_new refuses every existing leaf, including symbolic and hard links.
+        let inspect = || crate::files::resolve_runtime_path(&root, parent).map(|p| p.join(leaf));
         let path = inspect()?;
         std::fs::create_dir_all(path.parent().expect("derived lock parent"))
             .map_err(|_| runtime_lock_error("runtime_lock_parent_failed", &path))?;
@@ -172,7 +168,11 @@ impl work_feature::ports::RuntimeWriterLock for LocalWriterLock {
             .create_new(true)
             .open(&path)
             .map_err(|issue| {
-                if issue.kind() == std::io::ErrorKind::AlreadyExists {
+                if issue.kind() == std::io::ErrorKind::AlreadyExists
+                    || (cfg!(windows) && issue.raw_os_error() == Some(5))
+                {
+                    // Windows reports ACCESS_DENIED for a delete-pending leaf.
+                    // Refuse acquisition; never infer that an inaccessible lock is idle.
                     busy()
                 } else {
                     runtime_lock_error("runtime_lock_create_failed", &path)
@@ -326,6 +326,80 @@ mod tests {
             canonical_project_root: root.to_path_buf(),
             requirement_id: "example".parse().unwrap(),
         }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn unreadable_lock_identity_is_busy_until_its_owner_releases() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use work_feature::ports::{RuntimeWriterGuard, RuntimeWriterLock};
+        use work_model::runtime::LockClass;
+        let root = runtime_root();
+        let context = context(&root);
+        let mut guard = LocalWriterLock
+            .acquire_runtime(&context, LockClass::Source)
+            .unwrap();
+        let path = root.join("outputs/work/runtime/locks/example/source.lock");
+        let owner_raw = fs::read(&path).unwrap();
+        guard.file.take();
+        let reader = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        // Reproduce the CI failure at the old pre-acquisition identity inspection.
+        assert_eq!(
+            crate::files::resolve_runtime_path(
+                &root,
+                "outputs/work/runtime/locks/example/source.lock"
+            )
+            .unwrap_err()
+            .reason_code,
+            "runtime_file_identity_unavailable"
+        );
+        assert_eq!(
+            LocalWriterLock
+                .acquire_runtime(&context, LockClass::Source)
+                .err()
+                .unwrap()
+                .reason_code,
+            "work_state_writer_busy"
+        );
+        drop(reader);
+        assert_eq!(fs::read(&path).unwrap(), owner_raw);
+        guard.release().unwrap();
+        LocalWriterLock
+            .acquire_runtime(&context, LockClass::Source)
+            .unwrap()
+            .release()
+            .unwrap();
+    }
+
+    #[test]
+    fn acquisition_rejects_hard_linked_leaf_without_changing_its_bytes() {
+        use work_feature::ports::{RuntimeWriterGuard, RuntimeWriterLock};
+        use work_model::runtime::LockClass;
+        let root = runtime_root();
+        let context = context(&root);
+        LocalWriterLock
+            .acquire_runtime(&context, LockClass::Source)
+            .unwrap()
+            .release()
+            .unwrap();
+        let original = root.join("original");
+        fs::write(&original, b"foreign evidence").unwrap();
+        let path = root.join("outputs/work/runtime/locks/example/source.lock");
+        fs::hard_link(&original, &path).unwrap();
+        assert_eq!(
+            LocalWriterLock
+                .acquire_runtime(&context, LockClass::Source)
+                .err()
+                .unwrap()
+                .reason_code,
+            "work_state_writer_busy"
+        );
+        assert_eq!(fs::read(&original).unwrap(), b"foreign evidence");
+        assert_eq!(fs::read(&path).unwrap(), b"foreign evidence");
     }
 
     #[test]

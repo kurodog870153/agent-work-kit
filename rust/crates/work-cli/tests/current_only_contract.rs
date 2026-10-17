@@ -309,7 +309,7 @@ fn files(directory: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn registry_all_serde_and_queries_accept_only_one_current_identity() {
-    let registry = work_model::contract_data::registry();
+    let registry = work_model::contract::data::registry();
     let ids: BTreeSet<_> = registry
         .catalog
         .contracts
@@ -323,7 +323,7 @@ fn registry_all_serde_and_queries_accept_only_one_current_identity() {
     assert_eq!(ids, all);
     assert_eq!(registry.items.len(), ids.len());
     inspect_value(
-        &work_model::contract_data::registry_value(),
+        &work_model::contract::data::registry_value(),
         "registry",
         "$",
     )
@@ -360,7 +360,7 @@ fn registry_all_serde_and_queries_accept_only_one_current_identity() {
 
 fn reject_replacement<T: DeserializeOwned>(id: &str, field: &str, retired: &str) {
     let mut value =
-        work_model::contract_data::registry_value()["items"][id]["description"]["example"].clone();
+        work_model::contract::data::registry_value()["items"][id]["description"]["example"].clone();
     assert!(serde_json::from_value::<T>(value.clone()).is_ok(), "{id}");
     let contents = value.as_object_mut().unwrap().remove(field).unwrap();
     value[retired] = contents;
@@ -488,7 +488,8 @@ fn production_sources_do_not_reintroduce_old_contract_branches() {
 
 #[test]
 fn instruction_command_tree_has_no_fresh_compatibility_writers() {
-    let tree: Value = serde_json::from_str(include_str!("../src/parser/commands.json")).unwrap();
+    let tree: Value =
+        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
     let node = tree["root"]["children"]
         .as_array()
         .unwrap()
@@ -669,7 +670,7 @@ fn retired_discussion_lifecycles_have_no_public_schema_or_private_role() {
                 .iter()
                 .any(|schema| schema.as_str() == *id)
         );
-        let registry = serde_json::to_value(work_model::contract_data::registry()).unwrap();
+        let registry = serde_json::to_value(work_model::contract::data::registry()).unwrap();
         assert!(registry["items"].get(*id).is_none(), "{id}");
     }
     let storage = work_infrastructure::delegation_storage::LocalDelegationStorage {

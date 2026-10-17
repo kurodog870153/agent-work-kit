@@ -45,55 +45,22 @@ pub fn validate_task_file_state(
             .iter()
             .find(|task| task["id"] == task_id.as_str())
             .expect("ordered TASK");
-        for file in task["files"].as_array().into_iter().flatten() {
-            match file["action"].as_str() {
-                Some("create") => {
-                    let path = file["path"].as_str().expect("validated path");
-                    let identity = portable_path_identity(path);
-                    if existence.get(&identity).copied().unwrap_or(false) {
-                        return Err(issue(
-                            "file_create_target_exists",
-                            "A create target already exists.",
-                            json!({"path":path}),
-                        ));
-                    }
-                    existence.insert(identity, true);
-                }
-                Some("modify") => {
-                    let path = file["path"].as_str().expect("validated path");
-                    if !existence
-                        .get(&portable_path_identity(path))
-                        .copied()
-                        .unwrap_or(false)
-                    {
-                        return Err(issue(
-                            "file_modify_target_missing",
-                            "A modify target does not exist.",
-                            json!({"path":path}),
-                        ));
-                    }
-                }
-                Some("move") => {
-                    let source =
-                        portable_path_identity(file["source"].as_str().expect("validated source"));
-                    let destination = portable_path_identity(
-                        file["destination"].as_str().expect("validated destination"),
-                    );
-                    if !existence.get(&source).copied().unwrap_or(false)
-                        || existence.get(&destination).copied().unwrap_or(false)
-                    {
-                        return Err(issue(
-                            "invalid_file_move_state",
-                            "A file move source or destination state is invalid.",
-                            json!({}),
-                        ));
-                    }
-                    existence.insert(source, false);
-                    existence.insert(destination, true);
-                }
-                _ => {}
-            }
-        }
+        existence = super::file_state::final_state(
+            task["files"].as_array().map(Vec::as_slice).unwrap_or(&[]),
+            &existence,
+            portable_path_identity,
+        )
+        .map_err(|e| {
+            issue(
+                match e.kind {
+                    "create_target_exists" => "file_create_target_exists",
+                    "modify_target_missing" => "file_modify_target_missing",
+                    _ => "invalid_file_move_state",
+                },
+                "The complete change set does not match its initial file tree.",
+                json!({"path":e.path}),
+            )
+        })?;
     }
     Ok(())
 }

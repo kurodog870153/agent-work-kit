@@ -49,6 +49,8 @@ pub struct AllowedDeviationChoice {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttemptStartPrepareRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<super::attempt::ScopeAuthorization>,
     pub command_positions: Vec<u64>,
     pub validation_positions: Vec<u64>,
     pub modifiable_files: Vec<String>,
@@ -86,6 +88,8 @@ pub struct AttemptStartRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommandCorrectionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impact: Option<DeviationImpact>,
     pub schema: PublicSchema,
     pub actual_command: BareCommand,
     pub reason: String,
@@ -96,6 +100,12 @@ pub struct CommandCorrectionRequest {
 pub struct CommandRunRequest {
     pub schema: PublicSchema,
     pub timeout_seconds: u64,
+}
+#[cfg(test)]
+#[test]
+fn command_request_rejects_retired_bootstrap_budget() {
+    let old = serde_json::json!({"schema":"work-command-run-request","timeout_seconds":60,"startup_timeout_seconds":120});
+    assert!(serde_json::from_value::<CommandRunRequest>(old).is_err());
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,11 +132,24 @@ pub struct DeviationSemanticRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SemanticDeviationAction {
-    ReplaceCommand { replacement: SemanticCommand },
-    AddCommand { command: SemanticCommand },
-    AddValidation { validation: SemanticValidation },
-    SkipRecord { reason: String },
-    AdjustOperation { operation: SemanticOperation },
+    AddFiles {
+        modification_types: Vec<super::attempt::ScopeModification>,
+    },
+    ReplaceCommand {
+        replacement: SemanticCommand,
+    },
+    AddCommand {
+        command: SemanticCommand,
+    },
+    AddValidation {
+        validation: SemanticValidation,
+    },
+    SkipRecord {
+        reason: String,
+    },
+    AdjustOperation {
+        operation: SemanticOperation,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +188,7 @@ pub struct SemanticCommand {
 pub enum SemanticValidationKind {
     Automated,
     Manual,
+    AiReview,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +207,12 @@ pub struct SemanticValidation {
         skip_serializing_if = "Option::is_none"
     )]
     pub pass_condition: Option<Nullable<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub verification: Option<Nullable<crate::task::verification::VerificationCondition<u64>>>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_nullable",
@@ -285,6 +315,24 @@ pub enum RecordFinishOutcome {
 #[serde(deny_unknown_fields)]
 pub struct RecordFinishData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<super::attempt::SkippedStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deviation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<super::acceptance::ValidationEvidenceSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<super::acceptance::AiReviewEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmation: Option<super::acceptance::EvidenceArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_evidence: Option<super::acceptance::AiReviewEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirmation_evidence: Option<super::acceptance::UserConfirmationEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<RecordFinishOutcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
@@ -294,6 +342,10 @@ pub struct RecordFinishData {
     pub exit_code: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_evidence: Option<super::command::capture::CommandExecutionEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification_evidence: Option<super::command::capture::ValidationExecutionEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

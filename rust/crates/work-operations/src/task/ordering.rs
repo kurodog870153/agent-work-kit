@@ -180,6 +180,7 @@ pub(crate) fn fields(path: &[String], kind: TaskDocumentKind) -> &'static [&'sta
                     "kind",
                     "command_ids",
                     "pass_condition",
+                    "verification",
                     "confirmer",
                     "criteria",
                     "id",
@@ -281,6 +282,7 @@ pub(crate) fn fields(path: &[String], kind: TaskDocumentKind) -> &'static [&'sta
         "risks" => &["id", "condition", "impact", "mitigation"],
         "steps" => &["id", "action", "references"],
         "commands" => &["id", "mode", "argv", "script", "execution"],
+        "read_only_resources" => &["kind", "path"],
         "operations" => &[
             "id",
             "kind",
@@ -294,6 +296,7 @@ pub(crate) fn fields(path: &[String], kind: TaskDocumentKind) -> &'static [&'sta
             "kind",
             "command_ids",
             "pass_condition",
+            "verification",
             "confirmer",
             "criteria",
             "acceptance_ids",

@@ -224,71 +224,42 @@ pub fn check_file_lifecycle(
     task: &Value,
     state: &HashMap<String, FileState>,
 ) -> Result<Value, ExecutionIssue> {
-    let mut existence: HashMap<&str, bool> = HashMap::new();
+    let mut existence = std::collections::BTreeMap::new();
     for entry in state.values() {
-        *existence.entry(entry.identity.as_str()).or_default() |= entry.exists;
+        *existence.entry(entry.identity.clone()).or_default() |= entry.exists;
     }
-    let mut readiness = Vec::new();
-    for file in task["files"].as_array().into_iter().flatten() {
-        let action = file["action"].as_str().unwrap_or("");
-        let mut row = json!({"id":file["id"],"action":action,"status":"ready"});
-        if matches!(action, "create" | "modify") {
-            let path = file["path"].as_str().unwrap_or("");
-            let identity = state
-                .get(path)
-                .map(|entry| entry.identity.as_str())
-                .unwrap_or("");
-            let present = *existence.get(identity).unwrap_or(&false);
-            if action == "create" && present {
-                return Err(issue(
-                    "execute_preflight_create_target_exists",
-                    "A create target already exists.",
-                    json!({"file_id":file["id"],"path":path}),
-                ));
+    let files = task["files"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    crate::task::file_state::final_state(files, &existence, |path| {
+        state
+            .get(path)
+            .map(|s| s.identity.clone())
+            .unwrap_or_else(|| path.to_owned())
+    })
+    .map_err(|e| {
+        issue(
+            match e.kind {
+                "create_target_exists" => "execute_preflight_create_target_exists",
+                "modify_target_missing" => "execute_preflight_modify_target_missing",
+                "move_source_missing" => "execute_preflight_move_source_missing",
+                "move_destination_exists" => "execute_preflight_move_destination_exists",
+                _ => "execute_preflight_file_set_conflict",
+            },
+            "The complete change set does not match its initial file tree.",
+            json!({"path":e.path}),
+        )
+    })?;
+    let readiness: Vec<_> = files
+        .iter()
+        .map(|file| {
+            let mut row = json!({"id":file["id"],"action":file["action"],"status":"ready"});
+            for key in ["path", "source", "destination"] {
+                if let Some(value) = file.get(key) {
+                    row[key] = value.clone();
+                }
             }
-            if action == "modify" && !present {
-                return Err(issue(
-                    "execute_preflight_modify_target_missing",
-                    "A modify target does not exist.",
-                    json!({"file_id":file["id"],"path":path}),
-                ));
-            }
-            if action == "create" {
-                existence.insert(identity, true);
-            }
-            row["path"] = json!(path);
-        } else if action == "move" {
-            let source = file["source"].as_str().unwrap_or("");
-            let destination = file["destination"].as_str().unwrap_or("");
-            let source_id = state
-                .get(source)
-                .map(|entry| entry.identity.as_str())
-                .unwrap_or("");
-            let destination_id = state
-                .get(destination)
-                .map(|entry| entry.identity.as_str())
-                .unwrap_or("");
-            if !existence.get(source_id).copied().unwrap_or(false) {
-                return Err(issue(
-                    "execute_preflight_move_source_missing",
-                    "A move source does not exist.",
-                    json!({"file_id":file["id"],"path":source}),
-                ));
-            }
-            if existence.get(destination_id).copied().unwrap_or(false) {
-                return Err(issue(
-                    "execute_preflight_move_destination_exists",
-                    "A move destination already exists.",
-                    json!({"file_id":file["id"],"path":destination}),
-                ));
-            }
-            existence.insert(source_id, false);
-            existence.insert(destination_id, true);
-            row["source"] = json!(source);
-            row["destination"] = json!(destination);
-        }
-        readiness.push(row);
-    }
+            row
+        })
+        .collect();
     Ok(json!(readiness))
 }
 
@@ -340,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn input_and_file_lifecycle_follow_formal_order() {
+    fn inputs_resolve_but_file_changes_cannot_depend_on_intermediate_state() {
         let collection = json!({"tasks":[{"id":"TASK-001","files":[{"id":"FILE-001","action":"create","path":"out.txt"}]},
             {"id":"TASK-002","inputs":[{"id":"INPUT-001","kind":"task_output","source":"TASK-001/FILE-001"}],
             "files":[{"id":"FILE-001","action":"create","path":"new.txt"},{"id":"FILE-002","action":"move","source":"new.txt","destination":"done.txt"}]}]});
@@ -372,8 +343,8 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            check_file_lifecycle(task, &states).unwrap()[1]["destination"],
-            "done.txt"
+            check_file_lifecycle(task, &states).unwrap_err().reason_code,
+            "execute_preflight_move_source_missing"
         );
     }
 }

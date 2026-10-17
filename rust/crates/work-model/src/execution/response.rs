@@ -209,7 +209,57 @@ pub struct LegacyCommandResult {
 pub type CommandPreview = PreparedCommandPreview;
 pub type CommandResult = PreparedCommandResult;
 
-/// Prepared receipt-directory shape; not registered or returned by current producers.
+/// Current receipt-directory preview, bound to the observed invocation.
+/// Observed invocation bounds include launch, execution and bounded capture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandTiming {
+    pub started_at: String,
+    pub finished_at: String,
+    pub elapsed_ms: u64,
+}
+
+/// Observed runtime metadata. This records inheritance, not a sandbox attestation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InheritedHostEnvironment {
+    pub mode: HostExecutionMode,
+    pub os: String,
+    pub architecture: String,
+    pub work_version: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HostExecutionMode {
+    Inherited,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CommandInputState {
+    File { sha256: String },
+    Directory,
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandExecutionSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_files: Option<BTreeMap<String, CommandInputState>>,
+    pub os: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<InheritedHostEnvironment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture: Option<super::command::capture::CommandCapturePolicy>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedCommandPreview {
@@ -220,7 +270,7 @@ pub struct PreparedCommandPreview {
     pub record_id: String,
     pub working_directory: String,
     /// Execution environment entries are supplied by the selected command.
-    pub execution: BTreeMap<String, Value>,
+    pub execution: CommandExecutionSettings,
     pub invocation: CommandInvocation,
     pub receipt_dir: String,
     pub sources: BTreeMap<String, String>,
@@ -245,6 +295,14 @@ pub struct PreparedCommandResult {
     pub stdout_truncated: bool,
     pub stderr_tail: String,
     pub stderr_truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captures: Option<super::command::capture::CommandCapturedEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<CommandTiming>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_nullable",
@@ -410,7 +468,7 @@ pub struct ExecuteWorktree {
 pub struct DeviationPreview {
     pub schema: PublicSchema,
     pub proposal: DeviationProposal,
-    pub record_kind: super::attempt::RecordKind,
+    pub record_kind: super::deviation::DeviationRecordKind,
     pub action_validation: String,
     pub semantic_review: String,
     pub classification: DeviationClassification,
@@ -521,6 +579,8 @@ pub struct ExecutionRecoveryResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RecordBeginResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_context: Option<super::acceptance::ValidationContext>,
     pub schema: PublicSchema,
     pub task_id: String,
     pub attempt_id: String,
@@ -552,7 +612,7 @@ mod receipt_candidate_tests {
 
     #[test]
     fn prepared_recovery_response_binds_directory_and_isolates_legacy_shape() {
-        let registry = crate::contract_data::registry_value();
+        let registry = crate::contract::data::registry_value();
         let mut legacy =
             registry["items"]["work-execution-recovery-prepare"]["description"]["example"].clone();
         let request = legacy["request"].as_object_mut().unwrap();

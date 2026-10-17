@@ -98,6 +98,7 @@ pub fn validate(
             if crate::task::item::numbered(&evidence.attempt_id, "ATTEMPT").is_none()
                 || crate::task::item::numbered(&evidence.validation_id, "VAL").is_none()
                 || evidence.evidence.trim().is_empty()
+                || !crate::protocol::valid_sha256(&evidence.file_version)
                 || !seen.insert((
                     evidence.task_id.clone(),
                     evidence.attempt_id.clone(),
@@ -136,23 +137,60 @@ pub fn validate(
                     "Acceptance evidence must match the current Task and instruction binding.",
                 ));
             }
+            if evidence.source_attempt_id.as_ref().is_some_and(|source| {
+                crate::task::item::numbered(source, "ATTEMPT").is_none()
+                    || source >= &evidence.attempt_id
+            }) {
+                return Err(issue(
+                    "acceptance_evidence_binding_mismatch",
+                    "Carried evidence must identify an earlier actual VAL owner.",
+                ));
+            }
         }
     }
     Ok(())
 }
 
 pub fn require_recorded_evidence(attempt: &Value) -> Result<(), ExecutionIssue> {
+    let authorization = super::authorization::effective_authorization(attempt)?;
     for progress in attempt["acceptance_results"]
         .as_array()
         .expect("validated progress")
     {
         for evidence in progress["evidence"].as_array().expect("validated evidence") {
-            let record = attempt["records"]
+            let direct = attempt["records"]
                 .as_array()
                 .expect("validated records")
                 .iter()
                 .find(|row| row["id"] == evidence["record_id"]);
-            let validation = attempt["authorization"]["validations"]
+            let carried = attempt["carried_records"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|row| {
+                    row["record_id"] == evidence["record_id"]
+                        && row["validation_evidence"]["owner_attempt_id"]
+                            == evidence["source_attempt_id"]
+                });
+            let record = if evidence.get("source_attempt_id").is_some() {
+                let row = carried.ok_or_else(|| {
+                    issue(
+                        "acceptance_evidence_not_recorded",
+                        "Carried acceptance requires exact producer-owned source provenance.",
+                    )
+                })?;
+                super::verification::validate_carried_evidence_shape(attempt, row)?;
+                if direct.is_some() {
+                    return Err(issue(
+                        "acceptance_evidence_not_recorded",
+                        "A direct record replaces carried evidence.",
+                    ));
+                }
+                row["validation_evidence"].get("record")
+            } else {
+                direct
+            };
+            let validation = authorization["validations"]
                 .as_array()
                 .expect("validated authorization")
                 .iter()
@@ -162,6 +200,8 @@ pub fn require_recorded_evidence(attempt: &Value) -> Result<(), ExecutionIssue> 
                     || row["status"] == "skipped"
                     || row["outcome"] != evidence["outcome"]
                     || row["evidence"] != evidence["evidence"]
+                    || row["source"] != evidence["source"]
+                    || row["file_version"] != evidence["file_version"]
             }) || validation.is_none_or(|row| {
                 !row["acceptance_ids"]
                     .as_array()
@@ -224,6 +264,9 @@ pub fn require_collection(index: &Value, collection: &Value) -> Result<(), Execu
 
 /// Derive progress from the latest actual result of every VAL covering each criterion.
 pub fn aggregate_attempt(task: &Value, attempt: &Value) -> Result<Value, ExecutionIssue> {
+    let effective = super::authorization::effective_task(task, attempt)?;
+    let task = &effective;
+    let authorization = super::authorization::effective_authorization(attempt)?;
     super::attempt::render_attempt(attempt)?;
     if task["id"] != attempt["task_id"] {
         return Err(issue(
@@ -257,17 +300,17 @@ pub fn aggregate_attempt(task: &Value, attempt: &Value) -> Result<Value, Executi
             let id = validation["id"]
                 .as_str()
                 .ok_or_else(|| issue("invalid_acceptance_evidence", "VAL identity is required."))?;
-            let authorized = attempt["authorization"]["validations"]
+            let authorized = authorization["validations"]
                 .as_array()
-                .expect("validated authorization")
-                .iter()
+                .into_iter()
+                .flatten()
                 .any(|row| {
                     row["id"] == id
                         && row["acceptance_ids"]
                             .as_array()
                             .is_some_and(|ids| ids.contains(&progress["id"]))
                 });
-            let record = attempt["records"]
+            let direct = attempt["records"]
                 .as_array()
                 .expect("validated records")
                 .iter()
@@ -278,6 +321,28 @@ pub fn aggregate_attempt(task: &Value, attempt: &Value) -> Result<Value, Executi
                             .as_str()
                             .is_some_and(|record| record.split('#').next() == Some(id))
                 });
+            let carried = if direct.is_none() && validation["kind"] == "automated" {
+                attempt["carried_records"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|row| {
+                        row["record_id"]
+                            .as_str()
+                            .is_some_and(|record| record.split('#').next() == Some(id))
+                    })
+                    .max_by_key(|row| {
+                        row["record_id"]
+                            .as_str()
+                            .and_then(|record| record.split_once('#'))
+                            .and_then(|(_, retry)| retry.parse::<u64>().ok())
+                            .unwrap_or(0)
+                    })
+            } else {
+                None
+            };
+            let record =
+                direct.or_else(|| carried.and_then(|row| row["validation_evidence"].get("record")));
             if !authorized
                 || record.is_none_or(|row| row["status"] == "skipped" || row["outcome"] != "passed")
             {
@@ -285,7 +350,24 @@ pub fn aggregate_attempt(task: &Value, attempt: &Value) -> Result<Value, Executi
                 continue;
             }
             let record = record.expect("passed actual record");
-            evidence.push(json!({"task_id":attempt["task_id"],"attempt_id":attempt["attempt_id"],"validation_id":id,"record_id":record["id"],"outcome":record["outcome"],"evidence":record["evidence"],"task_item_sha256":attempt["task_item_sha256"],"task_instructions_sha256":attempt["task_instructions_sha256"]}));
+            let provenance_valid = if let Some(carried) = carried {
+                super::verification::validate_carried_validation_evidence(
+                    validation, attempt, carried,
+                )
+                .is_ok()
+            } else {
+                super::verification::validate_record_provenance(validation, attempt, record).is_ok()
+            };
+            if !provenance_valid {
+                passed = false;
+                continue;
+            }
+            let mut actual = json!({"task_id":attempt["task_id"],"attempt_id":attempt["attempt_id"],"validation_id":id,"record_id":record["id"],"outcome":record["outcome"],"evidence":record["evidence"],"source":record["source"],"file_version":record["file_version"],"task_item_sha256":attempt["task_item_sha256"],"task_instructions_sha256":attempt["task_instructions_sha256"]});
+            if let Some(carried) = carried {
+                actual["source_attempt_id"] =
+                    carried["validation_evidence"]["owner_attempt_id"].clone();
+            }
+            evidence.push(actual);
         }
         progress["status"] = json!(if passed { "completed" } else { "pending" });
         progress["evidence"] = json!(evidence);
@@ -493,10 +575,13 @@ pub(crate) fn field_order(path: &[String]) -> Option<&'static [&'static str]> {
         Some(&[
             "task_id",
             "attempt_id",
+            "source_attempt_id",
             "validation_id",
             "record_id",
             "outcome",
             "evidence",
+            "source",
+            "file_version",
             "task_item_sha256",
             "task_instructions_sha256",
         ])
@@ -527,7 +612,7 @@ mod tests {
                 .reason_code,
             "acceptance_without_passed_evidence"
         );
-        value[0]["evidence"] = json!([{"task_id":"TASK-001","attempt_id":"ATTEMPT-001","validation_id":"VAL-001","record_id":"VAL-001","outcome":"passed","evidence":"Verified actual result.","task_item_sha256":"a".repeat(64),"task_instructions_sha256":"b".repeat(64)}]);
+        value[0]["evidence"] = json!([{"task_id":"TASK-001","attempt_id":"ATTEMPT-001","validation_id":"VAL-001","record_id":"VAL-001","outcome":"passed","source":"user_confirmation","file_version":"a".repeat(64),"evidence":"Verified actual result.","task_item_sha256":"a".repeat(64),"task_instructions_sha256":"b".repeat(64)}]);
         validate(&value, &bindings, Some("ATTEMPT-001"), Some("TASK-001")).unwrap();
         for field in ["task_item_sha256", "task_instructions_sha256"] {
             let mut drift = value.clone();
@@ -566,7 +651,7 @@ mod tests {
     }
     #[test]
     fn shared_and_owned_acceptance_require_all_actual_latest_validations() {
-        let registry = work_model::contract_data::registry_value();
+        let registry = work_model::contract::data::registry_value();
         let mut index = registry["items"]["work-execution-index"]["description"]["example"].clone();
         index["acceptance_results"] = pending(["ACCEPTANCE-001".into()]);
         index["overall_status"] = json!("in_progress");
@@ -575,7 +660,7 @@ mod tests {
         let mut attempts = BTreeMap::new();
         for id in ["TASK-001", "TASK-002"] {
             let own = format!("{id}-ACCEPTANCE-001");
-            let task = json!({"id":id,"traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"acceptance_criteria":[{"id":own}],"validations":[{"id":"VAL-001","acceptance_ids":["ACCEPTANCE-001",own]},{"id":"VAL-002","acceptance_ids":["ACCEPTANCE-001"]}]});
+            let task = json!({"id":id,"traceability":{"acceptance_ids":["ACCEPTANCE-001"]},"acceptance_criteria":[{"id":own}],"validations":[{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001",own]},{"id":"VAL-002","kind":"manual","confirmer":"user","criteria":"Verified.","acceptance_ids":["ACCEPTANCE-001"]}]});
             let mut attempt = registry["items"]["work-attempt"]["description"]["example"].clone();
             attempt["task_id"] = json!(id);
             attempt["authorization"]["task_id"] = json!(id);
@@ -585,7 +670,20 @@ mod tests {
             attempt["task_collection_sha256"] = index["task_collection_sha256"].clone();
             attempt["task_index_sha256"] = index["task_index_sha256"].clone();
             attempt["acceptance_results"] = pending(task_ids(&task));
-            attempt["records"] = json!([{"id":"VAL-001","kind":"validation","outcome":"passed","evidence":"Verified."},{"id":"VAL-002","kind":"validation","outcome":"passed","evidence":"Verified."}]);
+            attempt["records"] = json!(
+                (1..=2)
+                    .map(|n| {
+                        let id = format!("VAL-{n:03}");
+                        super::super::verification::user_record_fixture(
+                            &attempt,
+                            &attempt["authorization"]["validations"][n - 1],
+                            &id,
+                            "passed",
+                            "Verified.",
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            );
             let mut row = index["tasks"][0].clone();
             row["id"] = json!(id);
             row["status"] = json!("in_progress");
@@ -645,7 +743,7 @@ mod tests {
             complete["tasks"][0]["acceptance_results"]
         );
         assert_eq!(invalidate(&complete, &[]).unwrap(), complete);
-        let (closed, closed_index) = super::super::attempt_close::build_close_candidates(
+        let (closed, closed_index) = super::super::attempt::close::build_close_candidates(
             &collection["tasks"][1],
             &complete,
             &attempts["TASK-002"],
@@ -655,7 +753,7 @@ mod tests {
         .unwrap();
         assert_eq!(closed["acceptance_results"][0]["status"], "completed");
         assert_eq!(closed_index["acceptance_results"][0]["status"], "completed");
-        let (stopped, stopped_index) = super::super::attempt_close::build_close_candidates(&collection["tasks"][1], &complete, &attempts["TASK-002"], &json!({"schema":"work-attempt-close-request","status":"stopped","final_type":"validation_failed","reason":"Failed verification.","authorization_evidence":"Approved stop."}), "2026-10-04T12:00+08:00").unwrap();
+        let (stopped, stopped_index) = super::super::attempt::close::build_close_candidates(&collection["tasks"][1], &complete, &attempts["TASK-002"], &json!({"schema":"work-attempt-close-request","status":"stopped","final_type":"validation_failed","reason":"Failed verification.","authorization_evidence":"Approved stop."}), "2026-10-04T12:00+08:00").unwrap();
         assert_eq!(stopped["acceptance_results"][0]["status"], "pending");
         assert_eq!(stopped_index["acceptance_results"][0]["status"], "pending");
         let mut logical = collection.clone();
@@ -708,7 +806,17 @@ mod tests {
             "completed"
         );
         let mut retry = attempts.clone();
-        retry.get_mut("TASK-002").unwrap()["records"].as_array_mut().unwrap().push(json!({"id":"VAL-001#1","kind":"validation","outcome":"failed","evidence":"Latest verification failed."}));
+        let rejected = super::super::verification::user_record_fixture(
+            &retry["TASK-002"],
+            &retry["TASK-002"]["authorization"]["validations"][0],
+            "VAL-001#1",
+            "failed",
+            "Latest verification failed.",
+        );
+        retry.get_mut("TASK-002").unwrap()["records"]
+            .as_array_mut()
+            .unwrap()
+            .push(rejected);
         let failed = aggregate_collection(&collection, &index, &retry).unwrap();
         assert_eq!(failed["acceptance_results"][0]["status"], "pending");
         assert_eq!(
@@ -720,7 +828,17 @@ mod tests {
             "completed"
         );
         assert!(aggregate_collection(&collection, &index, &BTreeMap::new()).unwrap()["acceptance_results"][0]["evidence"].as_array().unwrap().is_empty());
-        retry.get_mut("TASK-002").unwrap()["records"].as_array_mut().unwrap().push(json!({"id":"VAL-001#2","kind":"validation","outcome":"passed","evidence":"Latest retry verified."}));
+        let repaired_record = super::super::verification::user_record_fixture(
+            &retry["TASK-002"],
+            &retry["TASK-002"]["authorization"]["validations"][0],
+            "VAL-001#2",
+            "passed",
+            "Latest retry verified.",
+        );
+        retry.get_mut("TASK-002").unwrap()["records"]
+            .as_array_mut()
+            .unwrap()
+            .push(repaired_record);
         let repaired = aggregate_collection(&collection, &index, &retry).unwrap();
         assert_eq!(repaired["acceptance_results"][0]["status"], "completed");
         assert!(

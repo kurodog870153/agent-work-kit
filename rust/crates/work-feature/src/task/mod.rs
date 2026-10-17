@@ -200,7 +200,10 @@ where
         &cached,
         skill_roots,
         index_path,
-        true,
+        // Current execution may already have created or moved files. Initial collection
+        // lifecycle belongs to formalization; Execute preflight checks this Task's current
+        // lifecycle, and ongoing publication/closure checks preserved transaction evidence.
+        false,
     )?;
     let index_raw = cached.read_task_file(index_path)?;
     if fingerprint::raw(&index_raw) != validated["task_index_sha256"] {
@@ -707,6 +710,7 @@ where
         serde_json::to_value(semantic_projection(typed_index, items, input.index_path))
             .expect("TASK projection serializes");
     let semantics = validate_task_semantics(&projection).map_err(domain)?;
+    work_operations::task::file_dependencies::validate(&projection).map_err(domain)?;
     if policy.file_state {
         let mut existence = BTreeMap::new();
         for task in projection["tasks"].as_array().expect("validated TASKs") {

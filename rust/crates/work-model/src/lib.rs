@@ -2,7 +2,6 @@
 
 pub mod common;
 pub mod contract;
-pub mod contract_data;
 pub mod delegation;
 pub mod discussion;
 pub mod execution;
@@ -33,7 +32,7 @@ mod remaining_contract_examples {
 
     #[test]
     fn public_remaining_examples_match_models() {
-        let registry: Value = crate::contract_data::registry_value();
+        let registry: Value = crate::contract::data::registry_value();
         let items = &registry["items"];
         matches::<delegation::DelegationBuildRequest>(items, "work-delegation-build-request");
         matches::<delegation::DelegationEnvelope>(items, "work-delegation-envelope");

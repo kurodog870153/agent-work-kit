@@ -7,14 +7,14 @@ use std::path::Path;
 use serde_json::{Value, json};
 use work_feature::error::{ExitCode, WorkError};
 use work_feature::ports::ArtifactStore;
-use work_feature::specification::reconciliation_input::unique_execution_source;
-use work_feature::specification::reconciliation_project::{
+use work_feature::specification::reconciliation::input::unique_execution_source;
+use work_feature::specification::reconciliation::project::{
     ReconciliationArtifactRepository, preview_from_repository,
 };
-use work_feature::specification::reconciliation_publication::{
+use work_feature::specification::reconciliation::publication::{
     ledger_transaction_with_history, require_approved_preview,
 };
-use work_feature::specification::reconciliation_semantic::{
+use work_feature::specification::reconciliation::semantic::{
     ReconciliationSemanticRepository, prepare_semantic_selection,
 };
 use work_operations::derivation::fingerprint;
@@ -22,8 +22,8 @@ use work_operations::specification::reconciliation_ledger::render_ledger;
 
 use crate::files::LocalFiles;
 use crate::skill_catalog::SkillRootConfig;
+use crate::specification::migration::publication::publish_migration_scoped;
 use crate::specification::migration::{prepare_revision_request, preview_migration};
-use crate::specification::migration_publication::publish_migration_scoped;
 #[cfg(test)]
 use crate::specification::storage::write_journal;
 use crate::specification::storage::{require_no_spec_update, storage_path};
@@ -31,6 +31,93 @@ use crate::writer_lock::LocalWriterLock;
 
 fn fail(reason: &str, message: &str) -> WorkError {
     WorkError::new(ExitCode::ArtifactIntegrity, reason, message, json!({}))
+}
+
+/// Only a completed publication may settle requirements from an immutable closed Attempt.
+pub(crate) fn check_continuation_requirements(
+    root: &Path,
+    path: &str,
+    attempt: &Value,
+) -> Result<(), WorkError> {
+    if work_feature::execution::require_reconciled_validations(attempt, &json!([])).is_ok() {
+        return Ok(());
+    }
+    let execution = path
+        .rsplit_once("/TASK-")
+        .ok_or_else(|| {
+            fail(
+                "reconciliation_attempt_identity",
+                "The Attempt path is invalid.",
+            )
+        })?
+        .0;
+    let ledger_path = path
+        .strip_suffix("attempt.json")
+        .ok_or_else(|| {
+            fail(
+                "reconciliation_attempt_identity",
+                "The Attempt path is invalid.",
+            )
+        })?
+        .to_owned()
+        + "reconciliation.json";
+    let target = storage_path(root, &ledger_path)?;
+    if !target.exists() {
+        return work_feature::execution::require_reconciled_validations(attempt, &json!([]));
+    }
+    let raw = LocalFiles.read_raw(&target)?;
+    let ledger = work_operations::canonical::parse_json_contract(&raw).map_err(|_| {
+        fail(
+            "reconciliation_ledger",
+            "The reconciliation ledger is invalid.",
+        )
+    })?;
+    work_operations::specification::reconciliation_ledger::validate_ledger(&ledger)
+        .map_err(|message| fail("reconciliation_ledger", message))?;
+    let attempt_sha = fingerprint::raw(&LocalFiles.read_raw(&storage_path(root, path)?)?);
+    if ledger["attempt_path"] != path
+        || ledger["entries"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|entry| entry["attempt_sha256"] != attempt_sha)
+    {
+        return Err(fail(
+            "reconciliation_ledger",
+            "The ledger does not bind the closed Attempt.",
+        ));
+    }
+    let mut published = false;
+    for relative in crate::specification::storage::retained_journal_paths(root, execution)? {
+        let evidence =
+            crate::specification::storage::read_retained_journal(root, execution, &relative)?;
+        if evidence.completion
+            != work_operations::specification::transaction::CompletionState::Completed
+        {
+            continue;
+        }
+        for file in evidence.contract["files"].as_array().into_iter().flatten() {
+            if file["path"] == ledger_path
+                && work_operations::derivation::snapshot::decode_snapshot(&file["after"])
+                    .is_ok_and(|bytes| bytes == raw)
+            {
+                published = true;
+            }
+        }
+    }
+    if !published {
+        return Err(fail(
+            "reconciliation_ledger",
+            "A completed reviewed publication must bind the ledger.",
+        ));
+    }
+    let resolved = ledger["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|entry| entry["deviation_id"].clone())
+        .collect::<Vec<_>>();
+    work_feature::execution::require_reconciled_validations(attempt, &json!(resolved))
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +137,7 @@ pub fn reconcile_with_runtime(
     approved_sha256: &str,
     action: RuntimeReconciliationAction,
 ) -> Result<Value, WorkError> {
-    work_feature::specification::reconciliation_input::validate_preview_fields(request)?;
+    work_feature::specification::reconciliation::input::validate_preview_fields(request)?;
     let attempt = request["attempt_path"].as_str().ok_or_else(|| {
         fail(
             "reconciliation_attempt_identity",
@@ -483,7 +570,7 @@ fn recover_ledger_only_scoped(
     approved_sha256: &str,
     runtime_owner: Option<&work_model::runtime::RuntimeOwner>,
 ) -> Result<Value, WorkError> {
-    work_feature::specification::reconciliation_input::validate_preview_fields(request)?;
+    work_feature::specification::reconciliation::input::validate_preview_fields(request)?;
     if request["choice"] != "retain_only" {
         return Err(fail(
             "reconciliation_migration_required",
@@ -790,7 +877,7 @@ fn recover_with_migration_scoped(
     approved_sha256: &str,
     runtime_owner: Option<&work_model::runtime::RuntimeOwner>,
 ) -> Result<Value, WorkError> {
-    work_feature::specification::reconciliation_input::validate_preview_fields(request)?;
+    work_feature::specification::reconciliation::input::validate_preview_fields(request)?;
     if request["migration"].is_null() || !work_operations::protocol::valid_sha256(approved_sha256) {
         return Err(fail(
             "reconciliation_migration_required",
@@ -909,7 +996,7 @@ fn recover_with_migration_scoped(
                     "The migration approval is missing.",
                 )
             })?;
-        let paths = work_feature::specification::migration_publication::publication_paths(
+        let paths = work_feature::specification::migration::publication::publication_paths(
             &request["migration"],
             migration_approval,
         )?;
@@ -1020,7 +1107,7 @@ mod tests {
     use super::*;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use work_feature::specification::reconciliation_input::validate_preview_fields;
+    use work_feature::specification::reconciliation::input::validate_preview_fields;
 
     fn fixture_publication(mut value: Value) -> Value {
         {
@@ -1226,7 +1313,8 @@ mod tests {
         .unwrap();
         let prepared = prepare_from_semantic(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &semantic,
             "2026-09-26",
@@ -1238,8 +1326,14 @@ mod tests {
         .unwrap();
         assert_eq!(prepared["request"], prepared_request);
         assert_eq!(prepared["preview"], expected);
-        let preview =
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &request).unwrap();
+        let preview = preview_from_project(
+            &root,
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
+            &[],
+            &request,
+        )
+        .unwrap();
         assert_eq!(preview, expected);
         let index_path = root.join("outputs/work/executions/example/index.json");
         let index_raw = fs::read(&index_path).unwrap();
@@ -1253,7 +1347,8 @@ mod tests {
         assert_eq!(
             prepare_from_semantic(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &semantic,
                 "2026-09-26",
@@ -1263,9 +1358,15 @@ mod tests {
             "reconciliation_attempt_position"
         );
         assert_eq!(
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &request)
-                .unwrap_err()
-                .reason_code,
+            preview_from_project(
+                &root,
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
+                &[],
+                &request
+            )
+            .unwrap_err()
+            .reason_code,
             "reconciliation_attempt_not_latest"
         );
         fs::write(&index_path, index_raw).unwrap();
@@ -1275,7 +1376,8 @@ mod tests {
         assert_eq!(
             prepare_from_semantic(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &semantic,
                 "2026-09-26",
@@ -1287,8 +1389,14 @@ mod tests {
         fs::remove_file(duplicate).unwrap();
         let mut invalid = request.clone();
         invalid["deviation_ids"] = json!(["DEVIATION-001"]);
-        let error =
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &invalid).unwrap_err();
+        let error = preview_from_project(
+            &root,
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
+            &[],
+            &invalid,
+        )
+        .unwrap_err();
         assert_eq!(error.exit_code, ExitCode::Contract);
         assert_eq!(error.reason_code, "invalid_contract_value");
         assert_eq!(error.details["location"], "contract");
@@ -1304,7 +1412,10 @@ mod tests {
             assert!(
                 reconcile_with_runtime(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     expected["fingerprint"].as_str().unwrap(),
@@ -1316,7 +1427,10 @@ mod tests {
             assert!(
                 reconcile_with_runtime(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     &"0".repeat(64),
@@ -1330,7 +1444,8 @@ mod tests {
         }
         let published = reconcile_with_runtime(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &request,
             expected["fingerprint"].as_str().unwrap(),
@@ -1393,17 +1508,29 @@ mod tests {
         }
         let ledger_path = root.join(published["ledger_path"].as_str().unwrap());
         assert_eq!(
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &request)
-                .unwrap_err()
-                .reason_code,
+            preview_from_project(
+                &root,
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
+                &[],
+                &request
+            )
+            .unwrap_err()
+            .reason_code,
             "reconciliation_nothing_pending"
         );
         let mut corrupted: Value =
             serde_json::from_slice(&fs::read(&ledger_path).unwrap()).unwrap();
         corrupted["entries"][0]["attempt_sha256"] = json!("invalid");
         fs::write(&ledger_path, serde_json::to_vec(&corrupted).unwrap()).unwrap();
-        let error =
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &request).unwrap_err();
+        let error = preview_from_project(
+            &root,
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
+            &[],
+            &request,
+        )
+        .unwrap_err();
         assert_eq!(error.exit_code, ExitCode::Contract);
         assert_eq!(error.reason_code, "invalid_contract_value");
         assert_eq!(error.details["location"], "entries[0].attempt_sha256");
@@ -1439,7 +1566,8 @@ mod tests {
         }
         let prepared = prepare_from_semantic(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &semantic,
             "2026-09-26",
@@ -1459,7 +1587,8 @@ mod tests {
         assert_eq!(
             prepare_from_semantic(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &omitted_defaults,
                 "2026-09-26"
@@ -1471,7 +1600,8 @@ mod tests {
         invalid["deviation_positions"] = json!([2, 1]);
         let error = prepare_from_semantic(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &invalid,
             "2026-09-26",
@@ -1486,7 +1616,8 @@ mod tests {
         assert_eq!(
             prepare_from_semantic(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &invalid,
                 "2026-09-26"
@@ -1507,7 +1638,8 @@ mod tests {
             invalid[field] = value;
             let error = prepare_from_semantic(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &invalid,
                 "2026-09-26",
@@ -1520,7 +1652,8 @@ mod tests {
         invalid.as_object_mut().unwrap().remove("task_position");
         let error = prepare_from_semantic(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &invalid,
             "2026-09-26",
@@ -1535,7 +1668,8 @@ mod tests {
         fs::copy(fixture.join(index_relative), missing_index).unwrap();
         let error = prepare_from_semantic(
             &missing_root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &semantic,
             "2026-09-26",
@@ -1576,15 +1710,22 @@ mod tests {
         fs::copy(fixture.join(attempt), destination).unwrap();
         let attempt_before = fs::read(root.join(attempt)).unwrap();
         fs::write(root.join("src.txt"), b"source\n").unwrap();
-        let actual =
-            preview_from_project(&root, &repo.join("../skills/work"), &[], &request).unwrap();
+        let actual = preview_from_project(
+            &root,
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
+            &[],
+            &request,
+        )
+        .unwrap();
         let semantic: Value = serde_json::from_slice(
             &fs::read(fixture.join("../input/semantic-request.json")).unwrap(),
         )
         .unwrap();
         let prepared = prepare_from_semantic(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &semantic,
             "2026-09-26",
@@ -1639,7 +1780,8 @@ mod tests {
         );
         let published = reconcile_with_runtime(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &request,
             expected["fingerprint"].as_str().unwrap(),
@@ -1722,7 +1864,8 @@ mod tests {
         fs::write(root.join(ledger_path), &ledger_raw).unwrap();
         let recovered = reconcile_with_runtime(
             &root,
-            &repo.join("../skills/work"),
+            &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                .unwrap(),
             &[],
             &request,
             expected["fingerprint"].as_str().unwrap(),
@@ -1799,7 +1942,10 @@ mod tests {
             assert_eq!(
                 recover_with_migration(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     approval
@@ -1814,7 +1960,8 @@ mod tests {
             fs::write(root.join(attempt_path), &attempt_raw).unwrap();
             let recovered = recover_with_migration(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &request,
                 approval,
@@ -1831,7 +1978,10 @@ mod tests {
             assert_eq!(
                 recover_with_migration(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     approval
@@ -1900,7 +2050,10 @@ mod tests {
             assert_eq!(
                 reconcile_with_runtime(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     approved,
@@ -1916,7 +2069,8 @@ mod tests {
             fs::write(root.join(attempt_path), &attempt_raw).unwrap();
             let recovered = reconcile_with_runtime(
                 &root,
-                &repo.join("../skills/work"),
+                &crate::fixture_support::historical_task_skill_root(&repo.join("../skills/work"))
+                    .unwrap(),
                 &[],
                 &request,
                 approved,
@@ -1931,7 +2085,10 @@ mod tests {
             assert_eq!(
                 reconcile_with_runtime(
                     &root,
-                    &repo.join("../skills/work"),
+                    &crate::fixture_support::historical_task_skill_root(
+                        &repo.join("../skills/work")
+                    )
+                    .unwrap(),
                     &[],
                     &request,
                     approved,

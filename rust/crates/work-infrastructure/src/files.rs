@@ -271,7 +271,7 @@ pub fn resolve_project_path(root: &Path, raw: &str) -> Result<(String, PathBuf),
     Ok((normalized, candidate))
 }
 
-/// Strict candidate validation shared by the new runtime families, not yet a producer switch.
+/// Resolve a canonical runtime path without traversing file aliases.
 pub fn resolve_runtime_path(root: &Path, relative: &str) -> Result<PathBuf, WorkError> {
     if !work_operations::derivation::identity::runtime_relative_path(relative) {
         return Err(error(
@@ -300,16 +300,20 @@ pub fn resolve_runtime_path(root: &Path, relative: &str) -> Result<PathBuf, Work
         }
         match fs::symlink_metadata(&candidate) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink()
-                    || runtime_reparse(&metadata)
-                    || runtime_hardlink(&candidate, &metadata)?
-                {
-                    return Err(error(
+                let symlink = metadata.file_type().is_symlink();
+                let reparse = runtime_reparse(&metadata);
+                let hardlink = runtime_hardlink(&candidate, &metadata)?;
+                if symlink || reparse || hardlink {
+                    let mut issue = error(
                         ExitCode::ArtifactIntegrity,
                         "runtime_path_alias",
                         "Runtime paths cannot traverse links, reparse points or file aliases.",
                         &candidate,
-                    ));
+                    );
+                    issue.details["symlink"] = json!(symlink);
+                    issue.details["reparse_point"] = json!(reparse);
+                    issue.details["multiple_links"] = json!(hardlink);
+                    return Err(issue);
                 }
                 if index + 1 < parts.len() && !metadata.is_dir() {
                     return Err(error(
@@ -489,7 +493,7 @@ pub fn require_runtime_same_filesystem(staging: &Path, target: &Path) -> Result<
 }
 
 #[cfg(windows)]
-mod windows_runtime_metadata {
+pub(crate) mod windows_runtime_metadata {
     use super::*;
     use std::os::windows::{ffi::OsStrExt, fs::OpenOptionsExt, io::AsRawHandle};
     #[repr(C)]
@@ -550,13 +554,32 @@ mod windows_runtime_metadata {
             .read(true)
             .custom_flags(0x00200000)
             .open(path)?;
+        Ok(descriptor_attributes_and_links(&file)?.1 > 1)
+    }
+    pub(crate) fn descriptor_attributes_and_links(file: &File) -> std::io::Result<(u32, u32)> {
+        let information = descriptor_information(file)?;
+        Ok((information.attributes, information.links))
+    }
+
+    pub(crate) fn descriptor_identity(file: &File) -> std::io::Result<[u32; 5]> {
+        let information = descriptor_information(file)?;
+        Ok([
+            information.serial,
+            information.index_high,
+            information.index_low,
+            information.creation[0],
+            information.creation[1],
+        ])
+    }
+    fn descriptor_information(file: &File) -> std::io::Result<FileInformation> {
         let mut information = std::mem::MaybeUninit::<FileInformation>::uninit();
         // SAFETY: The handle remains open, and success initializes the complete documented C structure.
         unsafe {
             if GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) == 0 {
                 return Err(std::io::Error::last_os_error());
             }
-            Ok(information.assume_init().links > 1)
+            let information = information.assume_init();
+            Ok(information)
         }
     }
 }
@@ -628,10 +651,11 @@ mod tests {
         let alias = directory.join("alias.json");
         fs::hard_link(&original, &alias).unwrap();
         for path in ["中文 空白/original.json", "中文 空白/alias.json"] {
-            assert_eq!(
-                resolve_runtime_path(&root, path).unwrap_err().reason_code,
-                "runtime_path_alias"
-            );
+            let issue = resolve_runtime_path(&root, path).unwrap_err();
+            assert_eq!(issue.reason_code, "runtime_path_alias");
+            assert_eq!(issue.details["multiple_links"], true);
+            assert_eq!(issue.details["symlink"], false);
+            assert_eq!(issue.details["reparse_point"], false);
         }
         assert_eq!(fs::read(original).unwrap(), b"original");
         assert!(!root.join("outputs").exists());

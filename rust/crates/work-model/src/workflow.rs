@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn public_workflow_example_matches_model() {
-        let registry: Value = crate::contract_data::registry_value();
+        let registry: Value = crate::contract::data::registry_value();
         let example = &registry["items"]["work-workflow-state"]["description"]["example"];
         serde_json::from_value::<WorkflowState>(example.clone()).unwrap();
     }

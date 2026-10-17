@@ -152,16 +152,30 @@ pub enum CommandStatus {
     Exited,
     TimedOut,
     LaunchFailed,
+    Interrupted,
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+pub struct CommandOutputCapture {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub stdout_complete: bool,
+    pub stderr_complete: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct CommandOutcome {
+    pub diagnostic: Option<serde_json::Value>,
+    pub timing: Option<work_model::execution::response::CommandTiming>,
     pub status: CommandStatus,
     pub exit_code: Option<i32>,
     pub stdout_tail: String,
     pub stdout_truncated: bool,
     pub stderr_tail: String,
     pub stderr_truncated: bool,
+    pub signal: Option<i32>,
+    pub complete_output: Option<CommandOutputCapture>,
 }
 
 pub trait CommandRunner {
@@ -366,12 +380,16 @@ mod tests {
     impl CommandRunner for FakeCommand {
         fn run(&self, _request: &CommandRequest) -> CommandOutcome {
             CommandOutcome {
+                diagnostic: None,
+                timing: None,
                 status: CommandStatus::Exited,
                 exit_code: Some(0),
                 stdout_tail: "ok".into(),
                 stdout_truncated: false,
                 stderr_tail: String::new(),
                 stderr_truncated: false,
+                signal: None,
+                complete_output: None,
             }
         }
     }

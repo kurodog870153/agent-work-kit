@@ -86,6 +86,7 @@ fn installed_executable() -> &'static PathBuf {
             &PathBuf::from(project_root()).join("skills/work/references"),
             &skill.join("references"),
         );
+        work_infrastructure::fixture_support::restore_historical_task_instructions(&skill).unwrap();
         binary
     })
 }
@@ -97,6 +98,713 @@ fn run(arguments: &[String]) -> Output {
         .expect("launch work")
 }
 
+#[test]
+fn retired_private_bootstrap_is_an_ordinary_unknown_cli_argument() {
+    let result = run(&["--work-seatbelt-bootstrap".into()]);
+    assert!(!result.status.success());
+    assert!(!String::from_utf8_lossy(&result.stdout).contains("work-command-result"));
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance() {
+    use work_infrastructure::fixture_support::{
+        build_initial_execution_index, raw_sha256, render_execution_index, render_task_index,
+        render_task_item,
+    };
+    for (report_passed, continuation, carry_validation, expected_exit) in [
+        (true, false, false, 0),
+        (false, false, false, 0),
+        (true, true, false, 0),
+        (true, true, true, 0),
+        (true, true, true, 7),
+    ] {
+        let root = std::env::temp_dir().join(format!(
+            "work-native-command-{}-{}-{expected_exit}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let fixture = PathBuf::from(project_root())
+            .join("rust/crates/work-infrastructure/fixtures/shared/task-diagnostics-project");
+        let task_path = "outputs/work/tasks/example/index.json";
+        let execution_dir = "outputs/work/executions/example";
+        work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
+        let item_path = root.join("outputs/work/tasks/example/tasks/TASK-001.json");
+        fs::create_dir_all(item_path.parent().unwrap()).unwrap();
+        let mut item: Value = serde_json::from_slice(
+            &fs::read(fixture.join("outputs/work/tasks/example/tasks/TASK-001.json")).unwrap(),
+        )
+        .unwrap();
+        let mut index: Value =
+            serde_json::from_slice(&fs::read(fixture.join(task_path)).unwrap()).unwrap();
+        item.as_object_mut().unwrap().remove("files");
+        item["steps"].as_array_mut().unwrap().remove(0);
+        item["steps"][0]["id"] = json!("STEP-001");
+        item["goal"] =
+            json!("Run the actual command from the current project and verify its report.");
+
+        item["validations"][0] = json!({"id":"VAL-001","kind":"automated","command_ids":["CMD-001"],
+            "pass_condition":"Actual exit and frozen report satisfy the current condition.",
+            "verification":{"kind":"all","conditions":[
+                {"kind":"exit_code","command":"CMD-001","equals":expected_exit},
+                {"kind":"stdout_equals","command":"CMD-001","text":"before"},
+                {"kind":"json_report_equals","command":"CMD-001","path":"tool-output/report.json","pointer":"/passed","equals":true}]},
+            "acceptance_ids":item["validations"][0]["acceptance_ids"]});
+        #[cfg(target_os = "macos")]
+        let argv = json!([
+            "/bin/sh",
+            "-c",
+            format!(
+                "cat original; mkdir -p tool-output; printf candidate > tool-output/after; printf '{{\"passed\":{report_passed}}}' > tool-output/report.json; exit {expected_exit}"
+            )
+        ]);
+        #[cfg(windows)]
+        let argv = json!([
+            std::env::var("COMSPEC").unwrap(),
+            "/d",
+            "/c",
+            format!(
+                "type original & if not exist tool-output mkdir tool-output & echo candidate>tool-output\\after & echo {{\"passed\":{report_passed}}}>tool-output\\report.json & exit /b {expected_exit}"
+            )
+        ]);
+        item["commands"][0] = json!({"id":"CMD-001","mode":"argv","argv":argv});
+        index["execution_defaults"]["os"] = json!(std::env::consts::OS);
+        let bytes = render_task_item(&item).unwrap();
+        index["tasks"][0]["canonical_sha256"] = json!(raw_sha256(&bytes));
+        fs::write(&item_path, bytes).unwrap();
+        fs::write(root.join(task_path), render_task_index(&index).unwrap()).unwrap();
+        fs::write(root.join("original"), b"before").unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let collection = work_flow::task::validate_collection(
+            &work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog {
+                skill_root: installed_executable()
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf(),
+            },
+            &work_infrastructure::skill_catalog::LocalSkillCatalog { roots: vec![] },
+            &work_infrastructure::artifact_paths::LocalArtifactPaths {
+                project_root: root.clone(),
+            },
+            &work_infrastructure::task::storage::LocalTaskStorage {
+                project_root: root.clone(),
+            },
+            &[],
+            task_path,
+        )
+        .unwrap();
+        let execution = root.join(execution_dir);
+        fs::create_dir_all(&execution).unwrap();
+        fs::write(
+            execution.join("index.json"),
+            render_execution_index(
+                &build_initial_execution_index(&collection["collection_contract"], &collection)
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let invoke_for = |command: &str,
+                          input: Option<&Value>,
+                          approval: Option<&str>,
+                          record: Option<&str>|
+         -> (bool, Value) {
+            let mut args = vec![
+                "--project-root".into(),
+                root.to_string_lossy().into_owned(),
+                "--verbose".into(),
+                "execute".into(),
+                command.into(),
+                "--user-config-root".into(),
+                root.to_string_lossy().into_owned(),
+                "--task-path".into(),
+                task_path.into(),
+                "--execution-dir".into(),
+                execution_dir.into(),
+                "--task-id".into(),
+                "TASK-001".into(),
+            ];
+            if let Some(input) = input {
+                let path = root.join("request.json");
+                fs::write(&path, serde_json::to_vec(input).unwrap()).unwrap();
+                args.extend(["--input-file".into(), path.to_string_lossy().into_owned()]);
+            }
+            if command == "record-begin" {
+                args.extend(["--record-id".into(), record.unwrap_or("CMD-001").into()]);
+            }
+            if let Some(approval) = approval {
+                args.extend(["--approved-sha256".into(), approval.into()]);
+            }
+            let output = run(&args);
+            (
+                output.status.success(),
+                serde_json::from_slice(&output.stdout).unwrap(),
+            )
+        };
+        let invoke = |command: &str, input: Option<&Value>, approval: Option<&str>| {
+            invoke_for(command, input, approval, None)
+        };
+
+        let choice = json!({"command_positions":[1],"validation_positions":[1],"modifiable_files":[],
+            "external_operation_positions":[],"allowed_deviations":[],
+            "authorization_evidence":"Approve actual commands and evidence within this plan.","carried_records":[]});
+        let (ok, prepared) = invoke("attempt-start-prepare", Some(&choice), None);
+        assert!(ok, "{prepared}");
+        let (ok, started) = invoke("attempt-start", Some(&prepared["data"]["request"]), None);
+        assert!(ok, "{started}");
+        let (ok, reserved) = invoke("record-begin", None, None);
+        assert!(ok, "{reserved}");
+        let request = json!({"schema":"work-command-run-request","timeout_seconds":3});
+        let (ok, prepared) = invoke("command-prepare", Some(&request), None);
+        assert!(ok, "{prepared}");
+        let preview = &prepared["data"];
+        assert_eq!(preview["execution"]["host"]["mode"], "inherited");
+        assert!(preview["execution"].get("work_isolation").is_none());
+        assert!(!root.join("tool-output").exists());
+        let before = fs::read(execution.join("index.json")).unwrap();
+        let (ok, stale) = invoke("command-run", Some(&request), Some(&"0".repeat(64)));
+        assert!(!ok, "{stale}");
+        assert!(!root.join("tool-output").exists());
+        assert_eq!(fs::read(execution.join("index.json")).unwrap(), before);
+        let (ok, result) = invoke(
+            "command-run",
+            Some(&request),
+            preview["approved_sha256"].as_str(),
+        );
+        assert_eq!(ok, expected_exit == 0, "{result}");
+        assert!(
+            fs::read(root.join("tool-output/after"))
+                .unwrap()
+                .starts_with(b"candidate")
+        );
+        assert_eq!(fs::read(root.join("original")).unwrap(), b"before");
+        let receipt = root.join(preview["receipt_dir"].as_str().unwrap());
+        let started_raw = fs::read(receipt.join("started.json")).unwrap();
+        let finished: Value =
+            serde_json::from_slice(&fs::read(receipt.join("finished.json")).unwrap()).unwrap();
+        assert_eq!(finished["status"], "exited");
+        assert_eq!(finished["exit_code"], expected_exit);
+        assert!(finished["timing"]["started_at"].is_string());
+        assert!(finished["timing"]["finished_at"].is_string());
+        assert!(finished["timing"]["elapsed_ms"].is_u64());
+        let (ok, repeated) = invoke(
+            "command-run",
+            Some(&request),
+            preview["approved_sha256"].as_str(),
+        );
+        assert!(!ok, "{repeated}");
+        assert_eq!(fs::read(receipt.join("started.json")).unwrap(), started_raw);
+        for stream in ["stdout", "stderr"] {
+            let artifact = &finished["captures"][stream];
+            let bytes = fs::read(receipt.join(artifact["file"].as_str().unwrap())).unwrap();
+            assert_eq!(artifact["complete"], true);
+            assert_eq!(artifact["size_bytes"], json!(bytes.len()));
+            assert_eq!(artifact["sha256"], raw_sha256(&bytes));
+        }
+        let attempt_path = execution.join("TASK-001/ATTEMPT-001/attempt.json");
+        let before_finish = fs::read(&attempt_path).unwrap();
+        let false_result = json!({"schema":"work-record-finish-request","record":{"exit_code":99,"result":"AI claims success"}});
+        let (ok, forged) = invoke("record-finish", Some(&false_result), None);
+        assert!(!ok, "{forged}");
+        assert_eq!(fs::read(&attempt_path).unwrap(), before_finish);
+        let mut finish = json!({"schema":"work-record-finish-request","record":{"exit_code":finished["exit_code"],"result":"Reviewed actual execution"}});
+        if finished["exit_code"] != 0 {
+            finish["authorization_evidence"] = json!("Reviewed the actual frozen command failure");
+        }
+        let (ok, recorded) = invoke("record-finish", Some(&finish), None);
+        assert!(ok, "{recorded}");
+        let attempt: Value = serde_json::from_slice(&fs::read(&attempt_path).unwrap()).unwrap();
+        assert_eq!(
+            attempt["records"][0]["execution_evidence"]["finished_sha256"],
+            raw_sha256(&fs::read(receipt.join("finished.json")).unwrap())
+        );
+        let (ok, reserved) = invoke_for("record-begin", None, None, Some("VAL-001"));
+        assert!(ok, "{reserved}");
+        let passed = json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"AI declares passed"}});
+        let before_val = fs::read(&attempt_path).unwrap();
+        let index_before_val = fs::read(execution.join("index.json")).unwrap();
+        if report_passed {
+            let stdout_path = receipt.join("stdout.bin");
+            let captured_stdout = fs::read(&stdout_path).unwrap();
+            fs::write(&stdout_path, b"tampered captured output").unwrap();
+            let (ok, tampered) = invoke("record-finish", Some(&passed), None);
+            assert!(!ok, "{tampered}");
+            fs::write(&stdout_path, captured_stdout).unwrap();
+            let original_task = fs::read(&item_path).unwrap();
+            fs::write(&item_path, b"changed formal source").unwrap();
+            let (ok, stale) = invoke("record-finish", Some(&passed), None);
+            assert!(!ok, "{stale}");
+            fs::write(&item_path, original_task).unwrap();
+            let failed = json!({"schema":"work-record-finish-request","record":{"outcome":"failed","evidence":"False failed claim"},"authorization_evidence":"Reviewed failure"});
+            let (ok, wrong) = invoke("record-finish", Some(&failed), None);
+            assert!(!ok, "{wrong}");
+            assert_eq!(fs::read(&attempt_path).unwrap(), before_val);
+            assert_eq!(
+                fs::read(execution.join("index.json")).unwrap(),
+                index_before_val
+            );
+            fs::write(root.join("tool-output/report.json"), b"{\"passed\":false}").unwrap();
+            let (ok, accepted) = invoke("record-finish", Some(&passed), None);
+            assert!(ok, "{accepted}");
+            let attempt: Value = serde_json::from_slice(&fs::read(&attempt_path).unwrap()).unwrap();
+            assert_eq!(
+                attempt["records"][1]["verification_evidence"]["passed"],
+                true
+            );
+            assert_ne!(attempt["records"][1]["evidence"], "AI declares passed");
+            assert!(
+                attempt["acceptance_results"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|row| row["status"] == "completed")
+            );
+            if continuation {
+                let (ok, stopped) = invoke(
+                    "attempt-close",
+                    Some(&json!({
+                    "schema":"work-attempt-close-request","status":"stopped",
+                    "final_type":"other","reason":"Review explicit continuation of actual command evidence.",
+                    "authorization_evidence":"Approve stopping and preserve actual command receipts."})),
+                    None,
+                );
+                assert!(ok, "{stopped}");
+                let source_raw = fs::read(&attempt_path).unwrap();
+                let mut continued_choice = choice.clone();
+                continued_choice["carried_records"] = json!([{
+                    "position":if carry_validation {2} else {1},"evidence":"Carry actual execution evidence."}]);
+                let index_before_prepare = fs::read(execution.join("index.json")).unwrap();
+                let mut smuggled = continued_choice.clone();
+                smuggled["carried_records"][0]["validation_evidence"] = json!({
+                    "source_attempt_sha256":raw_sha256(&source_raw),
+                    "owner_attempt_id":"ATTEMPT-001","owner_attempt_sha256":raw_sha256(&source_raw),
+                    "record":attempt["records"][1]});
+                let (ok, rejected) = invoke("attempt-start-prepare", Some(&smuggled), None);
+                assert!(!ok, "{rejected}");
+                assert_eq!(
+                    fs::read(execution.join("index.json")).unwrap(),
+                    index_before_prepare
+                );
+                assert_eq!(fs::read(&attempt_path).unwrap(), source_raw);
+                assert!(!execution.join("TASK-001/ATTEMPT-002").exists());
+                let (ok, prepared) = invoke("attempt-start-prepare", Some(&continued_choice), None);
+                assert!(ok, "{prepared}");
+                let (ok, continued) =
+                    invoke("attempt-start", Some(&prepared["data"]["request"]), None);
+                assert!(ok, "{continued}");
+                if !carry_validation {
+                    let (ok, reserved) = invoke_for("record-begin", None, None, Some("VAL-001"));
+                    assert!(ok, "{reserved}");
+                    let (ok, verified) = invoke("record-finish", Some(&passed), None);
+                    assert!(ok, "{verified}");
+                }
+                let latest_path = execution.join("TASK-001/ATTEMPT-002/attempt.json");
+                let latest: Value =
+                    serde_json::from_slice(&fs::read(&latest_path).unwrap()).unwrap();
+                if carry_validation {
+                    assert_eq!(latest["records"], json!([]), "no new VAL record");
+                    let provenance = &latest["carried_records"][0]["validation_evidence"];
+                    assert_eq!(provenance["source_attempt_sha256"], raw_sha256(&source_raw));
+                    assert_eq!(provenance["owner_attempt_sha256"], raw_sha256(&source_raw));
+                    assert_eq!(provenance["record"], attempt["records"][1]);
+                    assert!(
+                        latest["acceptance_results"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .all(|row| row["status"] == "completed")
+                    );
+                    let indexed: Value =
+                        serde_json::from_slice(&fs::read(execution.join("index.json")).unwrap())
+                            .unwrap();
+                    assert_eq!(
+                        indexed["tasks"][0]["acceptance_results"],
+                        latest["acceptance_results"]
+                    );
+                } else {
+                    assert_eq!(
+                        latest["records"][0]["verification_evidence"]["commands"]["CMD-001"]["execution"]
+                            ["attempt_id"],
+                        "ATTEMPT-001"
+                    );
+                }
+                let before_close = fs::read(&latest_path).unwrap();
+                let index_before_close = fs::read(execution.join("index.json")).unwrap();
+                let stdout_path = receipt.join("stdout.bin");
+                let captured_stdout = fs::read(&stdout_path).unwrap();
+                fs::write(&stdout_path, b"tampered carried command evidence").unwrap();
+                let (ok, tampered) = invoke(
+                    "attempt-close",
+                    Some(&json!({
+                    "schema":"work-attempt-close-request","status":"completed"})),
+                    None,
+                );
+                assert!(!ok, "{tampered}");
+                assert_eq!(fs::read(&latest_path).unwrap(), before_close);
+                assert_eq!(
+                    fs::read(execution.join("index.json")).unwrap(),
+                    index_before_close
+                );
+                fs::write(&stdout_path, captured_stdout).unwrap();
+                assert_eq!(fs::read(&attempt_path).unwrap(), source_raw);
+                if carry_validation {
+                    let (ok, stopped) = invoke(
+                        "attempt-close",
+                        Some(
+                            &json!({"schema":"work-attempt-close-request","status":"stopped",
+                            "final_type":"other","reason":"Review a second explicit carry.",
+                            "authorization_evidence":"Approve preserving the original execution."}),
+                        ),
+                        None,
+                    );
+                    assert!(ok, "{stopped}");
+                    let immediate_raw = fs::read(&latest_path).unwrap();
+                    continued_choice["carried_records"][0]["position"] = json!(1);
+                    let (ok, prepared) =
+                        invoke("attempt-start-prepare", Some(&continued_choice), None);
+                    assert!(ok, "{prepared}");
+                    let (ok, continued) =
+                        invoke("attempt-start", Some(&prepared["data"]["request"]), None);
+                    assert!(ok, "{continued}");
+                    let third_path = execution.join("TASK-001/ATTEMPT-003/attempt.json");
+                    let third: Value =
+                        serde_json::from_slice(&fs::read(&third_path).unwrap()).unwrap();
+                    assert_eq!(third["records"], json!([]));
+                    let carried = &third["carried_records"][0];
+                    assert_eq!(carried["source_attempt_id"], "ATTEMPT-002");
+                    assert_eq!(
+                        carried["validation_evidence"]["source_attempt_sha256"],
+                        raw_sha256(&immediate_raw)
+                    );
+                    assert_eq!(
+                        carried["validation_evidence"]["owner_attempt_id"],
+                        "ATTEMPT-001"
+                    );
+                    assert_eq!(
+                        carried["validation_evidence"]["owner_attempt_sha256"],
+                        raw_sha256(&source_raw)
+                    );
+                    assert_eq!(
+                        carried["validation_evidence"]["record"],
+                        attempt["records"][1]
+                    );
+                    assert!(
+                        third["acceptance_results"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .all(|row| {
+                                row["status"] == "completed"
+                                    && row["evidence"].as_array().unwrap().iter().all(|evidence| {
+                                        evidence["attempt_id"] == "ATTEMPT-003"
+                                            && evidence["source_attempt_id"] == "ATTEMPT-001"
+                                    })
+                            })
+                    );
+                    let third_raw = fs::read(&third_path).unwrap();
+                    let index_raw = fs::read(execution.join("index.json")).unwrap();
+                    let mut changed_source: Value = serde_json::from_slice(&immediate_raw).unwrap();
+                    changed_source["close"]["reason"] = json!("Changed source authorization");
+                    fs::write(&latest_path, serde_json::to_vec(&changed_source).unwrap()).unwrap();
+                    let (ok, stale) = invoke(
+                        "attempt-close",
+                        Some(&json!({"schema":"work-attempt-close-request","status":"completed"})),
+                        None,
+                    );
+                    assert!(!ok, "{stale}");
+                    assert_eq!(fs::read(&third_path).unwrap(), third_raw);
+                    assert_eq!(fs::read(execution.join("index.json")).unwrap(), index_raw);
+                    fs::write(&latest_path, &immediate_raw).unwrap();
+                    assert_eq!(fs::read(&attempt_path).unwrap(), source_raw);
+                }
+            }
+            let (ok, closed) = invoke(
+                "attempt-close",
+                Some(&json!({"schema":"work-attempt-close-request","status":"completed"})),
+                None,
+            );
+            assert!(ok, "{closed}");
+            let index: Value =
+                serde_json::from_slice(&fs::read(execution.join("index.json")).unwrap()).unwrap();
+            assert!(index["lock"].is_null());
+            assert_eq!(index["tasks"][0]["status"], "completed");
+        } else {
+            let (ok, forged) = invoke("record-finish", Some(&passed), None);
+            assert!(!ok, "{forged}");
+            assert_eq!(fs::read(&attempt_path).unwrap(), before_val);
+            assert_eq!(
+                fs::read(execution.join("index.json")).unwrap(),
+                index_before_val
+            );
+            let failed = json!({"schema":"work-record-finish-request","record":{"outcome":"failed","evidence":"Reviewed actual false report"},"authorization_evidence":"Reviewed actual failed verification"});
+            let (ok, recorded) = invoke("record-finish", Some(&failed), None);
+            assert!(ok, "{recorded}");
+            let attempt: Value = serde_json::from_slice(&fs::read(&attempt_path).unwrap()).unwrap();
+            assert_eq!(
+                attempt["records"][1]["verification_evidence"]["passed"],
+                false
+            );
+            assert!(
+                attempt["acceptance_results"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|row| row["status"] == "pending")
+            );
+            let (ok, closed) = invoke(
+                "attempt-close",
+                Some(
+                    &json!({"schema":"work-attempt-close-request","status":"stopped","final_type":"other","reason":"Actual automated verification failed; evidence retained.","authorization_evidence":"Reviewed failed verification and stopped this Attempt."}),
+                ),
+                None,
+            );
+            assert!(ok, "{closed}");
+        }
+        let (ok, repeated) = invoke(
+            "command-run",
+            Some(&request),
+            preview["approved_sha256"].as_str(),
+        );
+        assert!(!ok, "{repeated}");
+        assert_eq!(fs::read(root.join("original")).unwrap(), b"before");
+    }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn native_generation_publication_and_new_validation_complete_without_weakening_input_checks() {
+    let root = std::env::temp_dir().join(format!(
+        "work-native-publish-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    let root = root.canonicalize().unwrap();
+    let skills = installed_executable().parent().unwrap().parent().unwrap();
+    work_infrastructure::fixture_support::file_transaction_command_fixture(&root, skills).unwrap();
+    let execution_dir = "outputs/work/executions/example";
+    let invoke =
+        |command: &str, input: Option<Value>, record: Option<&str>, approval: Option<&str>| {
+            let mut args = vec![
+                "--project-root".into(),
+                root.to_str().unwrap().into(),
+                "--verbose".into(),
+                "execute".into(),
+                command.into(),
+                "--task-path".into(),
+                "outputs/work/tasks/example/index.json".into(),
+                "--execution-dir".into(),
+                execution_dir.into(),
+                "--task-id".into(),
+                "TASK-001".into(),
+                "--user-config-root".into(),
+                root.to_str().unwrap().into(),
+            ];
+            if let Some(input) = input {
+                let path = root.join("outputs/work/transactions/example/file-test/request.json");
+                fs::write(&path, serde_json::to_vec(&input).unwrap()).unwrap();
+                args.extend(["--input-file".into(), path.to_str().unwrap().into()]);
+            }
+            if let Some(record) = record {
+                args.extend(["--record-id".into(), record.into()]);
+            }
+            if let Some(approval) = approval {
+                args.extend(["--approved-sha256".into(), approval.into()]);
+            }
+            let output = run(&args);
+            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+            (output.status.success(), value)
+        };
+    let before = fs::read(root.join("c-existing.txt")).unwrap();
+    let command_request = json!({"schema":"work-command-run-request","timeout_seconds":10});
+    let (ok, reserved) = invoke("record-begin", None, Some("CMD-001"), None);
+    assert!(ok, "{reserved}");
+    let (ok, prepared) = invoke("command-prepare", Some(command_request.clone()), None, None);
+    assert!(ok, "{prepared}");
+    let staging = root.join("tool-output");
+    let (ok, executed) = invoke(
+        "command-run",
+        Some(command_request.clone()),
+        None,
+        prepared["data"]["approved_sha256"].as_str(),
+    );
+    assert!(ok, "{executed}");
+    assert_eq!(fs::read(root.join("c-existing.txt")).unwrap(), before);
+    let (ok, finished) = invoke(
+        "record-finish",
+        Some(json!({"schema":"work-record-finish-request",
+        "record":{"exit_code":0,"result":"Actual staged generation"}})),
+        None,
+        None,
+    );
+    assert!(ok, "{finished}");
+    use work_model::execution::file_transaction::FileChange;
+    let changes = vec![
+        FileChange::Move {
+            source: "a-old.txt".into(),
+            destination: "b-moved.txt".into(),
+            bytes: Some(fs::read(staging.join("b-moved.txt")).unwrap()),
+        },
+        FileChange::Write {
+            path: "c-existing.txt".into(),
+            bytes: fs::read(staging.join("c-existing.txt")).unwrap(),
+        },
+        FileChange::Write {
+            path: "d-new.txt".into(),
+            bytes: fs::read(staging.join("d-new.txt")).unwrap(),
+        },
+    ];
+    let (ok, prepared_files) = invoke(
+        "file-prepare",
+        Some(json!({"schema":"work-file-transaction-request",
+        "command":{"kind":"prepare","attempt_id":"ATTEMPT-001","changes":changes}})),
+        None,
+        None,
+    );
+    assert!(ok, "{prepared_files}");
+    let expected_before: serde_json::Map<String, Value> =
+        ["a-old.txt", "b-moved.txt", "c-existing.txt", "d-new.txt"]
+            .into_iter()
+            .map(|path| {
+                let digest = match fs::read(root.join(path)) {
+                    Ok(bytes) => json!(work_infrastructure::fixture_support::raw_sha256(&bytes)),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
+                    Err(e) => panic!("Cannot read baseline: {e}"),
+                };
+                (path.into(), digest)
+            })
+            .collect();
+    let (ok, applied) = invoke(
+        "file-apply",
+        Some(json!({"schema":"work-file-transaction-request",
+        "command":{"kind":"apply","attempt_id":"ATTEMPT-001","changes":changes,"expected_before":expected_before}})),
+        None,
+        None,
+    );
+    assert!(ok, "{applied}");
+    assert!(!root.join("a-old.txt").exists());
+    assert!(root.join("b-moved.txt").is_file() && root.join("d-new.txt").is_file());
+    let published = fs::read(root.join("c-existing.txt")).unwrap();
+    assert_ne!(published, before);
+    let (ok, reserved) = invoke("record-begin", None, Some("CMD-002"), None);
+    assert!(ok, "{reserved}");
+    let (ok, prepared) = invoke("command-prepare", Some(command_request.clone()), None, None);
+    assert!(ok, "{prepared}");
+    let (ok, executed) = invoke(
+        "command-run",
+        Some(command_request),
+        None,
+        prepared["data"]["approved_sha256"].as_str(),
+    );
+    assert!(ok, "{executed}");
+    let (ok, finished) = invoke(
+        "record-finish",
+        Some(json!({"schema":"work-record-finish-request",
+        "record":{"exit_code":0,"result":"Actual published output verification"}})),
+        None,
+        None,
+    );
+    assert!(ok, "{finished}");
+    let receipt = root.join(prepared["data"]["receipt_dir"].as_str().unwrap());
+    let captured: Value =
+        serde_json::from_slice(&fs::read(receipt.join("finished.json")).unwrap()).unwrap();
+    for stream in ["stdout", "stderr"] {
+        let artifact = &captured["captures"][stream];
+        assert_eq!(
+            artifact["complete"], true,
+            "CMD-002 {stream} capture: {captured}"
+        );
+        let bytes = fs::read(receipt.join(artifact["file"].as_str().unwrap())).unwrap();
+        assert_eq!(artifact["size_bytes"], bytes.len() as u64);
+        assert_eq!(
+            artifact["sha256"],
+            work_infrastructure::fixture_support::raw_sha256(&bytes)
+        );
+        if stream == "stdout" {
+            assert!(
+                bytes
+                    .windows(b"final modify".len())
+                    .any(|part| part == b"final modify"),
+                "CMD-002 stdout does not contain the published output: {captured}"
+            );
+        }
+    }
+    let (ok, reserved) = invoke("record-begin", None, Some("VAL-001"), None);
+    assert!(ok, "{reserved}");
+    let validation_request = json!({"schema":"work-record-finish-request",
+        "record":{"outcome":"passed","evidence":"Actual publication verification"},
+        "modified_files":["a-old.txt","b-moved.txt","c-existing.txt","d-new.txt"]});
+    let attempt_path = root.join(format!("{execution_dir}/TASK-001/ATTEMPT-001/attempt.json"));
+    let index_path = root.join(format!("{execution_dir}/index.json"));
+    let attempt_before = fs::read(&attempt_path).unwrap();
+    let index_before = fs::read(&index_path).unwrap();
+    let stdout_path = receipt.join("stdout.bin");
+    let stdout_before = fs::read(&stdout_path).unwrap();
+    fs::write(&stdout_path, b"changed captured output").unwrap();
+    let (ok, rejected) = invoke(
+        "record-finish",
+        Some(validation_request.clone()),
+        None,
+        None,
+    );
+    assert!(!ok, "{rejected}");
+    assert_eq!(rejected["reason_code"], "validation_execution_unverified");
+    assert_eq!(
+        rejected["data"],
+        json!({"evidence_stage":"capture_bytes","record_id":"CMD-002"})
+    );
+    assert_eq!(fs::read(&attempt_path).unwrap(), attempt_before);
+    assert_eq!(fs::read(&index_path).unwrap(), index_before);
+    fs::write(&stdout_path, &stdout_before).unwrap();
+    let mut wrong_outcome = validation_request.clone();
+    wrong_outcome["record"]["outcome"] = json!("failed");
+    let (ok, rejected) = invoke("record-finish", Some(wrong_outcome), None, None);
+    assert!(!ok, "{rejected}");
+    assert_eq!(rejected["reason_code"], "validation_execution_unverified");
+    assert_eq!(
+        rejected["data"],
+        json!({"evidence_stage":"validation_outcome","record_id":"VAL-001",
+        "requested_outcome":"failed","evaluated_outcome":"passed"})
+    );
+    assert_eq!(fs::read(&attempt_path).unwrap(), attempt_before);
+    assert_eq!(fs::read(&index_path).unwrap(), index_before);
+    let (ok, verified) = invoke("record-finish", Some(validation_request), None, None);
+    assert!(ok, "{verified}");
+    let close = json!({"schema":"work-attempt-close-request","status":"completed"});
+    fs::write(
+        root.join("c-existing.txt"),
+        b"unapproved change after publication",
+    )
+    .unwrap();
+    let (ok, rejected) = invoke("attempt-close", Some(close.clone()), None, None);
+    assert!(!ok, "{rejected}");
+    fs::write(root.join("c-existing.txt"), &published).unwrap();
+    let (ok, closed) = invoke("attempt-close", Some(close), None, None);
+    assert!(ok, "{closed}");
+    assert_eq!(fs::read(root.join("c-existing.txt")).unwrap(), published);
+    let index: Value = serde_json::from_slice(
+        &fs::read(root.join(format!("{execution_dir}/index.json"))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(index["tasks"][0]["status"], "completed");
+}
+
+#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn installed_execution_staging_family_completes_all_seven_publications() {
     use work_infrastructure::fixture_support::{
@@ -135,6 +843,27 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
     let mut task_index: Value =
         serde_json::from_slice(&fs::read(root.join(task_path)).unwrap()).unwrap();
     task_index["artifacts"]["execution"] = json!(execution_dir);
+    // All seven publications use real isolated execution; unknown Shell denial
+    // is exercised separately above, without manufacturing a successful CMD.
+    let item_path = root.join("outputs/work/tasks/example/tasks/TASK-001.json");
+    let mut item: Value = serde_json::from_slice(&fs::read(&item_path).unwrap()).unwrap();
+    item.as_object_mut().unwrap().remove("files");
+    #[cfg(target_os = "macos")]
+    let original = json!({"id":"CMD-001","mode":"argv","argv":["/usr/bin/printf","original"]});
+    #[cfg(windows)]
+    let original = json!({"id":"CMD-001","mode":"argv","argv":[std::env::var("COMSPEC").unwrap(),"/d","/c","echo original"]});
+    item["commands"][0] = original;
+    task_index["execution_defaults"]["os"] = json!(std::env::consts::OS);
+    item["goal"] = json!("Record and validate an authorized fileless command.");
+    item["steps"].as_array_mut().unwrap().remove(0);
+    item["steps"][0]["id"] = json!("STEP-001");
+    item["validations"][0] = json!({"id":"VAL-001","kind":"manual",
+        "confirmer":"Reviewer","criteria":"Review the recorded result",
+        "acceptance_ids":item["validations"][0]["acceptance_ids"].clone()});
+    let item_raw = work_infrastructure::fixture_support::render_task_item(&item).unwrap();
+    task_index["tasks"][0]["canonical_sha256"] =
+        json!(work_infrastructure::fixture_support::raw_sha256(&item_raw));
+    fs::write(item_path, item_raw).unwrap();
     fs::write(
         root.join(task_path),
         render_task_index(&task_index).unwrap(),
@@ -142,7 +871,12 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
     .unwrap();
     let collection = work_flow::task::validate_collection(
         &work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog {
-            skill_root: repo.join("skills/work"),
+            skill_root: installed_executable()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
         },
         &work_infrastructure::skill_catalog::LocalSkillCatalog { roots: vec![] },
         &work_infrastructure::artifact_paths::LocalArtifactPaths {
@@ -227,7 +961,10 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
         }
         response
     };
-    let replacement = json!({"mode":"argv","argv":["python3","--version"]});
+    #[cfg(target_os = "macos")]
+    let replacement = json!({"mode":"argv","argv":["/usr/bin/printf","corrected"]});
+    #[cfg(windows)]
+    let replacement = json!({"mode":"argv","argv":[std::env::var("COMSPEC").unwrap(),"/d","/c","echo corrected"]});
     let choice = json!({"command_positions":[1],"validation_positions":[1],"modifiable_files":[],
         "external_operation_positions":[],"allowed_deviations":[{"anchor_kind":"command","anchor_position":1,
         "action":{"kind":"replace_command","replacement":replacement}}],"authorization_evidence":"Approved exact scope","carried_records":[]});
@@ -238,7 +975,22 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
         &[],
         true,
     );
+    let before = fs::read(&index_path).unwrap();
     invoke("record-begin", None, &["--record-id", "CMD-001"], true);
+    // The real reservation preserves the same canonical pure candidate contract.
+    let attempt: Value = serde_json::from_slice(
+        &fs::read(root.join(format!("{execution_dir}/TASK-001/ATTEMPT-001/attempt.json"))).unwrap(),
+    )
+    .unwrap();
+    let index: Value = serde_json::from_slice(&before).unwrap();
+    let reserved = work_infrastructure::fixture_support::historical_record_reservation(
+        &item, &attempt, &index, "TASK-001", "CMD-001",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(&index_path).unwrap(),
+        render_execution_index(&reserved).unwrap()
+    );
     invoke(
         "command-correction",
         Some(
@@ -263,6 +1015,17 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
         ],
         true,
     );
+    let command_request = json!({"schema":"work-command-run-request","timeout_seconds":3});
+    let preview = invoke("command-prepare", Some(&command_request), &[], true);
+    invoke(
+        "command-run",
+        Some(&command_request),
+        &[
+            "--approved-sha256",
+            preview["data"]["approved_sha256"].as_str().unwrap(),
+        ],
+        true,
+    );
     invoke(
         "record-finish",
         Some(
@@ -271,15 +1034,15 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
         &[],
         true,
     );
-    invoke("record-begin", None, &["--record-id", "VAL-001"], true);
-    invoke(
-        "record-finish",
-        Some(
-            &json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"Actual validation passed"}}),
-        ),
-        &[],
-        true,
-    );
+    let reserved = invoke("record-begin", None, &["--record-id", "VAL-001"], true);
+    let user_finish = work_infrastructure::fixture_support::user_confirmation_fixture(
+        &root,
+        &reserved["data"]["validation_context"],
+        work_model::execution::attempt::ValidationOutcome::Passed,
+        "Designated synthetic user reviewed actual recorded command",
+    )
+    .unwrap();
+    invoke("record-finish", Some(&user_finish), &[], true);
     invoke(
         "attempt-close",
         Some(&json!({"schema":"work-attempt-close-request","status":"completed"})),
@@ -329,14 +1092,12 @@ fn enabled_family_rejects_execution_writer_without_verified_context() {
     let storage = work_infrastructure::execution::storage::LocalExecutionStorage {
         project_root: root.clone(),
     };
-    let error = storage
-        .run_prepared_command(
-            "custom execution",
-            &"0".repeat(64),
-            || panic!("an unbound writer must never recheck or execute a command"),
-            &work_infrastructure::process::LocalCommandRunner,
-        )
-        .unwrap_err();
+    let error = work_flow::execution::CommandPrepareRepository::check_ready(
+        &storage,
+        "custom execution",
+        true,
+    )
+    .unwrap_err();
     assert_eq!(error.reason_code, "execution_writer_context_required");
     assert_eq!(fs::read(index).unwrap(), b"preserved evidence");
     assert!(
@@ -601,13 +1362,20 @@ fn attempt_cli_preserves_verified_acceptance_evidence_and_rejects_unexecuted_val
     ));
     fs::create_dir_all(&root).unwrap();
     let input = root.join("attempt.json");
-    let mut attempt=work_model::contract_data::registry_value()["items"]["work-attempt"]["description"]["example"].clone();
+    let mut attempt=work_model::contract::data::registry_value()["items"]["work-attempt"]["description"]["example"].clone();
     attempt["authorization"]["validations"] = json!([{"id":"VAL-001","kind":"manual","confirmer":"user","criteria":"Actual result verified.","acceptance_ids":["ACCEPTANCE-001"]}]);
     attempt["authorization_sha256"] = json!(
         work_infrastructure::fixture_support::structured_sha256(&attempt["authorization"])
     );
-    attempt["records"] = json!([{"id":"VAL-001","kind":"validation","outcome":"passed","evidence":"Actual result verified."}]);
-    attempt["acceptance_results"] = json!([{"id":"ACCEPTANCE-001","status":"completed","evidence":[{"task_id":attempt["task_id"],"attempt_id":attempt["attempt_id"],"validation_id":"VAL-001","record_id":"VAL-001","outcome":"passed","evidence":"Actual result verified.","task_item_sha256":attempt["task_item_sha256"],"task_instructions_sha256":attempt["task_instructions_sha256"]}]}]);
+    attempt["records"] = json!([
+        work_infrastructure::fixture_support::user_validation_record_fixture(
+            &attempt,
+            &attempt["authorization"]["validations"][0],
+            "VAL-001",
+            "Actual result verified."
+        )
+    ]);
+    attempt["acceptance_results"] = json!([{"id":"ACCEPTANCE-001","status":"completed","evidence":[{"task_id":attempt["task_id"],"attempt_id":attempt["attempt_id"],"validation_id":"VAL-001","record_id":"VAL-001","outcome":"passed","source":"user_confirmation","file_version":"a".repeat(64),"evidence":"Actual result verified.","task_item_sha256":attempt["task_item_sha256"],"task_instructions_sha256":attempt["task_instructions_sha256"]}]}]);
     fs::write(&input, serde_json::to_vec(&attempt).unwrap()).unwrap();
     let invoke = || {
         Command::new(executable())
@@ -671,7 +1439,7 @@ fn public_paths_resolve_exposes_only_source_task_and_execution() {
 
 #[test]
 fn artifact_render_data_round_trips_without_cli_envelope() {
-    let registry: Value = work_model::contract_data::registry_value();
+    let registry: Value = work_model::contract::data::registry_value();
     let base = std::env::temp_dir().join(format!(
         "work-render-round-trip-{}-{}",
         std::process::id(),
@@ -747,7 +1515,7 @@ fn artifact_render_data_round_trips_without_cli_envelope() {
 
 #[test]
 fn task_write_commands_reject_legacy_single_file_before_publication() {
-    let registry: Value = work_model::contract_data::registry_value();
+    let registry: Value = work_model::contract::data::registry_value();
     let base = std::env::temp_dir().join(format!(
         "work-legacy-task-write-{}-{}",
         std::process::id(),
@@ -938,8 +1706,8 @@ fn unsupported_stdin_options_reject_before_publication() {
 
 #[test]
 fn frozen_cli_responses_match_at_process_boundary() {
-    let fixtures: Value =
-        serde_json::from_str(include_str!("process_baseline.json")).expect("frozen fixtures");
+    let fixtures: Value = serde_json::from_str(include_str!("../fixtures/process/baseline.json"))
+        .expect("frozen fixtures");
     let root = project_root();
     let encoded_root = serde_json::to_string(&root).expect("JSON root");
     let encoded_placeholder = serde_json::to_string("<PROJECT_ROOT>").expect("JSON placeholder");
@@ -998,11 +1766,11 @@ fn check_help(node: &Value, path: &mut Vec<String>, count: &mut usize) {
 
 #[test]
 fn every_public_leaf_has_frozen_help_at_process_boundary() {
-    let manifest: Value = serde_json::from_str(include_str!("../src/parser/commands.json"))
+    let manifest: Value = serde_json::from_str(include_str!("../resources/parser/commands.json"))
         .expect("command manifest");
     let mut count = 0;
     check_help(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 82);
+    assert_eq!(count, 86);
 }
 
 #[test]
@@ -1020,11 +1788,11 @@ fn public_command_tree_matches_frozen_baseline() {
     }
 
     let manifest: Value =
-        serde_json::from_str(include_str!("../src/parser/commands.json")).unwrap();
+        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
     let mut commands = Vec::new();
     collect(&manifest["root"], &mut Vec::new(), &mut commands);
     commands.sort();
-    assert_eq!(commands.len(), 82);
+    assert_eq!(commands.len(), 86);
     assert_eq!(
         commands
             .iter()
@@ -1106,6 +1874,13 @@ fn public_command_tree_matches_frozen_baseline() {
                 && command != "invocation confirm"
                 && command != "specification reconciliation-recover"
                 && command != "instructions recover"
+                && ![
+                    "execute file-prepare",
+                    "execute file-apply",
+                    "execute file-recovery-prepare",
+                    "execute file-restore",
+                ]
+                .contains(&command.as_str())
         })
         .collect::<Vec<_>>();
     assert_eq!(legacy.len(), 70);
@@ -1599,6 +2374,7 @@ fn handoff_build_output_validates_across_installed_processes() {
         &repo.join("skills/work/references"),
         &skill.join("references"),
     );
+    work_infrastructure::fixture_support::restore_historical_task_instructions(&skill).unwrap();
     let fixture =
         repo.join("rust/crates/work-infrastructure/fixtures/shared/task-diagnostics-project");
     let project = base.join("project");
@@ -2122,7 +2898,12 @@ fn specification_task_boundary_continuation_across_installed_processes() {
         let index_path = project.join("outputs/work/tasks/example/index.json");
         let index: Value = serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
         fs::write(&index_path, render_task_index(&index).unwrap()).unwrap();
-        let skill = repo.join("skills/work");
+        let skill = installed_executable()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let collection = validate_collection(
             &LocalHierarchyCatalog {
                 skill_root: skill.clone(),
@@ -2355,10 +3136,10 @@ fn every_public_command_help_returns_one_json_response() {
     }
 
     let manifest: Value =
-        serde_json::from_str(include_str!("../src/parser/commands.json")).unwrap();
+        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
     let mut count = 0;
     check(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 102);
+    assert_eq!(count, 106);
 }
 
 #[test]
@@ -2633,7 +3414,7 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
     let mut session = work_infrastructure::fixture_support::prepare_discussion_fixture(
         &discussion_fixture,
         &project,
-        &repo.join("skills/work"),
+        installed_executable().parent().unwrap().parent().unwrap(),
     )
     .unwrap();
     if let work_model::common::Nullable::Value(source) = &mut session.context.confirmed_source {
@@ -3393,7 +4174,7 @@ fn installed_attempt_render_preserves_derived_acceptance_evidence_and_history() 
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../work-infrastructure/fixtures/cases/specification/reconciliation/with-migration/project",
     );
-    let task: Value = serde_json::from_slice(
+    let mut task: Value = serde_json::from_slice(
         &fs::read(fixture.join("outputs/work/tasks/example/tasks/TASK-001.json")).unwrap(),
     )
     .unwrap();
@@ -3406,6 +4187,16 @@ fn installed_attempt_render_preserves_derived_acceptance_evidence_and_history() 
     .unwrap();
     let previous_records = attempt["records"].clone();
     let previous_deviations = attempt["execution_deviations"].clone();
+    // This is a pure serialization fixture, with no CMD execution. A manual
+    // reviewer assertion exercises the same derived acceptance/history contract;
+    // it must not manufacture automated validation evidence.
+    task["validations"][0] = json!({"id":"VAL-001","kind":"manual",
+        "confirmer":"Fixture reviewer","criteria":"Review synthetic serialization output",
+        "acceptance_ids":task["validations"][0]["acceptance_ids"]});
+    attempt["authorization"]["validations"] = task["validations"].clone();
+    attempt["authorization_sha256"] = json!(
+        work_infrastructure::fixture_support::structured_sha256(&attempt["authorization"])
+    );
     attempt["status"] = json!("in_progress");
     attempt.as_object_mut().unwrap().remove("ended_at");
     let mut index: Value = serde_json::from_slice(
@@ -3419,7 +4210,16 @@ fn installed_attempt_render_preserves_derived_acceptance_evidence_and_history() 
     index["tasks"][0]["status"] = json!("in_progress");
     index["overall_status"] = json!("in_progress");
     index["lock"] = json!({"kind":"execution","task_id":"TASK-001","attempt_id":"ATTEMPT-001","execute_instructions_sha256":attempt["execute_instructions_sha256"],"record_id":"VAL-001#1","retry_authorization_evidence":"Fresh fixture retry approval"});
-    let (candidate, _)=work_infrastructure::fixture_support::record_finish_candidates(&task,&attempt,&index,&json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"Actual fixture VAL reviewed."}})).unwrap();
+    let finish = work_infrastructure::fixture_support::user_validation_finish_fixture(
+        &attempt,
+        &task["validations"][0],
+        "VAL-001#1",
+        "Actual fixture VAL reviewed.",
+    );
+    let (candidate, _) = work_infrastructure::fixture_support::record_finish_candidates(
+        &task, &attempt, &index, &finish,
+    )
+    .unwrap();
     let progress = candidate["acceptance_results"]
         .as_array()
         .unwrap()
@@ -3943,7 +4743,7 @@ mod discussion_process_cases {
         let mut session = work_infrastructure::fixture_support::prepare_discussion_fixture(
             &fixture,
             &root,
-            &repo.join("skills/work"),
+            installed_executable().parent().unwrap().parent().unwrap(),
         )
         .unwrap();
         session.authorization.allowed_actions = vec![

@@ -61,6 +61,68 @@ fn collect(
     Ok(())
 }
 
+/// Inspect only current DTOs. Unreadable or obsolete payloads stay exact offline evidence;
+/// no historical schema, approval or execution result is interpreted as current authority.
+fn semantic_contract_diagnostics(
+    files: &BTreeMap<String, Value>,
+    requirement: &RequirementId,
+    execution: &str,
+) -> Vec<Value> {
+    let discussion = format!("outputs/work/discussions/{}/", requirement.as_str());
+    let project_files = format!(
+        "outputs/work/runtime/staging/{}/project-files/",
+        requirement.as_str()
+    );
+    let mut result = Vec::new();
+    for (path, file) in files {
+        let kind = if path.starts_with(&format!("{execution}/")) && path.ends_with("/attempt.json")
+        {
+            "attempt"
+        } else if path.starts_with(&discussion) && path.ends_with("/session.json") {
+            "discussion"
+        } else if path.starts_with(&project_files) && path.ends_with("/transaction.json") {
+            "project_files"
+        } else {
+            continue;
+        };
+        let raw: Vec<u8> =
+            serde_json::from_value(file["raw"].clone()).expect("collected raw bytes");
+        let parsed = work_operations::canonical::parse_json_contract(&raw);
+        let valid = parsed.as_ref().is_ok_and(|value| match kind {
+            "attempt" => {
+                serde_json::from_value::<work_model::execution::attempt::Attempt>(value.clone())
+                    .is_ok()
+                    && work_operations::execution::attempt::validate_attempt_bytes(value, &raw)
+                        .is_ok()
+            }
+            "discussion" => {
+                serde_json::from_value::<work_model::discussion::DiscussionSession>(value.clone())
+                    .is_ok_and(|session| {
+                        work_operations::discussion::verify_integrity(&session).is_ok()
+                    })
+            }
+            "project_files" => {
+                serde_json::from_value::<work_model::runtime::RuntimeManifest>(value.clone())
+                    .is_ok_and(|manifest| {
+                        manifest.operation == "project-files"
+                            && serde_json::from_value::<
+                                work_model::execution::file_transaction::FileTransactionBinding,
+                            >(manifest.business_identity)
+                            .is_ok()
+                    })
+            }
+            _ => false,
+        });
+        if !valid {
+            result.push(json!({"code":"runtime_contract_review_required","path":path,"kind":kind,
+                "mode":"blocked","next_command":"manual offline review before migration semantic prepare",
+                "detail":"Preserve exact original evidence. Reconstruct only reviewed current planning and initial execution; do not copy old authority, convert recorded outcomes into current acceptance, rerun commands, or remove unknown runtime effects.",
+                "raw_sha256":file["raw_sha256"],"size":file["size"],"raw":file["raw"]}));
+        }
+    }
+    result
+}
+
 /// Includes the complete scoped inventory when any old layout is present. It grants no write permission.
 pub fn diagnostics(
     root: &Path,
@@ -81,6 +143,7 @@ pub fn diagnostics(
     ] {
         collect(root, &scope, &mut files, &mut directories)?;
     }
+    let mut diagnostics = semantic_contract_diagnostics(&files, requirement, execution);
     let mut mappings = Vec::new();
     for path in files.keys().chain(directories.iter()) {
         if let Some(mapping) = legacy_layout::classify(path, execution, source) {
@@ -94,7 +157,7 @@ pub fn diagnostics(
         }
     }
     if mappings.is_empty() {
-        return Ok(Vec::new());
+        return Ok(diagnostics);
     }
     mappings.sort_by(|a, b| {
         a["original_path"]
@@ -105,9 +168,10 @@ pub fn diagnostics(
     let canonical_root = canonical_root.to_str().ok_or_else(|| fail(execution))?;
     let inventory = json!({"canonical_project_root":canonical_root,"requirement_id":requirement.as_str(),"source":source,"execution":execution,"files":files.values().collect::<Vec<_>>(),"directories":directories,"mappings":mappings});
     let digest = fingerprint::structured(&inventory).map_err(|_| fail(execution))?;
-    Ok(vec![
+    diagnostics.insert(0,
         json!({"code":"legacy_layout_review_required","path":execution,"mode":"blocked","next_command":"migration semantic prepare after offline review","inventory_sha256":digest,"inventory":inventory,"offline_requirements":["Deployment owner explicitly excludes every old and current writer; PID, timeout and absence of a new lock are insufficient.","Recover pending transactions in their original environment and resolve unknown command effects before candidate preparation.","Retain exact original bytes and mappings, create an isolated current candidate, regenerate and approve its preview.","Never copy legacy locks or partial runtime files into current runtime; never reuse old approval or rerun a recorded command."]}),
-    ])
+    );
+    Ok(diagnostics)
 }
 
 #[cfg(test)]
@@ -115,16 +179,89 @@ mod tests {
     use super::*;
 
     fn root() -> std::path::PathBuf {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "work-layout-review-{}-{}",
+            "work-layout-review-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn obsolete_semantics_in_current_paths_remain_exact_blocked_evidence() {
+        let root = root();
+        let execution = "outputs/work/executions/example";
+        let cases = [
+            (
+                format!("{execution}/TASK-001/ATTEMPT-001/attempt.json"),
+                json!({"schema":"work-attempt","records":[{"kind":"validation","outcome":"passed","evidence":"Old assertion"}]}),
+            ),
+            (
+                "outputs/work/discussions/example/session.json".into(),
+                json!({"schema":"work-discussion-session","evidence_level":"sufficient","confirmed":true}),
+            ),
+            (
+                "outputs/work/runtime/staging/example/project-files/old/transaction.json".into(),
+                json!({"schema":"work-runtime-transaction","business_identity":{"staged_files":["old"]},"phase":"publishing"}),
+            ),
+        ];
+        let mut originals = BTreeMap::new();
+        for (path, value) in cases {
+            let raw = serde_json::to_vec(&value).unwrap();
+            fs::create_dir_all(root.join(&path).parent().unwrap()).unwrap();
+            fs::write(root.join(&path), &raw).unwrap();
+            originals.insert(path, raw);
+        }
+        let reports = diagnostics(
+            &root,
+            &"example".parse().unwrap(),
+            "outputs/work/sources/example",
+            execution,
+        )
+        .unwrap();
+        let semantics: Vec<_> = reports
+            .iter()
+            .filter(|r| r["code"] == "runtime_contract_review_required")
+            .collect();
+        assert_eq!(semantics.len(), originals.len());
+        for report in semantics {
+            let path = report["path"].as_str().unwrap();
+            let raw = &originals[path];
+            assert_eq!(report["mode"], "blocked");
+            assert_eq!(report["raw"], json!(raw));
+            assert_eq!(report["raw_sha256"], fingerprint::raw(raw));
+            assert_eq!(fs::read(root.join(path)).unwrap(), *raw);
+        }
+        assert!(!root.join("outputs/work/tasks").exists());
+        assert!(!root.join(format!("{execution}/index.json")).exists());
+    }
+    #[test]
+    fn current_empty_attempt_is_not_reclassified_or_granted_new_authority() {
+        let root = root();
+        let execution = "outputs/work/executions/example";
+        let value=work_model::contract::data::registry_value()["items"]["work-attempt"]["description"]["example"].clone();
+        let raw = work_operations::execution::attempt::render_attempt(&value).unwrap();
+        let path = root.join(format!("{execution}/TASK-001/ATTEMPT-001/attempt.json"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, &raw).unwrap();
+        assert!(
+            diagnostics(
+                &root,
+                &"example".parse().unwrap(),
+                "outputs/work/sources/example",
+                execution
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(fs::read(path).unwrap(), raw);
+        assert!(!root.join(format!("{execution}/index.json")).exists());
     }
 
     #[test]
@@ -205,8 +342,8 @@ mod tests {
     fn offline_candidate_uses_existing_prepare_preview_apply_recover_verify_and_retains_originals()
     {
         use crate::specification::{
-            migration::preview_migration, migration_publication::publish_migration,
-            migration_verification::verify_semantic_migration,
+            migration::preview_migration, migration::publication::publish_migration,
+            migration::verification::verify_semantic_migration,
             reconstruction::prepare_reconstruction_request,
         };
         for interrupted in [false, true] {
@@ -297,11 +434,11 @@ mod tests {
             let approval = preview["fingerprint"].as_str().unwrap();
             if interrupted {
                 let transaction =
-                    crate::specification::migration_publication::migration_transaction(
+                    crate::specification::migration::publication::migration_transaction(
                         &candidate, &prepared, &preview,
                     )
                     .unwrap();
-                let paths = work_feature::specification::migration_publication::publication_paths(
+                let paths = work_feature::specification::migration::publication::publication_paths(
                     &prepared, approval,
                 )
                 .unwrap();

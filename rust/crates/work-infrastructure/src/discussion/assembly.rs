@@ -656,4 +656,74 @@ mod recovery_tests {
             "discussion_planning_incomplete"
         );
     }
+    #[test]
+    fn formalization_keeps_required_structure_and_semantic_review() {
+        let (adapter, session, metadata) = setup();
+        adapter.candidate(&session, &metadata).unwrap();
+        let current = serde_json::to_value(&session).unwrap();
+        assert!(current["tasks"][0]["review"].get("granularity").is_none());
+        for (pointer, value, expected) in [
+            (
+                "/tasks/0/review",
+                json!(null),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/review/needs_review",
+                json!(true),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/review/context_revision",
+                json!(0),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/review/semantic_consistency_evidence",
+                json!(""),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/scope",
+                json!([]),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/steps",
+                json!([]),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/acceptance_criteria",
+                json!([]),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/validations",
+                json!([]),
+                "discussion_planning_incomplete",
+            ),
+            (
+                "/tasks/0/instructions_sha256",
+                json!(null),
+                "discussion_planning_incomplete",
+            ),
+            ("/tasks/0/goal", json!(" "), "missing_discussion_evidence"),
+        ] {
+            let mut invalid_value = current.clone();
+            *invalid_value.pointer_mut(pointer).unwrap() = value;
+            let mut invalid: work_model::discussion::DiscussionSession =
+                serde_json::from_value(invalid_value).unwrap();
+            invalid.commit.content_sha256 = fingerprint::discussion_session(&invalid);
+            assert_eq!(
+                adapter
+                    .candidate(&invalid, &metadata)
+                    .err()
+                    .unwrap()
+                    .reason_code,
+                expected,
+                "{pointer}"
+            );
+        }
+    }
 }

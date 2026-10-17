@@ -2,11 +2,11 @@
 
 use serde_json::{Value, json};
 use work_feature::error::{ExitCode, WorkError};
-use work_feature::specification::reconciliation_project::{
+use work_feature::specification::reconciliation::project::{
     ReconciliationArtifactRepository, preview_from_repository,
 };
-use work_feature::specification::reconciliation_publication::requires_migration;
-use work_feature::specification::reconciliation_semantic::{
+use work_feature::specification::reconciliation::publication::requires_migration;
+use work_feature::specification::reconciliation::semantic::{
     ReconciliationSemanticRepository, prepare_semantic_selection,
 };
 
@@ -37,7 +37,7 @@ pub fn recover_reconciliation(
     recover_ledger: impl FnOnce(&Value, &str) -> Result<Value, WorkError>,
     recover_migration: impl FnOnce(&Value, &str) -> Result<Value, WorkError>,
 ) -> Result<Value, WorkError> {
-    work_feature::specification::reconciliation_input::validate_preview_fields(request)?;
+    work_feature::specification::reconciliation::input::validate_preview_fields(request)?;
     if requires_migration(request) {
         recover_migration(request, approved_sha256)
     } else {

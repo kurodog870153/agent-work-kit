@@ -23,6 +23,9 @@ pub enum ReplacementCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeviationAction {
+    AddFiles {
+        modification_types: Vec<super::attempt::ScopeModification>,
+    },
     ReplaceCommand {
         record_id: String,
         replacement: ReplacementCommand,
@@ -41,6 +44,15 @@ pub enum DeviationAction {
     AdjustOperation {
         operation: TaskOperation,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviationRecordKind {
+    Task,
+    Command,
+    Operation,
+    Validation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

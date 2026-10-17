@@ -316,7 +316,7 @@ mod tests {
     use super::*;
 
     fn example() -> Value {
-        work_model::contract_data::registry_value()
+        work_model::contract::data::registry_value()
     }
 
     #[test]

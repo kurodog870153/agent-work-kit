@@ -22,12 +22,12 @@ impl ContractRegistry for EmbeddedRegistry {
 
 fn registry() -> &'static Value {
     static REGISTRY: OnceLock<Value> = OnceLock::new();
-    REGISTRY.get_or_init(work_model::contract_data::registry_value)
+    REGISTRY.get_or_init(work_model::contract::data::registry_value)
 }
 
 pub fn scaffold_order(contract_id: &str) -> Option<&'static Value> {
     static ORDERS: OnceLock<Value> = OnceLock::new();
-    let orders = ORDERS.get_or_init(work_model::contract_data::scaffold_orders);
+    let orders = ORDERS.get_or_init(work_model::contract::data::scaffold_orders);
     orders.get(contract_id)
 }
 
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn frozen_catalog_keeps_public_descriptions_and_scaffolds() {
-        assert_eq!(list()["contracts"].as_array().unwrap().len(), 96);
+        assert_eq!(list()["contracts"].as_array().unwrap().len(), 100);
         assert_eq!(
             describe("work-discussion-request").unwrap()["kind"],
             "semantic_request"

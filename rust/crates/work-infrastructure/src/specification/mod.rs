@@ -1,9 +1,6 @@
 pub mod artifact_migration;
 pub mod layout_migration;
 pub mod migration;
-pub mod migration_publication;
-pub mod migration_reconciliation_publication;
-pub mod migration_verification;
 pub mod reconciliation_storage;
 pub mod reconstruction;
 pub mod storage;

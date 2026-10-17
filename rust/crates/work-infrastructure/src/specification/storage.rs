@@ -1487,7 +1487,7 @@ mod tests {
             let target = format!("target-{position}.json");
             fs::write(root.join(&target), format!("data {position}")).unwrap();
             let verify = || {
-                crate::specification::migration_verification::verify_published_retained_transaction(
+                crate::specification::migration::verification::verify_published_retained_transaction(
                     &root,
                     execution,
                     &relative,
@@ -1498,7 +1498,7 @@ mod tests {
                 verify().unwrap()["approval_sha256"],
                 journal["approval_sha256"]
             );
-            assert!(crate::specification::migration_verification::verify_published_retained_transaction(
+            assert!(crate::specification::migration::verification::verify_published_retained_transaction(
                 &root, "foreign execution", &relative, None).is_err());
             let original = fs::read(root.join(&relative)).unwrap();
             fs::write(root.join(&target), b"changed after publication").unwrap();

@@ -7,7 +7,7 @@ Codex Workflow Kit 透過 `$work` 協助你規劃需求、拆分任務並執行�
 1. 整理原始需求，確認工作類型、需要的技能與驗收條件。
 2. 將需求拆分為可執行的任務，安排相依關係與驗證步驟。
 3. 在正式建立或修訂任務前，提供預覽供你審查與核准。
-4. 依授權執行指定任務，保存執行結果與驗證紀錄。
+4. 依整體授權連續執行範圍內任務與開發修正，保留既有修改、工具產物及可追溯的程序／AI 審查／使用者確認證據。
 5. 保存討論進度，方便稍後接續規劃。
 6. 分析不相容或損壞的既有工作資料，保留原始紀錄並協助遷移。
 
@@ -128,15 +128,15 @@ os-scripts\windows\install-work.bat
 3. [Rust 架構與執行產物管理](docs/work/rust/architecture.md)。
 4. [工作指引架構](docs/work/instruction/architecture.md)。
 
-## 清理本機 Codex 資料
+## 清理本機 Codex 資料與 ChatGPT 快取
 
 > [!WARNING]
-> 清理腳本會永久刪除本機 Codex 工作階段、封存工作階段、產生的圖片、歷史紀錄與相關狀態資料。執行前請先關閉 Codex，並確認不需要保留這些資料。
+> 清理腳本會永久刪除本機 Codex 工作階段、封存工作階段、產生的圖片、歷史紀錄與相關狀態資料，並清除找到的 ChatGPT 桌面版快取。執行前請先關閉 Codex 與 ChatGPT，並確認不需要保留這些 Codex 資料。
 
 1. Windows：`os-scripts/windows/clean-codex-data.bat`
 2. macOS：`os-scripts/mac/clean-codex-data.command`
 
-執行前請先關閉 Codex，確認畫面顯示的刪除範圍，再依提示操作。
+ChatGPT 僅清除快取，保留登入與設定。確認畫面顯示的刪除範圍後，再依提示操作。
 
 ## License
 

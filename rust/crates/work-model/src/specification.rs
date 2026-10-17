@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn public_specification_examples_match_models() {
-        let registry: Value = crate::contract_data::registry_value();
+        let registry: Value = crate::contract::data::registry_value();
         let items = &registry["items"];
         macro_rules! example {
             ($id:literal, $model:ty) => {

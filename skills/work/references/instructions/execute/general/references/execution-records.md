@@ -9,7 +9,16 @@ metadata:
 
 # Execution 紀錄參考指令
 
+## 專案檔案發布邊界
+
+1. [強制] 宣告檔案變更的 Task 以當次完整 `changes` 與讀取時的 `expected_before` 直接呼叫 `execute file-apply`；基準須完整涵蓋寫入路徑、搬移來源及目的，值為原始 bytes 的 SHA-256，不存在為 null。不得在未重新讀取並整合內容前刷新基準。沿用目前 Attempt 的範圍授權，不要求手動 staging 或獨立發布核准；`file-prepare` 僅供選用預覽。所有路徑依同一開始檔案樹推導最終狀態，完整步驟見 [完整檔案發布及還原](../../../../workflows/execute/publish-project-files.md)。不得以 Git status 代替完整內容及路徑身分證據。
+2. [強制] argv CMD 在宿主提供的環境與限制內執行，Work 不建立 AppContainer／Seatbelt 或接管工具與產物；Windows 一般 Job、macOS process group 保留必要生命週期處理。Linux 與 Shell 模式不支援。不得繞過宿主拒絕。automated VAL 核對結構化條件及真實 owned CMD receipts；External OP 保留獨立授權及副作用處理，不因本機檔案可復原就宣稱跨系統原子性。
+3. [強制] 同一 Attempt 可反覆完整修改、測試及修正；歷史以交易前筆身分排序，每次保存當前 before，不能還原前次成功成果。兩次操作間的使用者修改須明確確認並持久化新實際基準，綁定前筆交易、完整 bytes／metadata／存在狀態／原生身分的指紋及確認證據；未確認或確認後漂移仍阻擋。原範圍明示 `rollback_on_write_failure: true` 且當次已知失敗、全組狀態及身分不變時，僅撤銷當次，明記失敗已還原；完整寫入後測試失敗不得撤銷。崩潰／未知／外來修改／還原失敗保留證據並阻擋，明確 Recovery 仍須新授權，不追溯授權舊交易。
+4. [強制] 完成及結案 Recovery 核對完整有序歷史、當前實際版本與全部必要驗收。歷史生成 CMD 不得冒充新版本驗收；所有非 skipped VAL 保存程式核對的檔案版本，修改後必須重新驗收。尚無成功發布的已還原歷史不能完成；已有成功歷史而後續當次失敗已還原時，保留前次成果及新版本重驗要求。metadata 或 ACL 無法完整保存及還原時，正式 target 修改前整組拒絕；既有未知 metadata 不得冒稱完整。
+
 ## 1. 路徑、TASK 與指紋
+
+1. [強制] 命令 receipts 的 `execution.input_files` 保存 Task 已宣告 project_state 具體檔案及 task_output 實際成果路徑的內容指紋；目錄只保存範圍類型，不代表遞迴內容證據。VAL 的 `file_version` 綁定修改歷史與目前宣告輸入；輸入漂移使舊驗收不能完成 Task。保留原始命令與驗收紀錄，不改寫歷史、不自動重跑結果未知的命令，也不擴張至編譯產物、快取或工具鏈管理。
 
 1. [強制] Execute 只使用正式 TASK 或完整交接所確定的需求編號與 TASK／Execution 明確路徑與 Task-owned 固定 Source binding，並於每次讀寫前套用共用 instruction-loading 的完整需求成品路徑安全檢查；不得由單一路徑推測、替換或重新決定。
 2. [強制] 分別驗證 `task_collection_sha256`、`task_index_sha256` 與目標 `task_item_sha256`。全部依共用 loader 與 canonical fingerprint 規則計算，不得另訂正規化方式。
@@ -46,15 +55,16 @@ metadata:
 3. [強制] 外部或多步結果固定記 `整體結果：完整成功／部分成功／失敗／結果不確定`，並依實況加入 `已生效`、`未生效`、`未知`；部分成功與結果不確定不得標示 Attempt 已完成。每個 OP 的成功、失敗或未知須分別映射到上述三類明細，且整體結果不得與 OP 紀錄矛盾。
 4. [強制] 新 Attempt 與 active Execution index 必須通過目前完整契約。既有已關閉 Attempt 保留原始 bytes 作為歷史證據，不因缺欄位而回寫，也不推定其已通過目前 validator；不相容 active artifacts 須依核准 Migration 處理。
 5. [強制] 目前 instructions 與 fingerprints 只約束未來的新 Attempt 或續接判定；已關閉歷史中當時有效的證據不因指令更新失效，除非另有已確認決策要求重審。
-6. [強制] 完成只依實際通過的 VAL、有效承接，或已由同一 Attempt 的 approved non-blocking `skip_record` 明確核准並保存為 skipped evidence 的 VAL 判定；skipped 只代表已核准不執行，不得記為通過或成功結果。未執行且沒有該核准證據、退出碼未知、只編譯未驗收、零測試或主觀推測不得記為通過。
+6. [強制] 完成必須涵蓋原始及已接受補充 VAL 的目前有效通過證據；approved non-blocking `skip_record` 只合法結束該 reservation，不能滿足必要驗收，也不得記為通過或成功結果。未執行且沒有該核准證據、退出碼未知、只編譯未驗收、零測試或主觀推測不得記為通過。
 7. [強制] 「已取消」只由 Task／Revise 流程設定；Execute 不得將 TASK 設為、移出或重新啟用已取消。所有未取消必要 TASK 完成後仍須核對工具彙整的主驗收結果及實際 Attempt evidence；TASK 狀態本身不證明主驗收完成，不重讀全部 Attempt 或建立 `completion.md`；全部取消只代表目前無需執行，不代表驗收已完成。主驗收與 TASK 驗收完成只接受目前 mapping 的實際 passed VAL evidence；承接與 skipped 只滿足允許的結案 coverage，不製造新 Attempt 的驗收完成證據。
 
 ## 5. 固定紀錄格式
 
 1. [強制] Index 使用單一 canonical 純 JSON object；`tasks` 依 TASK 文件順序排列，欄位與順序完全依 Work CLI renderer，選用欄位只在存在時加入，不額外輸出文字行或占位符。
-2. [強制] `records` 依序保存 discriminated object：CMD 使用 `id`、`kind: command`、選用 `correction`、整數 `exit_code`、單行 `result`；OP 使用 `id`、`kind: operation`、`outcome: success|failure|unknown`、最小 `state`；VAL 使用 `id`、`kind: validation`、`outcome: passed|failed`、最小 `evidence`。approved non-blocking `skip_record` 改以原 `id` 與 `kind`、`status: skipped`、完全相符的 `reason` 及 `deviation_id` 保存，不得同時偽造一般結果欄位，也不列入 OP success。累積修改檔案使用 normalized project-relative `modified_files`，不保存 diff 或雜湊。CMD `correction` 固定保存 canonical `original_command`、`actual_command`、`reason` 與 `authorization_evidence`，兩個命令須維持相同 `argv|shell` mode 且不得相同。
+2. [強制] `records` 依序保存 discriminated object：CMD 使用 `id`、`kind: command`、選用 `correction`、整數 `exit_code`、單行 `result`；OP 使用 `id`、`kind: operation`、`outcome: success|failure|unknown`、最小 `state`；VAL 使用 `id`、`kind: validation`、`outcome: passed|failed`、最小 `evidence`，並保存 producer-owned `source`、`file_version` 及所屬來源 proof。approved non-blocking `skip_record` 改以原 `id` 與 `kind`、`status: skipped`、完全相符的 `reason` 及 `deviation_id` 保存，不得同時偽造一般結果欄位，也不列入 OP success。累積修改檔案使用 normalized project-relative `modified_files`，不保存 diff 或雜湊。CMD `correction` 固定保存 canonical `original_command`、`actual_command`、`reason` 與 `authorization_evidence`，兩個命令須維持相同 `argv|shell` mode 且不得相同。
 3. [強制] `completed` 加入 `ended_at`；`stopped` 或 `blocked` 依序加入 `final_type`、`reason`、`ended_at`。有 OP 的已關閉 Attempt 必須加入 `overall_result`，其 `effective`、`not_effective`、`unknown` 精確列出對應 OP ID；`partial_success`、`failure`、`uncertain_result` 不得搭配 `completed`。
 4. [強制] 承接 Attempt 使用 `continued_from`，選用 `carried_records` 依原 TASK ID 順序保存 `source_attempt_id`、`record_id` 與目前仍有效的最小 `evidence`；未承接的 ID 省略，不得以摘要取代來源、ID 或有效性證據。重跑已承接 ID 時接續 `#1`、`#2` 序號。
+   Automated VAL 的 `validation_evidence` 僅由可信 writer 產生，保存 immediate source／最終 owner Attempt SHA 與實際原始 VAL record；caller 不可提供。當次 authorization 必須涵蓋該 VAL 與 criterion mapping，依現在條件、engine、來源 bytes 及完整 CMD receipts 重驗後才可承接驗收。Acceptance evidence 的 `attempt_id` 是接收驗收的當次 scope，選用 `source_attempt_id` 明確指向實際 VAL owner；不新增偽造 VAL record、不重跑 CMD、不改歷史。當次 CMD retry／skip、條件或證據 drift 使舊 VAL 不能沿用，需經正式新 VAL 流程驗證目前結果。發布及 Recovery 必須重驗同一 frozen provenance，未知不得標 passed。
 5. [強制] 在任何 Attempt 寫入前，純 JSON 必須通過 Work CLI `attempt validate --input-file "<request-path>"`；`--verbose attempt render --input-file "<request-path>"` 回傳 canonical 欄位順序，既有檔案使用 `attempt validate --path "<attempt-path>"` 驗證純 JSON、`attempt.json` 檔名、Attempt 父目錄、TASK 上層目錄與 canonical bytes。這些指令唯讀，不建立 Attempt、lock 或 index 狀態。
 6. [強制] Correction 位於 `<execution-dir>/<TASK-ID>/<ATTEMPT-ID>/corrections/<CORRECTION-ID>.json`，`corrections/` 於首次建立修正紀錄時產生；每個 Attempt 的 Correction 序號各自遞增，驗證時核對目錄與目標 Attempt 身分。Correction 使用 canonical `work-correction` 純 JSON，固定使用 registry 定義的英文欄位與順序，沒有額外摘要或同義欄位；`correction validate` 驗證純 JSON 或既有檔案，`--verbose correction render` 在 response.data 回傳 canonical JSON。
 7. [強制] 需要查閱 Correction 的 required／optional fields、canonical key order、欄位限制、巢狀 contract references 或最新有效範例時，執行 `<work-cli> contract describe work-correction` 並以 registry 回傳內容為準；不得在 instruction 複製或自行維護完整 JSON 結構。
@@ -70,12 +80,21 @@ metadata:
 6. [強制] record-begin 發現既有 `record_id`、指令變更、非正式 ID 或 transaction conflict 時停止。寫入中斷保留原 lock 與同一 `record-begin` staging 的 manifest／payload，回傳 `recovery_required`；不得自動重試、執行 record、刪除暫存檔或解除 lock。
 7. [強制] 已保留 CMD 需要等價修正時，先依主指令的執行偏差邊界確認語意與副作用未改變；若原 Attempt 授權未精確涵蓋該替換，須先取得使用者決策。執行前以 `work-command-correction-request` 純 JSON 呼叫 `execute command-correction --input-file "<request-path>"`，只提供使用者核准的 `actual_command` 與語意原因。工具從 active lock、正式 TASK、Attempt 與已核准偏差推導 record identity 和原命令，只 atomic replacement index 保存 `command_correction`，不執行命令或判斷語意等價；同一 record 只能保存一次。
 8. [強制] command-correction 成功須回傳 `work-command-correction`、`correction_status: recorded` 及 `lock_status: record_reserved` 後才能執行實際命令。中斷時保留 lock 與同一 `command-correction` staging 的 manifest／payload 並回傳 `recovery_required`；不得執行、重送、刪除、rollback 或解鎖。
-9. [強制] 已保留 record 完成後，使用 `work-record-finish-request` 純 JSON呼叫 `execute record-finish --input-file "<request-path>"`。已授權且結果確定的 record 不因記錄結果而再次詢問；結果不確定或副作用超出授權時先停止決策。不得手填 `record.id`、`record.kind` 或 correction；CLI 由 active lock 與有效 TASK 推導實際 record instance；command 使用 `exit_code`／`result` 且不得由 request 傳入 correction，operation 使用 `outcome`／`state`，validation 使用 `outcome`／`evidence`。approved non-blocking `skip_record` 使用 `status: skipped`、核准的 `reason` 與對應 `deviation_id`，不得傳入一般結果、修改檔案或額外 authorization evidence；有一般執行造成的檔案變更時另傳 normalized `modified_files`。
+9. [強制] 已保留 record 完成後，使用 `work-record-finish-request` 純 JSON呼叫 `execute record-finish --input-file "<request-path>"`。已授權且結果確定的 record 不因記錄結果而再次詢問；結果不確定或副作用超出授權時先停止決策。不得手填 `record.id`、`record.kind` 或 correction；CLI 由 active lock 與有效 TASK 推導實際 record instance；command 使用 `exit_code`／`result` 且不得由 request 傳入 correction，operation 使用 `outcome`／`state`，validation 依正式 kind 使用 `outcome` 與程序實際證據、AI `review` 或指定使用者的實際 `confirmation` 文件；來源、版本及凍結 proof 由 producer 保存，不得由 caller 填寫。approved non-blocking `skip_record` 使用 `status: skipped`、核准的 `reason` 與對應 `deviation_id`，不得傳入一般結果、修改檔案或額外 authorization evidence；有一般執行造成的檔案變更時另傳 normalized `modified_files`。
 10. [強制] record-finish 先將 lock 的 command correction 併入 CMD，再 atomic replacement canonical Attempt，依序追加 record、更新累積修改檔案與 OP overall result，依實際 VAL records 與目前 TASK mapping 推導主驗收及 TASK 驗收 `acceptance_results` 並同步 index；再 atomic replacement index，移除 lock 的 `record_id` 與 `command_correction`，保留 Attempt lock。工具不執行 record。任一步驟中斷時保留已寫入內容、lock 與同一 `record-finish` staging 的 manifest／payload 並回傳 `recovery_required`；不得重送結果、開始其他 record、rollback、刪除或解鎖。
 11. [強制] Attempt 結案使用 `work-attempt-close-request` 純 JSON呼叫 `execute attempt-close --input-file "<request-path>"`。`completed` 不傳 final details 且每個正式 VAL 的最新 current／carried 結果必須通過；`stopped`／`blocked` 必須傳入其允許的 `final_type` 與具體 `reason`。結束時間由 Work CLI 產生，不接受 request 指定。
 12. [強制] attempt-close 必須確認沒有 `record_id` 或 `command_correction` 保留，依序 atomic replacement canonical closed Attempt，再 atomic replacement index 同步 TASK／整體狀態並移除 execution lock。全部已授權 record 成功且符合已審查的正常結案條件時不另行詢問；停止、受阻、結果不確定、未審查偏差或其他非正常結案須先取得新決策。`completed` 映射已完成；一般 `stopped` 映射待重新執行，規格缺陷／指令變更／外部操作失敗映射受阻；`blocked` 映射受阻。停止／受阻時工具失效受影響的驗收結果並保留原 records；正常完成保留實際 acceptance evidence。工具不執行 record。
 13. [強制] attempt-close 任一步驟中斷時保留已寫入 Attempt、原 lock 與同一 `attempt-close` staging 的 manifest／payload 並回傳 `recovery_required`；不得重送、rollback、刪除或手動解鎖。只有 Attempt 與 index 完全同步時回傳 `work-attempt-close` 及 `lock_status: released`。
+14. [強制] CMD record-finish 核對真實 owned receipts 的退出碼及 Task／Attempt／Record 身分。VAL 的正式 kind 明確區分來源，不以 actor 名稱推測：automated 核對最新 CMD 的完整真實輸出／報告，未指定 verification 時核對全部 command_ids 實際退出碼為零；明確條件可要求非零，未知不得通過 any／not。ai_review 以指定 reviewer、具體引用及理由保存 AI 審查，核對檔案 hash、owned CMD receipts 或完整發布前後差異；空泛 passed 無效。manual 必須保存指定 confirmer 的實際使用者訊息／文件及來源引用，精確綁定 record-begin 回傳的 Task／Attempt／VAL／retry／file_version／outcome；AI 不得代造使用者確認。CLI 凍結原始 bytes 與 proof，但不宣稱能對同一 OS 使用者下的其他程序提供密碼學身分認證。所有必要條件須由正確來源、目前版本的完整證據通過才可 completed 或開放下游；任何檔案新變更使舊驗收失效。宿主拒絕、未執行、截斷、缺漏及未知維持未完成，不得以 AI 結論遮蓋程序失敗。
+
 Normal records reuse the active Attempt authorization. Supply new authorization
 evidence only when beginning a retry or recording a failed or unknown result.
 The reserved-record lock preserves retry evidence for downstream receipts and is
 released only after the record is finished or explicitly recovered.
+
+## 跨流程續作
+
+1. [強制] CMD 已有完整 finished receipt 時，即使宣告輸入漂移，仍保存真實歷史退出碼；舊結果不得用作目前 VAL。保留使用者目前內容，經核准 skip_record 結束失效的 VAL reservation，再依實際授權執行新 CMD／VAL；不改回舊內容、不刪鎖、不重寫歷史、不重跑未知結果。承接舊 VAL 的歷史完整性不得阻擋合法新證據，但結案仍重驗目前有效性。
+2. [強制] 經正常停止的 Attempt，其完整 create／move 成果以 continued_from 與保留交易鏈銜接；新 Attempt 必須另取得 Execute 授權，核對目前 bytes／metadata／路徑身分，不要求重置或重複發布。
+3. [強制] Migration 來源以真實核准 journal、原始證據、候選、發布 marker 與目前 Task 核對；Execute 授權獨立取得，不偽造 Discussion 或 Snapshot。
+4. [強制] 單純補檔使用閒置 Attempt 的 add_files deviation，先登記精確清單、理由及修改類型並檢查完整跨 Task 相依；原 scope 必須包含 additional_files，不能藉此擴大模組或明示檔案限制。操作見既有 Attempt 授權邊界工作流程。

@@ -184,7 +184,7 @@ fn feature_and_infrastructure_cannot_bypass_derivation_facade() {
         }
     }
     {
-        let file = "work-feature/src/instruction/refresh_build.rs";
+        let file = "work-feature/src/instruction/refresh/build.rs";
         let text = source(file);
         assert!(!text.contains("fn hash("), "local hash in {file}");
         assert!(
@@ -194,8 +194,8 @@ fn feature_and_infrastructure_cannot_bypass_derivation_facade() {
     }
     for file in [
         "work-feature/src/specification/mod.rs",
-        "work-feature/src/specification/migration_transaction.rs",
-        "work-feature/src/specification/reconciliation_publication.rs",
+        "work-feature/src/specification/migration/transaction.rs",
+        "work-feature/src/specification/reconciliation/publication.rs",
     ] {
         let text = source(file);
         assert!(

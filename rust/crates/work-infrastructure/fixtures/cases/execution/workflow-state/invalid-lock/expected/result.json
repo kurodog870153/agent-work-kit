@@ -51,7 +51,7 @@
     },
     "routing_status": "VALID",
     "schema": "work-instruction-selection-manifest",
-    "selection_sha256": "fd4ba0639cddd1d0be9065763f15ef71adb78a9a14e22fbe23b0afe639ec7c1d",
+    "selection_sha256": "82584cba2ca3cfc280ee3a7b2800cced1ea2d4783d62cacf7153fd7613346206",
     "sources": [
       {
         "canonical_sha256": "816283719f5864d235cd41c91a3164342535288dbb66edbf603f3e1073f79649",
@@ -84,13 +84,13 @@
         "path": "references/workflows/execute.md"
       },
       {
-        "canonical_sha256": "036b09061ab0ad6a2d2f9a07dc136fb77cee2bcb1a1a97daacd395d9b754a385",
+        "canonical_sha256": "3d472616aa6e8acec0c673553c19be4071ce4df009b20d802d01b379724a36e1",
         "logical_name": "work.workflow.execute.start-an-attempt-transaction",
         "path": "references/workflows/execute/start-an-attempt-transaction.md"
       }
     ]
   },
-  "selection_sha256": "fd4ba0639cddd1d0be9065763f15ef71adb78a9a14e22fbe23b0afe639ec7c1d",
+  "selection_sha256": "82584cba2ca3cfc280ee3a7b2800cced1ea2d4783d62cacf7153fd7613346206",
   "semantic_input_contract": null,
   "source_order": [
     "work.instruction-loading",
