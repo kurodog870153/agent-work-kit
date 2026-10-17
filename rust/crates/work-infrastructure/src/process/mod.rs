@@ -193,17 +193,15 @@ mod tests {
         });
         assert_eq!(spaced.status, CommandStatus::Exited);
         assert_eq!(spaced.stdout_tail.trim(), "a b");
-        let timed = LocalCommandRunner.run(&CommandRequest {
-            argv: vec![
-                "powershell.exe".into(),
-                "-NoProfile".into(),
-                "-Command".into(),
-                "Start-Sleep -Seconds 2".into(),
-            ],
-            cwd: cwd.clone(),
-            timeout: Duration::from_millis(50),
-        });
-        assert_eq!(timed.status, CommandStatus::TimedOut);
+        let mut sleeper = host::tests::fixture(serde_json::json!({"mode":"sleep"}));
+        sleeper.timeout = Duration::from_millis(700);
+        let timed = LocalCommandRunner.run(&sleeper);
+        assert_eq!(
+            timed.status,
+            CommandStatus::TimedOut,
+            "{:?}",
+            timed.diagnostic
+        );
         let missing = LocalCommandRunner.run(&CommandRequest {
             argv: vec!["work-command-that-does-not-exist".into()],
             cwd,
