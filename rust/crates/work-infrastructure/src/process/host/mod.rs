@@ -266,14 +266,14 @@ pub(crate) fn into_outcome(capture: Capture, handler_cleanup: Option<io::Error>)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::AtomicU64;
     static ID: AtomicU64 = AtomicU64::new(0);
 
-    pub(super) fn fixture(config: serde_json::Value) -> CommandRequest {
+    pub(crate) fn fixture(config: serde_json::Value) -> CommandRequest {
         named_fixture("work host 中文", config)
     }
 
