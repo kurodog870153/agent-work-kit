@@ -139,6 +139,6 @@ jobs:
         if: always()
         run: python ../.github/scripts/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
       - name: Build Work release binary
-        run: cargo build --release --locked -p work-cli --target $env:WORK_RUST_TARGET
+        run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary
-        run: '& ".\target\$env:WORK_RUST_TARGET\release\work.exe" --help'
+        run: '& ".\target\release\work.exe" --help'
