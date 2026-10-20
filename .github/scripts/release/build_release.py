@@ -14,6 +14,9 @@ from pathlib import Path
 
 from release_integrity import create_manifest, verify_tree, verify_zip
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "version-guard"))
+from version_guard import validate_lock
+
 
 PLATFORMS = {
     "macos-arm64": {
@@ -39,9 +42,9 @@ PLATFORMS = {
 }
 
 
-def workspace_version(repository):
+def checked_version(repository):
     with (repository / "rust/Cargo.toml").open("rb") as stream:
-        return tomllib.load(stream)["workspace"]["package"]["version"]
+        return validate_lock(repository, tomllib.load(stream))
 
 
 def tracked_skill_files(repository):
@@ -68,7 +71,7 @@ def copy_asset(repository, stage, source, destination):
 
 def build_package(repository, output, platform, binary, commit, runner):
     config = PLATFORMS[platform]
-    version = workspace_version(repository)
+    version = checked_version(repository)
     tag = f"v{version}"
     name = f"work-{tag}-{platform}.zip"
     target = output / name
@@ -119,7 +122,7 @@ def build_package(repository, output, platform, binary, commit, runner):
 
 
 def write_outer_checksums(repository, output):
-    version = workspace_version(repository)
+    version = checked_version(repository)
     names = [f"work-v{version}-{platform}.zip" for platform in sorted(PLATFORMS)]
     target = output / "SHA256SUMS.txt"
     if target.exists():

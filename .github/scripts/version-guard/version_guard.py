@@ -1,4 +1,4 @@
-"""Validate the Rust workspace version before a pull request can merge."""
+"""Validate the project version before a pull request can merge."""
 
 import argparse
 import re
@@ -51,11 +51,17 @@ def workspace_version(manifest):
     return manifest["workspace"]["package"]["version"]
 
 
-def validate_workspace(root, baseline_manifest):
+def project_version(root):
+    version = (root / "VERSION").read_text(encoding="utf-8").strip()
+    parse_version(version)
+    return version
+
+
+def validate_workspace(root, baseline_version):
     rust = root / "rust"
     manifest = tomllib.loads((rust / "Cargo.toml").read_text(encoding="utf-8"))
-    version = workspace_version(manifest)
-    baseline = workspace_version(tomllib.loads(baseline_manifest))
+    version = project_version(root)
+    baseline = baseline_version.strip()
     if compare_versions(version, baseline) <= 0:
         raise ValueError(f"PR version {version} must be greater than main version {baseline}")
 
@@ -65,8 +71,9 @@ def validate_workspace(root, baseline_manifest):
 
 def validate_lock(root, manifest):
     rust = root / "rust"
-    version = workspace_version(manifest)
-    parse_version(version)
+    version = project_version(root)
+    cargo_version = workspace_version(manifest)
+    parse_version(cargo_version)
 
     members = manifest["workspace"]["members"]
     names = set()
@@ -81,9 +88,34 @@ def validate_lock(root, manifest):
 
     lock = tomllib.loads((rust / "Cargo.lock").read_text(encoding="utf-8"))
     locked = {package["name"]: package["version"] for package in lock["package"] if package["name"] in names}
-    if set(locked) != names or any(value != version for value in locked.values()):
-        raise ValueError(f"Cargo.lock workspace versions do not all match {version}")
+    if set(locked) != names or any(value != cargo_version for value in locked.values()):
+        raise ValueError(f"Cargo.lock workspace versions do not all match {cargo_version}")
     return version
+
+
+def baseline_version(root, base_ref):
+    result = subprocess.run(
+        ["git", "show", f"{base_ref}:VERSION"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout
+    if not (
+        "path 'VERSION' does not exist" in result.stderr
+        or "path 'VERSION' exists on disk, but not in" in result.stderr
+    ):
+        raise subprocess.CalledProcessError(result.returncode, result.args, stderr=result.stderr)
+    # The first migration PR compares against main's former version source.
+    manifest = subprocess.run(
+        ["git", "show", f"{base_ref}:rust/Cargo.toml"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    return workspace_version(tomllib.loads(manifest))
 
 
 def main():
@@ -91,16 +123,10 @@ def main():
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--base-ref", default="refs/remotes/origin/main")
     args = parser.parse_args()
-    baseline = subprocess.run(
-        ["git", "show", f"{args.base_ref}:rust/Cargo.toml"],
-        cwd=args.root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
     try:
+        baseline = baseline_version(args.root, args.base_ref)
         version = validate_workspace(args.root, baseline)
-    except (KeyError, OSError, tomllib.TOMLDecodeError, ValueError) as error:
+    except (KeyError, OSError, subprocess.CalledProcessError, tomllib.TOMLDecodeError, ValueError) as error:
         print(f"Version guard failed: {error}", file=sys.stderr)
         return 1
     print(f"Version guard passed: {version}")

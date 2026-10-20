@@ -29,7 +29,7 @@ def check_identity(root, repository, tag, expected_sha):
     with (root / "rust/Cargo.toml").open("rb") as stream:
         version = validate_lock(root, tomllib.load(stream))
     if tag != f"v{version}":
-        raise ValueError(f"tag {tag} does not match workspace version {version}")
+        raise ValueError(f"tag {tag} does not match project version {version}")
     checkout = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
     remote_tag = api(f"repos/{repository}/git/ref/tags/{tag}")["object"]["sha"]
     main = api(f"repos/{repository}/branches/main")["commit"]["sha"]

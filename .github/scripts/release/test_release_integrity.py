@@ -1,6 +1,7 @@
 """Adversarial fixtures for the release integrity checks."""
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -74,10 +75,13 @@ class ReleaseIntegrityTests(unittest.TestCase):
             integrity.create_manifest(root)
             script = Path(__file__).parents[3] / "os-scripts/windows/installer/verify-package.ps1"
             command = ["powershell.exe", "-NoProfile", "-File", str(script), "-PackageRoot", str(root)]
-            result = subprocess.run(command, capture_output=True, text=True)
+            environment = os.environ.copy()
+            system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            environment["PATH"] = os.pathsep.join((str(system_root / "System32"), str(system_root / "System32/WindowsPowerShell/v1.0")))
+            result = subprocess.run(command, capture_output=True, text=True, env=environment)
             self.assertEqual(result.returncode, 0, result.stderr)
             item.write_bytes(b"tampered")
-            result = subprocess.run(command, capture_output=True, text=True)
+            result = subprocess.run(command, capture_output=True, text=True, env=environment)
             self.assertNotEqual(result.returncode, 0)
 
 
