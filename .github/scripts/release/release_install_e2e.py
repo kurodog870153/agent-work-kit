@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from release_integrity import verify_tree, verify_zip
+from release_package_integrity import verify_tree, verify_zip
 
 
 def extract_checked(archive_path, destination):
