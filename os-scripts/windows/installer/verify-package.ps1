@@ -45,7 +45,17 @@ try {
             if ($relative -eq 'SHA256SUMS') { continue }
             if (-not $expected.ContainsKey($relative)) { throw "Extra package file: $relative" }
             if (-not $found.Add($relative)) { throw "Duplicate package file: $relative" }
-            $actual = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $stream = [IO.File]::OpenRead($item.FullName)
+            try {
+                $hasher = [Security.Cryptography.SHA256]::Create()
+                try {
+                    $actual = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+                } finally {
+                    $hasher.Dispose()
+                }
+            } finally {
+                $stream.Dispose()
+            }
             if ($actual -cne $expected[$relative]) { throw "SHA-256 mismatch: $relative" }
         }
     }

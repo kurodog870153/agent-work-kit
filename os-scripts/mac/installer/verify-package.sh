@@ -2,7 +2,7 @@
 
 # Verify every package file before either installer writes an installation target.
 verify_release_package() {
-    local root="$1" manifest line hash relative entry actual_hash found count=0 index
+    local root="$1" manifest line hash relative entry actual_hash found count=0 manifest_count=0 index
     local -a paths=() hashes=()
     if [[ ! -d "$root" || -L "$root" ]]; then
         printf 'Error: release package root is not a real directory.\n' >&2
@@ -25,16 +25,17 @@ verify_release_package() {
             printf 'Error: unsafe release SHA256SUMS entry.\n' >&2
             return 1
         fi
-        for entry in "${paths[@]}"; do
-            if [[ "$entry" == "$relative" ]]; then
+        for (( index=0; index<manifest_count; index++ )); do
+            if [[ "${paths[index]}" == "$relative" ]]; then
                 printf 'Error: duplicate release SHA256SUMS path: %s\n' "$relative" >&2
                 return 1
             fi
         done
         paths+=("$relative")
         hashes+=("$hash")
+        manifest_count=$((manifest_count + 1))
     done < "$manifest"
-    if (( ${#paths[@]} == 0 )); then
+    if (( manifest_count == 0 )); then
         printf 'Error: release SHA256SUMS is empty.\n' >&2
         return 1
     fi
