@@ -39,8 +39,11 @@ fn recovery_directory_accepts_unterminated_prompts_and_crlf() {
 
 #[test]
 fn mac_installer_requires_local_rust_build_and_startup_check() {
-    let script =
-        fs::read_to_string(repository().join("os-scripts/mac/install-work.command")).unwrap();
+    let script = format!(
+        "{}{}",
+        fs::read_to_string(repository().join("os-scripts/mac/install-work.command")).unwrap(),
+        fs::read_to_string(repository().join("os-scripts/mac/installer/work-core.sh")).unwrap()
+    );
     for required in [
         "cargo build --release --locked",
         "xcrun --show-sdk-path",
@@ -56,8 +59,12 @@ fn mac_installer_requires_local_rust_build_and_startup_check() {
 
 #[test]
 fn windows_installer_requires_local_rust_build_and_startup_check() {
-    let script =
-        fs::read_to_string(repository().join("os-scripts/windows/install-work.bat")).unwrap();
+    let script = format!(
+        "{}{}",
+        fs::read_to_string(repository().join("os-scripts/windows/install-work.bat")).unwrap(),
+        fs::read_to_string(repository().join("os-scripts/windows/installer/work-core.bat"))
+            .unwrap()
+    );
     for required in [
         "cargo build --release --locked",
         "rustc -vV",
@@ -92,7 +99,7 @@ fn windows_installer_requires_local_rust_build_and_startup_check() {
 
 #[test]
 fn windows_transaction_order_and_failure_returns_are_statically_verified() {
-    let raw = fs::read(repository().join("os-scripts/windows/install-work.bat")).unwrap();
+    let raw = fs::read(repository().join("os-scripts/windows/installer/work-core.bat")).unwrap();
     assert!(raw.windows(2).any(|pair| pair == b"\r\n"));
     assert!(
         raw.iter()
@@ -102,7 +109,7 @@ fn windows_transaction_order_and_failure_returns_are_statically_verified() {
     let script = String::from_utf8(raw).unwrap().replace("\r\n", "\n");
     let main = script.split("\n:find_rust_toolchain\n").next().unwrap();
     let stages = [
-        "call :build_work\nif errorlevel 1 goto runtime_error",
+        "call :build_work\n)\nif errorlevel 1 goto runtime_error",
         "set \"target_work=!transaction_directory!\\prepared\"",
         "call :install_base\nif errorlevel 1 goto install_error",
         "call :install_selected_instructions\nif errorlevel 1 goto install_error",
@@ -137,7 +144,11 @@ fn windows_transaction_order_and_failure_returns_are_statically_verified() {
             .unwrap();
         assert!(body.contains("exit /b 1"), "{label}");
     }
-    assert!(script.contains("setlocal EnableExtensions EnableDelayedExpansion"));
+    assert!(
+        fs::read_to_string(repository().join("os-scripts/windows/install-work.bat"))
+            .unwrap()
+            .contains("setlocal EnableExtensions EnableDelayedExpansion")
+    );
     for call in ["copy_file", "copy_tree", "install_binary"] {
         let body = script
             .split(&format!("\n:{call}\n"))
@@ -153,9 +164,10 @@ fn windows_transaction_order_and_failure_returns_are_statically_verified() {
 
 #[test]
 fn windows_prepared_tree_is_clean_and_verified_before_backup() {
-    let script = fs::read_to_string(repository().join("os-scripts/windows/install-work.bat"))
-        .unwrap()
-        .replace("\r\n", "\n");
+    let script =
+        fs::read_to_string(repository().join("os-scripts/windows/installer/work-core.bat"))
+            .unwrap()
+            .replace("\r\n", "\n");
     assert!(!script.contains("refresh_existing_instructions"));
     assert!(!script.contains("xcopy \"!final_work!"));
     assert!(!script.contains("Previously installed branches and stale files will be kept"));
@@ -408,6 +420,31 @@ mod macos {
     }
 
     #[test]
+    fn global_agents_installs_before_work_or_toolchain_checks() {
+        let home = workspace("global-agents-first");
+        let mut child = Command::new("bash")
+            .arg(installer())
+            .current_dir(repository())
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .env("CARGO_HOME", home.join("missing-cargo"))
+            .env("RUSTUP_HOME", home.join("missing-rustup"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"y\n1\ny\n").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(!output.status.success());
+        assert_eq!(
+            fs::read(home.join(".codex/AGENTS.md")).unwrap(),
+            fs::read(repository().join("AGENTS.md")).unwrap()
+        );
+        assert!(!home.join(".agents").exists());
+    }
+
+    #[test]
     fn installer_finds_rust_outside_click_launch_path() {
         let home = workspace("rust-path");
         let rust_bin = home.join(".cargo/bin");
@@ -434,7 +471,7 @@ mod macos {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(b"1\n1\n").unwrap();
+        child.stdin.take().unwrap().write_all(b"n\n1\n1\n").unwrap();
         let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -446,7 +483,7 @@ mod macos {
     #[test]
     fn default_home_installs_backend_only() {
         let home = workspace("backend");
-        success(&run(&installer(), "1\n3\n", &home, None));
+        success(&run(&installer(), "n\n1\n3\n", &home, None));
         let installed = work(&home);
         for mode in ["task", "execute"] {
             for branch in ["general", "web", "web/backend"] {
@@ -462,7 +499,7 @@ mod macos {
         let home = workspace("java");
         success(&run(
             &installer(),
-            &format!("2\n{}\n5 6\n", home.display()),
+            &format!("n\n2\n{}\n5 6\n", home.display()),
             &repository(),
             None,
         ));
@@ -489,7 +526,7 @@ mod macos {
         let home = workspace("frontend");
         success(&run(
             &installer(),
-            &format!("2\n{}\n9 11\n", home.display()),
+            &format!("n\n2\n{}\n9 11\n", home.display()),
             &repository(),
             None,
         ));
@@ -510,7 +547,7 @@ mod macos {
     #[test]
     fn typescript_option_installs_language_without_web_frontend() {
         let home = workspace("typescript");
-        success(&run(&installer(), "1\n8\n", &home, None));
+        success(&run(&installer(), "n\n1\n8\n", &home, None));
         let installed = work(&home);
         for mode in ["task", "execute"] {
             assert_branch(&installed, mode, "programming-language", true);
@@ -522,7 +559,7 @@ mod macos {
     #[test]
     fn frontend_and_typescript_options_install_independent_paths() {
         let home = workspace("frontend-typescript");
-        success(&run(&installer(), "1\n7 8\n", &home, None));
+        success(&run(&installer(), "n\n1\n7 8\n", &home, None));
         let installed = work(&home);
         for mode in ["task", "execute"] {
             assert_branch(&installed, mode, "web/frontend", true);
@@ -564,7 +601,7 @@ mod macos {
             let home = workspace("contents");
             success(&run(
                 &installer(),
-                &format!("1\n{selection}\n"),
+                &format!("n\n1\n{selection}\n"),
                 &home,
                 None,
             ));
@@ -605,7 +642,7 @@ mod macos {
     #[test]
     fn reinstall_replaces_all_with_general_and_preserves_previous_bytes() {
         let home = workspace("reinstall");
-        success(&run(&installer(), "1\nall\n", &home, None));
+        success(&run(&installer(), "n\n1\nall\n", &home, None));
         let installed = assert_contents(&home, None);
         for (relative, content) in [
             ("stale.txt", "keep in previous"),
@@ -626,7 +663,7 @@ mod macos {
             fs::write(path, content).unwrap();
         }
         let before = files(&installed);
-        let output = run(&installer(), "1\n1\n", &home, None);
+        let output = run(&installer(), "n\n1\n1\n", &home, None);
         success(&output);
         let selected = BTreeSet::from(["general"]);
         assert_contents(&home, Some(&selected));
@@ -672,6 +709,18 @@ mod macos {
                 let script = fixture.join("os-scripts/mac/install-work.command");
                 fs::create_dir_all(script.parent().unwrap()).unwrap();
                 fs::copy(installer(), &script).unwrap();
+                let module = fixture.join("os-scripts/mac/installer/global-agents.sh");
+                fs::create_dir_all(module.parent().unwrap()).unwrap();
+                fs::copy(
+                    repository().join("os-scripts/mac/installer/global-agents.sh"),
+                    module,
+                )
+                .unwrap();
+                fs::copy(
+                    repository().join("os-scripts/mac/installer/work-core.sh"),
+                    fixture.join("os-scripts/mac/installer/work-core.sh"),
+                )
+                .unwrap();
                 fs::create_dir_all(fixture.join("rust")).unwrap();
                 for manifest in ["Cargo.toml", "Cargo.lock"] {
                     fs::copy(
@@ -690,7 +739,7 @@ mod macos {
                     fs::create_dir_all(&installed).unwrap();
                     fs::write(installed.join("SKILL.md"), b"existing installation").unwrap();
                 }
-                let output = run(&script, "1\n3\n", &home, None);
+                let output = run(&script, "n\n1\n3\n", &home, None);
                 assert_eq!(
                     output.status.code(),
                     Some(1),
@@ -747,7 +796,7 @@ mod macos {
         let fake_cp = tools.join("cp");
         fs::write(&fake_cp, "#!/bin/sh\nfor arg in \"$@\"; do case \"$arg\" in */SKILL.md) exit 1;; esac; done\nexec /bin/cp \"$@\"\n").unwrap();
         fs::set_permissions(&fake_cp, fs::Permissions::from_mode(0o755)).unwrap();
-        let output = run(&installer(), "1\n1\n", &home, Some(&tools));
+        let output = run(&installer(), "n\n1\n1\n", &home, Some(&tools));
         assert_eq!(output.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&output.stderr).contains("failed to prepare Work"));
         assert_eq!(files(&installed), before);
@@ -766,7 +815,7 @@ mod macos {
         let fake_mv = tools.join("mv");
         fs::write(&fake_mv, "#!/bin/sh\nfor arg in \"$@\"; do case \"$arg\" in */prepared) exit 1;; esac; done\nexec /bin/mv \"$@\"\n").unwrap();
         fs::set_permissions(&fake_mv, fs::Permissions::from_mode(0o755)).unwrap();
-        let output = run(&installer(), "1\n1\n", &home, Some(&tools));
+        let output = run(&installer(), "n\n1\n1\n", &home, Some(&tools));
         assert_eq!(output.status.code(), Some(1));
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("previous installation was restored")
@@ -793,7 +842,7 @@ mod macos {
             };
             fs::write(&fake_mv, format!("#!/bin/sh\nfor arg in \"$@\"; do case \"$arg\" in --|-f) continue;; esac; source=\"$arg\"; break; done\ncase \"$source\" in {rejection} esac\nexec /bin/mv \"$@\"\n")).unwrap();
             fs::set_permissions(&fake_mv, fs::Permissions::from_mode(0o755)).unwrap();
-            let output = run(&installer(), "1\n1\n", &home, Some(&tools));
+            let output = run(&installer(), "n\n1\n1\n", &home, Some(&tools));
             assert_eq!(output.status.code(), Some(1));
             let stderr = String::from_utf8(output.stderr).unwrap();
             if restore_failure {
@@ -829,7 +878,7 @@ mod macos {
         let fake_cargo = fake_tools.join("cargo");
         fs::write(&fake_cargo, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"cargo 1.85.0\"; else exit 1; fi\n").unwrap();
         fs::set_permissions(&fake_cargo, fs::Permissions::from_mode(0o755)).unwrap();
-        let output = run(&installer(), "1\n1\n", &home, Some(&fake_tools));
+        let output = run(&installer(), "n\n1\n1\n", &home, Some(&fake_tools));
         assert_eq!(output.status.code(), Some(1));
         assert!(String::from_utf8_lossy(&output.stderr).contains("Rust build failed"));
         assert_eq!(
@@ -865,6 +914,99 @@ mod windows {
         path
     }
 
+    fn run_global_agents(home: &Path, prompts: &[(&str, &str)]) -> Output {
+        let mut child =
+            Command::new(repository().join("os-scripts/windows/installer/global-agents.bat"))
+                .arg(repository().join("AGENTS.md"))
+                .env("USERPROFILE", home)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+        let mut stdin = child.stdin.take();
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+        let stderr_reader = thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stderr.read_to_end(&mut bytes).unwrap();
+            bytes
+        });
+        let mut output = Vec::new();
+        let mut next = 0;
+        let mut byte = [0];
+        while stdout.read(&mut byte).unwrap() != 0 {
+            output.push(byte[0]);
+            if let Some((prompt, reply)) = prompts.get(next) {
+                if output.ends_with(prompt.as_bytes()) {
+                    stdin.as_mut().unwrap().write_all(reply.as_bytes()).unwrap();
+                    next += 1;
+                    if next == prompts.len() {
+                        stdin.take();
+                    }
+                }
+            }
+        }
+        Output {
+            status: child.wait().unwrap(),
+            stdout: output,
+            stderr: stderr_reader.join().unwrap(),
+        }
+    }
+
+    #[test]
+    fn global_agents_installs_and_preserves_overwritten_bytes() {
+        let home = workspace("global-agents");
+        let target = home.join(".codex/AGENTS.md");
+        let first = run_global_agents(
+            &home,
+            &[
+                ("Install Global AGENTS.md? [y/N] ", "y\r\n"),
+                ("Select an installation location [1]: ", "1\r\n"),
+                ("The directory does not exist. Create it? [y/N] ", "y\r\n"),
+            ],
+        );
+        assert!(
+            first.status.success(),
+            "status: {:?}, stdout: {}, stderr: {}",
+            first.status,
+            String::from_utf8_lossy(&first.stdout),
+            String::from_utf8_lossy(&first.stderr)
+        );
+        assert_eq!(
+            fs::read(&target).unwrap(),
+            fs::read(repository().join("AGENTS.md")).unwrap()
+        );
+        fs::write(&target, b"previous instructions").unwrap();
+        let second = run_global_agents(
+            &home,
+            &[
+                ("Install Global AGENTS.md? [y/N] ", "y\r\n"),
+                ("Select an installation location [1]: ", "1\r\n"),
+                ("AGENTS.md already exists. Overwrite it? [y/N] ", "y\r\n"),
+            ],
+        );
+        assert!(
+            second.status.success(),
+            "{}",
+            String::from_utf8_lossy(&second.stdout)
+        );
+        assert_eq!(
+            fs::read(&target).unwrap(),
+            fs::read(repository().join("AGENTS.md")).unwrap()
+        );
+        let backups: Vec<_> = fs::read_dir(home.join(".codex"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path().join("previous"))
+            .filter(|path| path.is_file())
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(&backups[0]).unwrap(), b"previous instructions");
+        let declined = run_global_agents(&home, &[("Install Global AGENTS.md? [y/N] ", "n\r\n")]);
+        assert!(declined.status.success());
+        assert!(String::from_utf8_lossy(&declined.stdout).contains("Skipped"));
+    }
+
     fn run(home: &Path, rustflags: Option<&str>, default_home: bool) -> Output {
         let cargo_home = std::env::var_os("CARGO_HOME")
             .map(PathBuf::from)
@@ -896,10 +1038,13 @@ mod windows {
             stderr.read_to_end(&mut bytes).unwrap();
             bytes
         });
-        let mut prompts = vec![(
-            "Select an installation location [1]: ",
-            if default_home { "1\r\n" } else { "2\r\n" }.to_owned(),
-        )];
+        let mut prompts = vec![
+            ("Install Global AGENTS.md? [y/N] ", "n\r\n".to_owned()),
+            (
+                "Select an installation location [1]: ",
+                if default_home { "1\r\n" } else { "2\r\n" }.to_owned(),
+            ),
+        ];
         if !default_home {
             prompts.push((
                 "Enter the installation directory: ",

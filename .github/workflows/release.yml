@@ -1,0 +1,225 @@
+name: Work release
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact main commit approved by both Rust CI workflows
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: work-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Validate tag, commit, version and lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+      - name: Record version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: preflight
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Require native ARM64 runner
+        run: test "$(uname -m)" = arm64 && test "$RUNNER_ARCH" = ARM64
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.85.0-aarch64-apple-darwin
+      - name: Build native release binary
+        working-directory: rust
+        env:
+          RUSTUP_TOOLCHAIN: 1.85.0-aarch64-apple-darwin
+        run: cargo build --release --locked -p work-cli --target aarch64-apple-darwin
+      - name: Package and verify final macOS ZIP
+        env:
+          COMMIT: ${{ inputs.expected_sha }}
+        run: |
+          python3 .github/scripts/release/build_release.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:-unknown}" --os-version "$(sw_vers -productVersion)"
+          python3 .github/scripts/release/release_integrity.py verify-zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip"
+          python3 .github/scripts/release/e2e_release.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --platform macos-arm64
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-macos-arm64
+          path: dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    needs: preflight
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Require native x64 runner
+        run: |
+          if ($env:RUNNER_ARCH -ne 'X64' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Expected Windows x64 runner' }
+      - name: Verify batch line endings
+        run: |
+          foreach ($path in @('os-scripts/windows/install-release.bat', 'os-scripts/windows/installer/global-agents.bat', 'os-scripts/windows/installer/work-core.bat')) {
+            $entry = git ls-files --eol -- $path
+            if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
+          }
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.85.0-x86_64-pc-windows-msvc
+      - name: Build native release binary
+        working-directory: rust
+        env:
+          RUSTUP_TOOLCHAIN: 1.85.0-x86_64-pc-windows-msvc
+        run: cargo build --release --locked -p work-cli --target x86_64-pc-windows-msvc
+      - name: Package and verify final Windows ZIP
+        env:
+          COMMIT: ${{ inputs.expected_sha }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
+          python -B .github/scripts/release/build_release.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --os-version $osVersion
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zip = "dist/work-v${version}-windows-x64-msvc.zip"
+          python -B .github/scripts/release/release_integrity.py verify-zip $zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B .github/scripts/release/e2e_release.py --zip $zip --platform windows-x64-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-windows-x64-msvc
+          path: dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [preflight, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Check immutable releases setting
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/release/release_gate.py immutable --repository "$REPOSITORY"
+      - name: Check source identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+      - name: Verify ZIPs and create outer checksums
+        run: |
+          python3 .github/scripts/release/build_release.py checksums --output dist
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+      - uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/work-v${{ needs.preflight.outputs.version }}-macos-arm64.zip
+            dist/work-v${{ needs.preflight.outputs.version }}-windows-x64-msvc.zip
+            dist/SHA256SUMS.txt
+      - name: Verify all three build attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          for asset in dist/*.zip dist/SHA256SUMS.txt; do
+            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
+          done
+      - name: Create draft with all assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          previous="$(gh release list --repo "$REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -n "$previous" ]; then
+            gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --generate-notes --notes-start-tag "$previous"
+          else
+            gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --generate-notes
+          fi
+      - name: Verify draft and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          python3 .github/scripts/release/release_gate.py assets-draft --repository "$REPOSITORY" --tag "$TAG" --directory dist
+          python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+      - name: Recheck immutable releases setting
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/release/release_gate.py immutable --repository "$REPOSITORY"
+      - name: Publish verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --repo "$REPOSITORY" --draft=false
+      - name: Independently download and verify published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+          mkdir published
+          gh release download "$TAG" --repo "$REPOSITORY" --dir published
+          python3 .github/scripts/release/release_gate.py assets-published --repository "$REPOSITORY" --tag "$TAG" --directory published
+          cd published
+          sha256sum --check SHA256SUMS.txt
+          cd ..
+          for asset in published/*.zip; do
+            python3 .github/scripts/release/release_integrity.py verify-zip "$asset"
+          done
+          for asset in published/*.zip published/SHA256SUMS.txt; do
+            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
+            gh release verify-asset "$TAG" "$asset" --repo "$REPOSITORY"
+          done
+          gh release verify "$TAG" --repo "$REPOSITORY"
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-verification-${{ github.ref_name }}
+          path: published/
+          if-no-files-found: ignore

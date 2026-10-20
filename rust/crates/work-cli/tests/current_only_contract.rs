@@ -531,15 +531,33 @@ fn clean_installer(text: &str) -> bool {
 
 #[test]
 fn installer_and_negative_probe_guards_detect_regressions_without_mutating_the_repository() {
-    for file in [
-        "os-scripts/mac/install-work.command",
-        "os-scripts/windows/install-work.bat",
+    for (entry, core) in [
+        (
+            "os-scripts/mac/install-work.command",
+            "os-scripts/mac/installer/work-core.sh",
+        ),
+        (
+            "os-scripts/mac/install-release.command",
+            "os-scripts/mac/installer/work-core.sh",
+        ),
+        (
+            "os-scripts/windows/install-work.bat",
+            "os-scripts/windows/installer/work-core.bat",
+        ),
+        (
+            "os-scripts/windows/install-release.bat",
+            "os-scripts/windows/installer/work-core.bat",
+        ),
     ] {
-        let text = fs::read_to_string(root().join(file)).unwrap();
-        assert!(clean_installer(&text), "{file}");
+        let text = format!(
+            "{}\n{}",
+            fs::read_to_string(root().join(entry)).unwrap(),
+            fs::read_to_string(root().join(core)).unwrap()
+        );
+        assert!(clean_installer(&text), "{entry} and {core}");
         assert!(
             !clean_installer(&format!("{text}\nrefresh_existing_instructions")),
-            "{file}"
+            "{entry} and {core}"
         );
     }
     for value in [
