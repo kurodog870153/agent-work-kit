@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -39,6 +40,15 @@ def successful_runs(repository, sha):
     return True
 
 
+def wait_for_successful_runs(repository, sha):
+    for attempt in range(12):
+        if successful_runs(repository, sha):
+            return True
+        if attempt < 11:
+            time.sleep(5)
+    return False
+
+
 def checked_version(root):
     sys.path.insert(0, str(root / ".github/scripts/version-guard"))
     from version_guard import validate_lock
@@ -57,7 +67,7 @@ def main():
     if main_head(repository) != event_sha:
         print("Skipping stale main commit")
         return 0
-    if not successful_runs(repository, event_sha):
+    if not wait_for_successful_runs(repository, event_sha):
         print("Waiting for both successful Rust workflows")
         return 0
     checkout_sha = subprocess.run(
@@ -69,6 +79,9 @@ def main():
     tag = f"v{version}"
     existing_tag = gh_api(f"repos/{repository}/git/ref/tags/{tag}") if tag_exists(repository, tag) else None
     if existing_tag:
+        if existing_tag["object"]["type"] == "commit" and existing_tag["object"]["sha"] == event_sha:
+            print(f"Tag already exists at this commit: {tag}")
+            return 0
         raise ValueError(f"tag already exists: {tag}")
     if release_exists(repository, tag):
         raise ValueError(f"release already exists: {tag}")

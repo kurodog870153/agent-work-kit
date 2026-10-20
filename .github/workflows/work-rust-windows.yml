@@ -143,3 +143,17 @@ jobs:
         run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary
         run: '& ".\target\release\work.exe" --help'
+
+  notify-main-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: rust-windows
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Notify main release coordinator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh workflow run main-release.yml --repo "$REPOSITORY" --ref main -f "expected_sha=$HEAD_SHA"
