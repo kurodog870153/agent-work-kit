@@ -50,8 +50,9 @@ jobs:
           }
           $batchPaths = @(
             'os-scripts/windows/clean-codex-data.bat',
-            'os-scripts/windows/install-global-agents.bat',
-            'os-scripts/windows/install-work.bat'
+            'os-scripts/windows/install-work.bat',
+            'os-scripts/windows/installer/global-agents.bat',
+            'os-scripts/windows/installer/work-core.bat'
           )
           foreach ($path in $batchPaths) {
             $entry = git ls-files --eol -- $path
@@ -60,7 +61,7 @@ jobs:
             }
           }
       - name: Test CI performance reporter
-        run: python -m unittest discover -s ../.github/scripts -p test_ci_perf.py
+        run: python -m unittest discover -s ../.github/scripts/ci-performance -p test_ci_perf.py
       - name: Set up Rust 1.85 toolchain
         run: |
           rustup toolchain install $env:RUSTUP_TOOLCHAIN
@@ -103,21 +104,21 @@ jobs:
       - name: Compile Rust tests
         id: test_compile
         continue-on-error: true
-        run: python ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --target $env:WORK_RUST_TARGET
       - name: Build Work for installer tests
         if: steps.test_compile.outcome == 'success'
         run: cargo build --release --locked -p work-cli
       - name: Run Rust unit and integration tests
         if: steps.test_compile.outcome == 'success'
         continue-on-error: true
-        run: python ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast --target $env:WORK_RUST_TARGET
       - name: Run Rust doc tests
         if: steps.test_compile.outcome == 'success'
         continue-on-error: true
-        run: python ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
       - name: Report Rust performance
         if: always()
-        run: python ../.github/scripts/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform windows --target $env:WORK_RUST_TARGET --min-doc-tests 1
+        run: python ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform windows --target $env:WORK_RUST_TARGET --min-doc-tests 1
       - name: Upload Rust performance report
         if: always()
         uses: actions/upload-artifact@v6
@@ -134,10 +135,10 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python ../.github/scripts/ci_perf.py compare --report .ci-perf/performance.json --workflow work-rust-windows.yml --artifact rust-perf-$env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow work-rust-windows.yml --artifact rust-perf-$env:WORK_RUST_TARGET
       - name: Enforce Rust test results
         if: always()
-        run: python ../.github/scripts/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
+        run: python ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
       - name: Build Work release binary
         run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary

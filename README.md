@@ -76,6 +76,8 @@ $work task -- resume example
 
 Work skill 預設安裝到使用者目錄下的 `.agents/skills/work`。選擇自訂安裝目錄時，會安裝到該目錄下的 `skills/work`，不會再加上 `.agents`。自訂安裝目錄須已存在。
 
+安裝器會先詢問是否安裝 Global `AGENTS.md`，預設為否。選擇安裝時，可使用預設的 `~/.codex` 目錄或自訂目錄；建立目錄與覆蓋現有檔案都需確認。現有檔案會保留於畫面顯示的復原目錄。Global `AGENTS.md` 安裝成功後，才進行 Rust 工具鏈檢查與 Work 安裝；若 Work 階段失敗，已完成的 Global `AGENTS.md` 安裝不會回滾。
+
 安裝時可依專案選擇適用的工作類型：
 
 1. `general only`。

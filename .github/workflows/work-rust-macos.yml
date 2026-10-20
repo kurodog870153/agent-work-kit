@@ -29,12 +29,12 @@ jobs:
             entry="$(git ls-files --eol -- "$path")"
             [[ "$entry" =~ ^i/lf[[:space:]]+w/lf[[:space:]] ]] || { echo "Checkout changed line endings: $entry"; exit 1; }
           done
-          for path in os-scripts/windows/clean-codex-data.bat os-scripts/windows/install-global-agents.bat os-scripts/windows/install-work.bat; do
+          for path in os-scripts/windows/clean-codex-data.bat os-scripts/windows/install-work.bat os-scripts/windows/installer/global-agents.bat os-scripts/windows/installer/work-core.bat; do
             entry="$(git ls-files --eol -- "$path")"
             [[ "$entry" =~ ^i/lf[[:space:]]+w/crlf[[:space:]] ]] || { echo "Checkout changed batch line endings: $entry"; exit 1; }
           done
       - name: Test CI performance reporter
-        run: python3 -m unittest discover -s ../.github/scripts -p test_ci_perf.py
+        run: python3 -m unittest discover -s ../.github/scripts/ci-performance -p test_ci_perf.py
       - name: Install Rust 1.85 components
         run: |
           rustup toolchain install 1.85.0
@@ -64,18 +64,18 @@ jobs:
       - name: Compile Rust tests
         id: test_compile
         continue-on-error: true
-        run: python3 ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run
       - name: Run Rust unit and integration tests
         if: steps.test_compile.outcome == 'success'
         continue-on-error: true
-        run: python3 ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast
       - name: Run Rust doc tests
         if: steps.test_compile.outcome == 'success'
         continue-on-error: true
-        run: python3 ../.github/scripts/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
       - name: Report Rust performance
         if: always()
-        run: python3 ../.github/scripts/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform macos --target native
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform macos --target native
       - name: Upload Rust performance report
         if: always()
         uses: actions/upload-artifact@v6
@@ -92,10 +92,10 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 ../.github/scripts/ci_perf.py compare --report .ci-perf/performance.json --workflow work-rust-macos.yml --artifact rust-perf-macos
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow work-rust-macos.yml --artifact rust-perf-macos
       - name: Enforce Rust test results
         if: always()
-        run: python3 ../.github/scripts/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml
       - name: Build Work release binary
         run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary

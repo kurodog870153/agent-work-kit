@@ -1,0 +1,33 @@
+name: Work main release coordinator
+
+on:
+  workflow_run:
+    workflows:
+      - Work Rust macOS
+      - Work Rust Windows
+    types:
+      - completed
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: work-main-release
+  cancel-in-progress: false
+
+jobs:
+  coordinate:
+    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Check main CI and dispatch release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: python3 .github/scripts/release/main_release.py

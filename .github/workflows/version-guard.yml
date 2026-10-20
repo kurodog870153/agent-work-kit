@@ -1,0 +1,22 @@
+name: Version Guard
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch current main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+      - name: Test version guard
+        run: python3 -m unittest discover -s .github/scripts/version-guard -p test_version_guard.py
+      - name: Validate pull request version
+        run: python3 .github/scripts/version-guard/version_guard.py
