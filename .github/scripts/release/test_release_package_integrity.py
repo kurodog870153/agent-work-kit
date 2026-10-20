@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 
-SPEC = importlib.util.spec_from_file_location("release_integrity", Path(__file__).with_name("release_integrity.py"))
+SPEC = importlib.util.spec_from_file_location("release_package_integrity", Path(__file__).with_name("release_package_integrity.py"))
 integrity = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(integrity)
 

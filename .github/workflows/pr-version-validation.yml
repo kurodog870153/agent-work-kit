@@ -1,4 +1,4 @@
-name: Version Guard
+name: Validate PR version and lockfile
 
 on:
   pull_request:
@@ -7,7 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  version-guard:
+  test-guard-and-validate-pr-version:
+    name: Test version guard and validate PR version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

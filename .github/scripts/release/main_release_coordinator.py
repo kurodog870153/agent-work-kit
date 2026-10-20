@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 
-WORKFLOWS = ("work-rust-macos.yml", "work-rust-windows.yml")
+WORKFLOWS = ("rust-macos-ci.yml", "rust-windows-ci.yml")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -89,7 +89,7 @@ def main():
         raise ValueError("main or CI status changed before tag creation")
     gh_api(f"repos/{repository}/git/refs", method="POST", fields=(f"ref=refs/tags/{tag}", f"sha={event_sha}"))
     subprocess.run(
-        ["gh", "workflow", "run", "release.yml", "--repo", repository, "--ref", tag, "-f", f"expected_sha={event_sha}"],
+        ["gh", "workflow", "run", "publish-release.yml", "--repo", repository, "--ref", tag, "-f", f"expected_sha={event_sha}"],
         check=True,
     )
     print(f"Dispatched {tag} at {event_sha}")

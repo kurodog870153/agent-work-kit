@@ -1,4 +1,4 @@
-name: Work main release coordinator
+name: Coordinate release after main Rust CI
 
 on:
   workflow_dispatch:
@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  coordinate:
+  verify-main-ci-and-start-release:
+    name: Verify main Rust CI and start release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -29,4 +30,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           WORKFLOW_HEAD_SHA: ${{ inputs.expected_sha }}
-        run: python3 .github/scripts/release/main_release.py
+        run: python3 .github/scripts/release/main_release_coordinator.py

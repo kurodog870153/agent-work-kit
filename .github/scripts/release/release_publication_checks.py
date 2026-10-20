@@ -9,14 +9,14 @@ import sys
 import tomllib
 from pathlib import Path
 
-from build_release import PLATFORMS
+from release_package import PLATFORMS
 
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
-def api(path):
-    result = subprocess.run(["gh", "api", path], check=True, capture_output=True, text=True)
+def api(path, *options):
+    result = subprocess.run(["gh", "api", path, *options], check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
 
 
@@ -43,7 +43,14 @@ def expected_assets(version):
 
 
 def check_assets(repository, tag, directory, *, published):
-    release = api(f"repos/{repository}/releases/tags/{tag}")
+    if published:
+        release = api(f"repos/{repository}/releases/tags/{tag}")
+    else:
+        pages = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
+        matches = [release for page in pages for release in page if release["tag_name"] == tag]
+        if len(matches) != 1:
+            raise ValueError(f"expected exactly one draft release for {tag}")
+        release = matches[0]
     if release["tag_name"] != tag or bool(release["draft"]) == published or release["prerelease"]:
         raise ValueError("release state or tag is incorrect")
     names = expected_assets(tag.removeprefix("v"))

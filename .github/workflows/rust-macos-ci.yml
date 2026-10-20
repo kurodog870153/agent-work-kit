@@ -1,4 +1,4 @@
-name: Work Rust macOS
+name: Test and build Work Rust on macOS
 
 on:
   push:
@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  rust-macos:
+  check-test-and-build-rust-macos:
+    name: Check, test and build Rust on macOS
     runs-on: macos-latest
     permissions:
       contents: read
@@ -92,7 +93,7 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow work-rust-macos.yml --artifact rust-perf-macos
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow rust-macos-ci.yml --artifact rust-perf-macos
       - name: Enforce Rust test results
         if: always()
         run: python3 ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml
@@ -100,10 +101,10 @@ jobs:
         run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary
         run: target/release/work --help
-
-  notify-main-release:
+  trigger-release-coordination-after-macos-ci:
+    name: Trigger release coordination after macOS CI
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: rust-macos
+    needs: check-test-and-build-rust-macos
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -113,4 +114,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
-        run: gh workflow run main-release.yml --repo "$REPOSITORY" --ref main -f "expected_sha=$HEAD_SHA"
+        run: gh workflow run main-release-coordinator.yml --repo "$REPOSITORY" --ref main -f "expected_sha=$HEAD_SHA"

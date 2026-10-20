@@ -12,7 +12,7 @@ import tomllib
 import zipfile
 from pathlib import Path
 
-from release_integrity import create_manifest, verify_tree, verify_zip
+from release_package_integrity import create_manifest, verify_tree, verify_zip
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "version-guard"))
 from version_guard import validate_lock

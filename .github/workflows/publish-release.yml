@@ -1,4 +1,4 @@
-name: Work release
+name: Build, verify and publish Work release
 
 on:
   workflow_dispatch:
@@ -16,7 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  preflight:
+  validate-release-tag-and-version:
+    name: Validate release tag, commit and version
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
@@ -31,14 +32,15 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-        run: python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+        run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Record version
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-  macos:
-    needs: preflight
-    runs-on: macos-15
+  build-and-verify-macos-package:
+    name: Build and verify macOS ARM64 release package
+    needs: validate-release-tag-and-version
+    runs-on: macos-latest
     permissions:
       contents: read
     steps:
@@ -58,17 +60,18 @@ jobs:
         env:
           COMMIT: ${{ inputs.expected_sha }}
         run: |
-          python3 .github/scripts/release/build_release.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:-unknown}" --os-version "$(sw_vers -productVersion)"
-          python3 .github/scripts/release/release_integrity.py verify-zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip"
-          python3 .github/scripts/release/e2e_release.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --platform macos-arm64
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:-unknown}" --os-version "$(sw_vers -productVersion)"
+          python3 .github/scripts/release/release_package_integrity.py verify-zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip"
+          python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --platform macos-arm64
       - uses: actions/upload-artifact@v6
         with:
           name: release-macos-arm64
           path: dist/*.zip
           if-no-files-found: error
 
-  windows:
-    needs: preflight
+  build-and-verify-windows-package:
+    name: Build and verify Windows x64 release package
+    needs: validate-release-tag-and-version
     runs-on: windows-latest
     permissions:
       contents: read
@@ -98,12 +101,12 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
-          python -B .github/scripts/release/build_release.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --os-version $osVersion
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --os-version $osVersion
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "dist/work-v${version}-windows-x64-msvc.zip"
-          python -B .github/scripts/release/release_integrity.py verify-zip $zip
+          python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B .github/scripts/release/e2e_release.py --zip $zip --platform windows-x64-msvc
+          python -B .github/scripts/release/release_install_e2e.py --zip $zip --platform windows-x64-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v6
         with:
@@ -111,8 +114,9 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
-  publish:
-    needs: [preflight, macos, windows]
+  attest-publish-and-verify-assets:
+    name: Attest, publish and verify release assets
+    needs: [validate-release-tag-and-version, build-and-verify-macos-package, build-and-verify-windows-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -124,7 +128,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           pattern: release-*
           path: dist
@@ -133,24 +137,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
           REPOSITORY: ${{ github.repository }}
-        run: python3 .github/scripts/release/release_gate.py immutable --repository "$REPOSITORY"
+        run: python3 .github/scripts/release/release_publication_checks.py immutable --repository "$REPOSITORY"
       - name: Check source identity
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-        run: python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+        run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Verify ZIPs and create outer checksums
         run: |
-          python3 .github/scripts/release/build_release.py checksums --output dist
+          python3 .github/scripts/release/release_package.py checksums --output dist
           cd dist
           sha256sum --check SHA256SUMS.txt
       - uses: actions/attest@v4
         with:
           subject-path: |
-            dist/work-v${{ needs.preflight.outputs.version }}-macos-arm64.zip
-            dist/work-v${{ needs.preflight.outputs.version }}-windows-x64-msvc.zip
+            dist/work-v${{ needs.validate-release-tag-and-version.outputs.version }}-macos-arm64.zip
+            dist/work-v${{ needs.validate-release-tag-and-version.outputs.version }}-windows-x64-msvc.zip
             dist/SHA256SUMS.txt
       - name: Verify all three build attestations
         env:
@@ -160,7 +164,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           for asset in dist/*.zip dist/SHA256SUMS.txt; do
-            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
+            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
           done
       - name: Create draft with all assets
         env:
@@ -181,13 +185,13 @@ jobs:
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
-          python3 .github/scripts/release/release_gate.py assets-draft --repository "$REPOSITORY" --tag "$TAG" --directory dist
-          python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+          python3 .github/scripts/release/release_publication_checks.py assets-draft --repository "$REPOSITORY" --tag "$TAG" --directory dist
+          python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Recheck immutable releases setting
         env:
           GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
           REPOSITORY: ${{ github.repository }}
-        run: python3 .github/scripts/release/release_gate.py immutable --repository "$REPOSITORY"
+        run: python3 .github/scripts/release/release_publication_checks.py immutable --repository "$REPOSITORY"
       - name: Publish verified draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -201,18 +205,18 @@ jobs:
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
-          python3 .github/scripts/release/release_gate.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+          python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
           mkdir published
           gh release download "$TAG" --repo "$REPOSITORY" --dir published
-          python3 .github/scripts/release/release_gate.py assets-published --repository "$REPOSITORY" --tag "$TAG" --directory published
+          python3 .github/scripts/release/release_publication_checks.py assets-published --repository "$REPOSITORY" --tag "$TAG" --directory published
           cd published
           sha256sum --check SHA256SUMS.txt
           cd ..
           for asset in published/*.zip; do
-            python3 .github/scripts/release/release_integrity.py verify-zip "$asset"
+            python3 .github/scripts/release/release_package_integrity.py verify-zip "$asset"
           done
           for asset in published/*.zip published/SHA256SUMS.txt; do
-            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
+            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
             gh release verify-asset "$TAG" "$asset" --repo "$REPOSITORY"
           done
           gh release verify "$TAG" --repo "$REPOSITORY"
