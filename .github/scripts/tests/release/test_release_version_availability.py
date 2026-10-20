@@ -1,9 +1,11 @@
 """Tests for the pull request release version check."""
 
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
 from release_version_availability import check_version_available
 
 

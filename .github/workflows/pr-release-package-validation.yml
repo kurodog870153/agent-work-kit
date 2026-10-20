@@ -1,4 +1,4 @@
-name: Validate PR release packages
+name: pr release package validation
 
 on:
   pull_request:
@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  validate-workflows-scripts-and-version:
-    name: Validate workflows, release scripts and version
+  validate-release-preflight:
+    name: validate release preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -17,15 +17,15 @@ jobs:
       - name: Check workflow YAML syntax
         run: ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].each { |path| YAML.parse_file(path) }'
       - name: Test release scripts
-        run: python3 -B -m unittest discover -s .github/scripts/release -p 'test_*.py'
+        run: python3 -B -m unittest discover -s .github/scripts/tests/release -p 'test_*.py'
       - name: Check proposed release version is unused
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -B .github/scripts/release/release_version_availability.py
 
   build-and-verify-macos-package:
-    name: Build and verify macOS ARM64 release package
-    needs: validate-workflows-scripts-and-version
+    name: build and verify macOS package
+    needs: validate-release-preflight
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,7 +42,7 @@ jobs:
         run: cargo build --release --locked -p work-cli --target aarch64-apple-darwin
       - name: Package and verify macOS ZIP
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$GITHUB_SHA" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:-unknown}" --os-version "$(sw_vers -productVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$GITHUB_SHA" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --platform macos-arm64
       - uses: actions/upload-artifact@v6
         with:
@@ -51,8 +51,8 @@ jobs:
           if-no-files-found: error
 
   build-and-verify-windows-package:
-    name: Build and verify Windows x64 release package
-    needs: validate-workflows-scripts-and-version
+    name: build and verify Windows package
+    needs: validate-release-preflight
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -83,8 +83,8 @@ jobs:
           RUSTUP_TOOLCHAIN: 1.85.0-x86_64-pc-windows-msvc
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
-          $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:GITHUB_SHA --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --os-version $osVersion
+          $os = Get-CimInstance Win32_OperatingSystem
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:GITHUB_SHA --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B .github/scripts/release/release_install_e2e.py --zip "dist/work-v${version}-windows-x64-msvc.zip" --platform windows-x64-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -94,8 +94,8 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
-  verify-package-checksums:
-    name: Verify release package checksums
+  verify-release-package-checksums:
+    name: verify release package checksums
     needs: [build-and-verify-macos-package, build-and-verify-windows-package]
     runs-on: ubuntu-latest
     steps:
@@ -113,18 +113,18 @@ jobs:
           cd dist
           sha256sum --check SHA256SUMS.txt
 
-  confirm-all-release-checks-passed:
-    name: Confirm all PR release checks passed
+  confirm-release-validation:
+    name: confirm release validation
     if: always()
-    needs: [validate-workflows-scripts-and-version, build-and-verify-macos-package, build-and-verify-windows-package, verify-package-checksums]
+    needs: [validate-release-preflight, build-and-verify-macos-package, build-and-verify-windows-package, verify-release-package-checksums]
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check to pass
         env:
-          PREFLIGHT: ${{ needs.validate-workflows-scripts-and-version.result }}
+          PREFLIGHT: ${{ needs.validate-release-preflight.result }}
           MACOS: ${{ needs.build-and-verify-macos-package.result }}
           WINDOWS: ${{ needs.build-and-verify-windows-package.result }}
-          CHECKSUMS: ${{ needs.verify-package-checksums.result }}
+          CHECKSUMS: ${{ needs.verify-release-package-checksums.result }}
         run: |
           for result in "$PREFLIGHT" "$MACOS" "$WINDOWS" "$CHECKSUMS"; do
             if [[ "$result" != success ]]; then

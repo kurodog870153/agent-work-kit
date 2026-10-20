@@ -185,6 +185,7 @@ copy_file() {
     local target="$target_work/$relative"
 
     mkdir -p -- "$(dirname -- "$target")" || return 1
+    installer_inject_failure work_copy && return 1
     cp -f -- "$source" "$target"
 }
 
@@ -194,6 +195,7 @@ copy_tree() {
     local target="$target_work/$relative"
 
     mkdir -p -- "$target" || return 1
+    installer_inject_failure work_copy && return 1
     cp -R -f -- "$source/." "$target/"
 }
 
@@ -420,19 +422,19 @@ run_work_install() {
     transaction_directory="$(mktemp -d "$parent_work/.work-install.XXXXXX")" || exit 1
     target_work="$transaction_directory/prepared"
     mkdir -- "$target_work" || exit 1
-    if ! install_base || ! install_selected_instructions || ! install_binary || ! cmp -s -- "$built_work" "$target_work/scripts/work" || ! "$target_work/scripts/work" --help >/dev/null 2>&1; then
+    if installer_inject_failure work_prepare || ! install_base || ! install_selected_instructions || ! install_binary || ! cmp -s -- "$built_work" "$target_work/scripts/work" || ! "$target_work/scripts/work" --help >/dev/null 2>&1; then
         printf 'Error: failed to prepare Work; installation was not changed. Recovery directory: "%s".\n' "$transaction_directory" >&2
         exit 1
     fi
     if [[ -e "$final_work" ]]; then
-        if ! mv -- "$final_work" "$transaction_directory/previous"; then
+        if installer_inject_failure work_backup || ! mv -- "$final_work" "$transaction_directory/previous"; then
             printf 'Error: failed to back up Work; installation was not changed.\n' >&2
             exit 1
         fi
     fi
-    if ! mv -- "$target_work" "$final_work"; then
+    if installer_inject_failure work_replace || installer_inject_failure work_restore || ! mv -- "$target_work" "$final_work"; then
         if [[ -e "$transaction_directory/previous" ]]; then
-            if ! mv -- "$transaction_directory/previous" "$final_work"; then
+            if installer_inject_failure work_restore || ! mv -- "$transaction_directory/previous" "$final_work"; then
                 printf 'Error: restore failed; previous installation is preserved in "%s/previous".\n' "$transaction_directory" >&2
                 exit 1
             fi

@@ -72,20 +72,36 @@ if errorlevel 1 (
     exit /b 1
 )
 set "staged=!transaction_directory!\prepared"
+if /I "!WORK_INSTALL_TEST_FAIL!"=="global_prepare" goto prepare_error
+if /I "!WORK_INSTALL_TEST_FAIL!"=="global_copy" goto prepare_error
 copy /Y "!global_agents_source!" "!staged!" >nul
 if errorlevel 1 goto prepare_error
 fc /b "!global_agents_source!" "!staged!" >nul
 if errorlevel 1 goto prepare_error
 if exist "!target_file!" (
+    if /I "!WORK_INSTALL_TEST_FAIL!"=="global_backup" (
+        echo Error: failed to back up Global AGENTS.md; target was not changed.
+        exit /b 1
+    )
     move "!target_file!" "!transaction_directory!\previous" >nul
     if errorlevel 1 (
         echo Error: failed to back up Global AGENTS.md; target was not changed.
         exit /b 1
     )
 )
-move "!staged!" "!target_file!" >nul
-if errorlevel 1 (
+set "replace_failed="
+if /I "!WORK_INSTALL_TEST_FAIL!"=="global_replace" set "replace_failed=1"
+if /I "!WORK_INSTALL_TEST_FAIL!"=="global_restore" set "replace_failed=1"
+if not defined replace_failed (
+    move "!staged!" "!target_file!" >nul
+    if errorlevel 1 set "replace_failed=1"
+)
+if defined replace_failed (
     if exist "!transaction_directory!\previous" (
+        if /I "!WORK_INSTALL_TEST_FAIL!"=="global_restore" (
+            echo Error: Global AGENTS.md restore failed; previous file remains in "!transaction_directory!\previous".
+            exit /b 1
+        )
         move "!transaction_directory!\previous" "!target_file!" >nul
         if errorlevel 1 (
             echo Error: Global AGENTS.md restore failed; previous file remains in "!transaction_directory!\previous".

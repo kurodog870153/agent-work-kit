@@ -69,7 +69,7 @@ def copy_asset(repository, stage, source, destination):
     shutil.copyfile(source_path, target_path)
 
 
-def build_package(repository, output, platform, binary, commit, runner):
+def build_package(repository, output, platform, binary, commit, tested_environment):
     config = PLATFORMS[platform]
     version = checked_version(repository)
     tag = f"v{version}"
@@ -99,7 +99,7 @@ def build_package(repository, output, platform, binary, commit, runner):
             "commit": commit,
             "target": config["target"],
             "license": "PolyForm Noncommercial License 1.0.0",
-            "e2e_runner": runner,
+            "tested_environment": tested_environment,
         }
         (stage / "release-info.json").write_bytes(
             (json.dumps(info, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -148,19 +148,26 @@ def main():
     parser.add_argument("--runner-os")
     parser.add_argument("--runner-arch")
     parser.add_argument("--runner-image")
+    parser.add_argument("--runner-image-version")
+    parser.add_argument("--os-name")
     parser.add_argument("--os-version")
+    parser.add_argument("--os-build")
     args = parser.parse_args()
     try:
         if args.action == "package":
-            if not all((args.platform, args.binary, args.commit, args.runner_os, args.runner_arch, args.runner_image, args.os_version)):
-                parser.error("package requires platform, binary, commit and all runner fields")
-            runner = {
-                "os": args.runner_os,
-                "arch": args.runner_arch,
-                "image": args.runner_image,
+            if not all((args.platform, args.binary, args.commit, args.runner_os, args.runner_arch,
+                        args.runner_image, args.runner_image_version, args.os_name, args.os_version, args.os_build)):
+                parser.error("package requires platform, binary, commit and all tested environment fields")
+            tested_environment = {
+                "runner_os": args.runner_os,
+                "cpu_architecture": args.runner_arch,
+                "runner_image_name": args.runner_image,
+                "runner_image_version": args.runner_image_version,
+                "os_name": args.os_name,
                 "os_version": args.os_version,
+                "os_build": args.os_build,
             }
-            result = build_package(args.repository, args.output, args.platform, args.binary, args.commit, runner)
+            result = build_package(args.repository, args.output, args.platform, args.binary, args.commit, tested_environment)
         else:
             result = write_outer_checksums(args.repository, args.output)
     except (OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:

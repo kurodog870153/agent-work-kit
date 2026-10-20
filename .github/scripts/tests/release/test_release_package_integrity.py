@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 
-SPEC = importlib.util.spec_from_file_location("release_package_integrity", Path(__file__).with_name("release_package_integrity.py"))
+SPEC = importlib.util.spec_from_file_location("release_package_integrity", Path(__file__).resolve().parents[2] / "release/release_package_integrity.py")
 integrity = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(integrity)
 
@@ -73,7 +73,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
             item = root / "work.txt"
             item.write_bytes(b"work")
             integrity.create_manifest(root)
-            script = Path(__file__).parents[3] / "os-scripts/windows/installer/verify-package.ps1"
+            script = Path(__file__).resolve().parents[4] / "os-scripts/windows/installer/verify-package.ps1"
             command = ["powershell.exe", "-NoProfile", "-File", str(script), "-PackageRoot", str(root)]
             environment = os.environ.copy()
             system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
