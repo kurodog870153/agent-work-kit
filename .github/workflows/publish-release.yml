@@ -1,4 +1,4 @@
-name: Build, verify and publish Work release
+name: publish release
 
 on:
   workflow_dispatch:
@@ -16,16 +16,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate-release-tag-and-version:
-    name: Validate release tag, commit and version
+  validate-release-publication:
+    name: validate release publication
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Reject rerun or reused release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: python3 .github/scripts/release/release_publication_checks.py first-attempt --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Validate tag, commit, version and lock
         env:
           GH_TOKEN: ${{ github.token }}
@@ -37,9 +48,9 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-  build-and-verify-macos-package:
-    name: Build and verify macOS ARM64 release package
-    needs: validate-release-tag-and-version
+  build-and-test-macos-zip:
+    name: build and test macOS release ZIP
+    needs: validate-release-publication
     runs-on: macos-latest
     permissions:
       contents: read
@@ -60,18 +71,19 @@ jobs:
         env:
           COMMIT: ${{ inputs.expected_sha }}
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:-unknown}" --os-version "$(sw_vers -productVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           python3 .github/scripts/release/release_package_integrity.py verify-zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip"
-          python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --platform macos-arm64
+          (cd dist && shasum -a 256 "work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" > SHA256SUMS.txt)
+          sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
       - uses: actions/upload-artifact@v6
         with:
           name: release-macos-arm64
           path: dist/*.zip
           if-no-files-found: error
 
-  build-and-verify-windows-package:
-    name: Build and verify Windows x64 release package
-    needs: validate-release-tag-and-version
+  build-and-test-windows-zip:
+    name: build and test Windows release ZIP
+    needs: validate-release-publication
     runs-on: windows-latest
     permissions:
       contents: read
@@ -100,30 +112,42 @@ jobs:
           COMMIT: ${{ inputs.expected_sha }}
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
-          $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --os-version $osVersion
+          $os = Get-CimInstance Win32_OperatingSystem
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "dist/work-v${version}-windows-x64-msvc.zip"
           python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B .github/scripts/release/release_install_e2e.py --zip $zip --platform windows-x64-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $(Split-Path $zip -Leaf)`n")
+          $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
+          New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
+          try {
+            $active = Get-NetFirewallRule -Name $rule -ErrorAction Stop
+            if ($active.Enabled -ne 'True' -or $active.Action -ne 'Block') { throw 'Network isolation rule is inactive' }
+            python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally {
+            Remove-NetFirewallRule -Name $rule -ErrorAction Stop
+          }
       - uses: actions/upload-artifact@v6
         with:
           name: release-windows-x64-msvc
           path: dist/*.zip
           if-no-files-found: error
 
-  attest-publish-and-verify-assets:
-    name: Attest, publish and verify release assets
-    needs: [validate-release-tag-and-version, build-and-verify-macos-package, build-and-verify-windows-package]
+  verify-and-attest-release-assets:
+    name: verify and attest release assets
+    needs: [validate-release-publication, build-and-test-macos-zip, build-and-test-windows-zip]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       actions: read
       id-token: write
       attestations: write
       artifact-metadata: write
+    outputs:
+      manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -153,8 +177,8 @@ jobs:
       - uses: actions/attest@v4
         with:
           subject-path: |
-            dist/work-v${{ needs.validate-release-tag-and-version.outputs.version }}-macos-arm64.zip
-            dist/work-v${{ needs.validate-release-tag-and-version.outputs.version }}-windows-x64-msvc.zip
+            dist/work-v${{ needs.validate-release-publication.outputs.version }}-macos-arm64.zip
+            dist/work-v${{ needs.validate-release-publication.outputs.version }}-windows-x64-msvc.zip
             dist/SHA256SUMS.txt
       - name: Verify all three build attestations
         env:
@@ -166,19 +190,67 @@ jobs:
           for asset in dist/*.zip dist/SHA256SUMS.txt; do
             gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
           done
+      - name: Record signed asset manifest digest
+        id: digest
+        run: echo "manifest_sha256=$(sha256sum dist/SHA256SUMS.txt | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: signed-release-assets
+          path: dist/
+          if-no-files-found: error
+
+  prepare-and-publish-release:
+    name: prepare and publish release
+    needs: [validate-release-publication, verify-and-attest-release-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: signed-release-assets
+          path: dist
+      - name: Recheck signed asset bytes and identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          MANIFEST_SHA256: ${{ needs.verify-and-attest-release-assets.outputs.manifest_sha256 }}
+        run: |
+          echo "$MANIFEST_SHA256  dist/SHA256SUMS.txt" | sha256sum --check
+          cd dist
+          sha256sum --check SHA256SUMS.txt
+          cd ..
+          python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
+          for asset in dist/*.zip dist/SHA256SUMS.txt; do
+            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
+          done
+      - name: Verify and prepare release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: python3 .github/scripts/release/release_publication_checks.py notes --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --notes-file release-notes.md
+      - name: Check immutable releases setting
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 .github/scripts/release/release_publication_checks.py immutable --repository "$REPOSITORY"
       - name: Create draft with all assets
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: |
-          previous="$(gh release list --repo "$REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
-          if [ -n "$previous" ]; then
-            gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --generate-notes --notes-start-tag "$previous"
-          else
-            gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --generate-notes
-          fi
-      - name: Verify draft and publish
+        run: gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --notes-file release-notes.md
+      - name: Verify draft and source identity
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -198,32 +270,55 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: gh release edit "$TAG" --repo "$REPOSITORY" --draft=false
-      - name: Independently download and verify published assets
+
+  verify-published-release:
+    name: verify published release
+    if: always()
+    needs: [validate-release-publication, build-and-test-macos-zip, build-and-test-windows-zip, verify-and-attest-release-assets, prepare-and-publish-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        if: needs.verify-and-attest-release-assets.result == 'success'
+        with:
+          name: signed-release-assets
+          path: dist
+      - name: Verify downloaded published assets
+        id: verify-published
+        if: needs.prepare-and-publish-release.result == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
+          MANIFEST_SHA256: ${{ needs.verify-and-attest-release-assets.outputs.manifest_sha256 }}
         run: |
-          python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
-          mkdir published
-          gh release download "$TAG" --repo "$REPOSITORY" --dir published
-          python3 .github/scripts/release/release_publication_checks.py assets-published --repository "$REPOSITORY" --tag "$TAG" --directory published
-          cd published
-          sha256sum --check SHA256SUMS.txt
-          cd ..
-          for asset in published/*.zip; do
-            python3 .github/scripts/release/release_package_integrity.py verify-zip "$asset"
-          done
-          for asset in published/*.zip published/SHA256SUMS.txt; do
-            gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
-            gh release verify-asset "$TAG" "$asset" --repo "$REPOSITORY"
-          done
-          gh release verify "$TAG" --repo "$REPOSITORY"
+          python3 .github/scripts/release/release_post_publish_checks.py --version "${TAG#v}" --repository "$REPOSITORY" --tag "$TAG" --commit "$EXPECTED_SHA" --manifest-sha256 "$MANIFEST_SHA256" --expected-dir dist --actual-dir published --output release-checks.json
+      - name: Write release verification report
+        if: always()
+        env:
+          VERSION: ${{ needs.validate-release-publication.outputs.version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          VALIDATE_STATUS: ${{ needs.validate-release-publication.result }}
+          MACOS_STATUS: ${{ needs.build-and-test-macos-zip.result }}
+          WINDOWS_STATUS: ${{ needs.build-and-test-windows-zip.result }}
+          ATTEST_STATUS: ${{ needs.verify-and-attest-release-assets.result }}
+          PUBLISH_STATUS: ${{ needs.prepare-and-publish-release.result }}
+          VERIFY_STATUS: ${{ steps.verify-published.outcome || 'skipped' }}
+        run: |
+          python3 .github/scripts/release/release_verification_report.py --version "${VERSION:-${GITHUB_REF_NAME#v}}" --commit "$EXPECTED_SHA" --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --expected-dir dist --actual-dir published --checks release-checks.json --output release-verification.json --validate-status "$VALIDATE_STATUS" --macos-e2e-status "$MACOS_STATUS" --windows-e2e-status "$WINDOWS_STATUS" --attest-status "$ATTEST_STATUS" --publish-status "$PUBLISH_STATUS" --post-publish-verify-status "$VERIFY_STATUS"
       - name: Upload verification report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: release-verification-${{ github.ref_name }}
-          path: published/
-          if-no-files-found: ignore
+          path: |
+            release-verification.json
+            release-checks.json
+          if-no-files-found: error

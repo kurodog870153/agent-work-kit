@@ -115,9 +115,9 @@ fn windows_transaction_order_and_failure_returns_are_statically_verified() {
         "call :install_selected_instructions\nif errorlevel 1 goto install_error",
         "call :install_binary\nif errorlevel 1 goto install_error",
         "move \"!final_work!\" \"!transaction_directory!\\previous\" >nul\n    if errorlevel 1 goto install_error",
-        "move \"!target_work!\" \"!final_work!\" >nul\nif errorlevel 1 (",
+        "move \"!target_work!\" \"!final_work!\" >nul\n    if errorlevel 1 set \"replace_failed=1\"",
         "move \"!transaction_directory!\\previous\" \"!final_work!\" >nul\n        if errorlevel 1 (",
-        "restore failed; previous installation is preserved",
+        "if errorlevel 1 (\n            echo Error: restore failed; previous installation is preserved",
     ];
     let positions: Vec<_> = stages
         .iter()

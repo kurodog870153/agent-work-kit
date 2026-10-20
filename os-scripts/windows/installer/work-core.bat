@@ -36,14 +36,14 @@ if not defined install_home (
 :home_selected
 if not defined install_home (
     echo Error: the selected installation directory is unavailable.
-    pause
+    if not defined CI pause
     exit /b 1
 )
 for %%I in ("!install_home!") do set "install_home=%%~fI"
 if not exist "!install_home!\." (
     echo The installation directory does not exist: "!install_home!".
     if "!home_choice!"=="2" goto prompt_custom_home
-    pause
+    if not defined CI pause
     exit /b 1
 )
 if "!home_choice!"=="1" set "install_home=!install_home!\.agents"
@@ -125,6 +125,7 @@ if errorlevel 1 goto install_error
 set "target_work=!transaction_directory!\prepared"
 mkdir "!target_work!"
 if errorlevel 1 goto install_error
+if /I "!WORK_INSTALL_TEST_FAIL!"=="work_prepare" goto install_error
 call :install_base
 if errorlevel 1 goto install_error
 call :install_selected_instructions
@@ -137,16 +138,28 @@ if errorlevel 1 goto install_error
 if errorlevel 1 goto install_error
 
 if exist "!final_work!\" (
+    if /I "!WORK_INSTALL_TEST_FAIL!"=="work_backup" goto install_error
     move "!final_work!" "!transaction_directory!\previous" >nul
     if errorlevel 1 goto install_error
 )
-move "!target_work!" "!final_work!" >nul
-if errorlevel 1 (
+set "replace_failed="
+if /I "!WORK_INSTALL_TEST_FAIL!"=="work_replace" set "replace_failed=1"
+if /I "!WORK_INSTALL_TEST_FAIL!"=="work_restore" set "replace_failed=1"
+if not defined replace_failed (
+    move "!target_work!" "!final_work!" >nul
+    if errorlevel 1 set "replace_failed=1"
+)
+if defined replace_failed (
     if exist "!transaction_directory!\previous\" (
+        if /I "!WORK_INSTALL_TEST_FAIL!"=="work_restore" (
+            echo Error: restore failed; previous installation is preserved in "!transaction_directory!\previous".
+            if not defined CI pause
+            exit /b 1
+        )
         move "!transaction_directory!\previous" "!final_work!" >nul
         if errorlevel 1 (
             echo Error: restore failed; previous installation is preserved in "!transaction_directory!\previous".
-            pause
+            if not defined CI pause
             exit /b 1
         )
     )
@@ -156,7 +169,7 @@ set "target_work=!final_work!"
 echo Installation recovery directory: "!transaction_directory!".
 echo Work skill installed in "!target_work!".
 echo Work was replaced with a clean installation. Previous files remain in the recovery directory.
-pause
+if not defined CI pause
 exit /b 0
 
 :find_rust_toolchain
@@ -501,6 +514,7 @@ if exist "!source_work!\!instruction_relative!\references\" (
 exit /b 0
 
 :copy_file
+if /I "!WORK_INSTALL_TEST_FAIL!"=="work_copy" exit /b 1
 set "copy_relative=%~1"
 set "copy_source=!source_work!\!copy_relative!"
 set "copy_target=!target_work!\!copy_relative!"
@@ -514,6 +528,7 @@ if errorlevel 1 exit /b 1
 exit /b 0
 
 :copy_tree
+if /I "!WORK_INSTALL_TEST_FAIL!"=="work_copy" exit /b 1
 set "tree_relative=%~1"
 set "tree_source=!source_work!\!tree_relative!"
 set "tree_target=!target_work!\!tree_relative!"
@@ -535,17 +550,17 @@ exit /b 2
 
 :runtime_error
 echo Error: !runtime_error_message!
-pause
+if not defined CI pause
 exit /b 1
 
 :source_error
 echo Error: required Work skill source not found: "!missing_source!".
-pause
+if not defined CI pause
 exit /b 1
 
 :install_error
 echo Error: failed to install the Work skill in "!target_work!".
 if defined transaction_directory echo Recovery directory: "!transaction_directory!".
-pause
+if not defined CI pause
 exit /b 1
 

@@ -1,4 +1,4 @@
-name: Test and build Work Rust on Windows
+name: rust Windows CI
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-test-and-build-rust-windows:
-    name: Check, test and build Rust on Windows (${{ matrix.target }})
+  validate-and-build-rust-windows:
+    name: validate and build Rust on Windows (${{ matrix.target }})
     runs-on: windows-latest
     permissions:
       contents: read
@@ -61,7 +61,7 @@ jobs:
             }
           }
       - name: Test CI performance reporter
-        run: python -m unittest discover -s ../.github/scripts/ci-performance -p test_ci_perf.py
+        run: python -B -m unittest discover -s ../.github/scripts/tests/ci-performance -p test_ci_perf.py
       - name: Set up Rust 1.85 toolchain
         run: |
           rustup toolchain install $env:RUSTUP_TOOLCHAIN
@@ -143,10 +143,10 @@ jobs:
         run: cargo build --release --locked -p work-cli
       - name: Smoke test Rust binary
         run: '& ".\target\release\work.exe" --help'
-  trigger-release-coordination-after-windows-ci:
-    name: Trigger release coordination after Windows CI
+  trigger-release-coordination:
+    name: trigger release coordination
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check-test-and-build-rust-windows
+    needs: validate-and-build-rust-windows
     runs-on: ubuntu-latest
     permissions:
       actions: write

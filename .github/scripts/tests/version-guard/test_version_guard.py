@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 
-SPEC = importlib.util.spec_from_file_location("version_guard", Path(__file__).with_name("version_guard.py"))
+SPEC = importlib.util.spec_from_file_location("version_guard", Path(__file__).resolve().parents[2] / "version-guard/version_guard.py")
 guard = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guard)
 

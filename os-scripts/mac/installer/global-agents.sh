@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
 # The caller supplies global_agents_source. This module has no toolchain dependency.
+installer_inject_failure() {
+    [[ ",${WORK_INSTALL_TEST_FAIL:-}," == *",$1,"* ]]
+}
+
 install_global_agents() {
     local answer target_directory target_file transaction_directory staged
 
@@ -80,18 +84,18 @@ install_global_agents() {
 
     transaction_directory="$(mktemp -d "$target_directory/.agents-install.XXXXXX")" || return 1
     staged="$transaction_directory/prepared"
-    if ! cp -- "$global_agents_source" "$staged" || ! chmod 644 "$staged" || ! cmp -s -- "$global_agents_source" "$staged"; then
+    if installer_inject_failure global_prepare || installer_inject_failure global_copy || ! cp -- "$global_agents_source" "$staged" || ! chmod 644 "$staged" || ! cmp -s -- "$global_agents_source" "$staged"; then
         printf 'Error: failed to prepare Global AGENTS.md; target was not changed. Recovery directory: "%s".\n' "$transaction_directory" >&2
         return 1
     fi
     if [[ -e "$target_file" ]]; then
-        if ! mv -- "$target_file" "$transaction_directory/previous"; then
+        if installer_inject_failure global_backup || ! mv -- "$target_file" "$transaction_directory/previous"; then
             printf 'Error: failed to back up Global AGENTS.md; target was not changed.\n' >&2
             return 1
         fi
     fi
-    if ! mv -- "$staged" "$target_file"; then
-        if [[ -e "$transaction_directory/previous" ]] && ! mv -- "$transaction_directory/previous" "$target_file"; then
+    if installer_inject_failure global_replace || installer_inject_failure global_restore || ! mv -- "$staged" "$target_file"; then
+        if [[ -e "$transaction_directory/previous" ]] && { installer_inject_failure global_restore || ! mv -- "$transaction_directory/previous" "$target_file"; }; then
             printf 'Error: Global AGENTS.md restore failed; previous file remains in "%s/previous".\n' "$transaction_directory" >&2
             return 1
         fi

@@ -1,4 +1,4 @@
-name: Coordinate release after main Rust CI
+name: main release coordination
 
 on:
   workflow_dispatch:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   verify-main-ci-and-start-release:
-    name: Verify main Rust CI and start release
+    name: verify main CI and start release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
