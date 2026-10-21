@@ -101,6 +101,32 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             Remove-NetFirewallRule -Name $rule -ErrorAction Stop
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+              if (-not (Get-NetFirewallRule -PolicyStore ActiveStore -Name $rule -ErrorAction SilentlyContinue)) { break }
+              if ($attempt -eq 10) { throw 'Network isolation rule is still active' }
+              Start-Sleep -Seconds 1
+            }
+            Clear-DnsClientCache
+          }
+      - name: Wait for artifact network after Windows isolation
+        run: |
+          $artifactHost = 'results-receiver.actions.githubusercontent.com'
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
+            try {
+              Clear-DnsClientCache
+              $addresses = [System.Net.Dns]::GetHostAddresses($artifactHost)
+              if ($addresses.Count -eq 0) { throw 'Artifact host has no DNS address' }
+              $client = [System.Net.Sockets.TcpClient]::new()
+              try {
+                if (-not $client.ConnectAsync($artifactHost, 443).Wait(5000)) { throw 'Artifact host is unreachable' }
+              } finally {
+                $client.Dispose()
+              }
+              break
+            } catch {
+              if ($attempt -eq 12) { throw "Artifact network did not recover: $_" }
+              Start-Sleep -Seconds 5
+            }
           }
       - uses: actions/upload-artifact@v6
         with:
