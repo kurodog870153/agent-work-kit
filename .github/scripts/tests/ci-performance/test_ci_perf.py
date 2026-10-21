@@ -8,6 +8,7 @@ import unittest
 import urllib.request
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ci-performance"))
 import ci_perf
 
 

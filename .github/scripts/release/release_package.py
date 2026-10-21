@@ -20,6 +20,7 @@ from version_guard import validate_lock
 
 PLATFORMS = {
     "macos-arm64": {
+        "runner_label": "macos-latest",
         "target": "aarch64-apple-darwin",
         "binary": "bin/work",
         "installer": "os-scripts/mac/install-release.command",
@@ -30,6 +31,7 @@ PLATFORMS = {
         ),
     },
     "windows-x64-msvc": {
+        "runner_label": "windows-latest",
         "target": "x86_64-pc-windows-msvc",
         "binary": "bin/work.exe",
         "installer": "os-scripts/windows/install-release.bat",
@@ -69,8 +71,14 @@ def copy_asset(repository, stage, source, destination):
     shutil.copyfile(source_path, target_path)
 
 
-def build_package(repository, output, platform, binary, commit, runner):
+def build_package(repository, output, platform, binary, commit, tested_environment):
     config = PLATFORMS[platform]
+    required = ("runner_label", "runner_os", "cpu_architecture", "runner_image_name",
+                "runner_image_version", "os_name", "os_version", "os_build")
+    if any(not tested_environment.get(field) for field in required):
+        raise ValueError("tested environment is missing a required field")
+    if tested_environment["runner_label"] != config["runner_label"]:
+        raise ValueError("runner label does not match package platform")
     version = checked_version(repository)
     tag = f"v{version}"
     name = f"work-{tag}-{platform}.zip"
@@ -99,7 +107,7 @@ def build_package(repository, output, platform, binary, commit, runner):
             "commit": commit,
             "target": config["target"],
             "license": "PolyForm Noncommercial License 1.0.0",
-            "e2e_runner": runner,
+            "tested_environment": tested_environment,
         }
         (stage / "release-info.json").write_bytes(
             (json.dumps(info, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
@@ -146,21 +154,30 @@ def main():
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--commit")
     parser.add_argument("--runner-os")
+    parser.add_argument("--runner-label")
     parser.add_argument("--runner-arch")
     parser.add_argument("--runner-image")
+    parser.add_argument("--runner-image-version")
+    parser.add_argument("--os-name")
     parser.add_argument("--os-version")
+    parser.add_argument("--os-build")
     args = parser.parse_args()
     try:
         if args.action == "package":
-            if not all((args.platform, args.binary, args.commit, args.runner_os, args.runner_arch, args.runner_image, args.os_version)):
-                parser.error("package requires platform, binary, commit and all runner fields")
-            runner = {
-                "os": args.runner_os,
-                "arch": args.runner_arch,
-                "image": args.runner_image,
+            if not all((args.platform, args.binary, args.commit, args.runner_label, args.runner_os, args.runner_arch,
+                        args.runner_image, args.runner_image_version, args.os_name, args.os_version, args.os_build)):
+                parser.error("package requires platform, binary, commit and all tested environment fields")
+            tested_environment = {
+                "runner_label": args.runner_label,
+                "runner_os": args.runner_os,
+                "cpu_architecture": args.runner_arch,
+                "runner_image_name": args.runner_image,
+                "runner_image_version": args.runner_image_version,
+                "os_name": args.os_name,
                 "os_version": args.os_version,
+                "os_build": args.os_build,
             }
-            result = build_package(args.repository, args.output, args.platform, args.binary, args.commit, runner)
+            result = build_package(args.repository, args.output, args.platform, args.binary, args.commit, tested_environment)
         else:
             result = write_outer_checksums(args.repository, args.output)
     except (OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
