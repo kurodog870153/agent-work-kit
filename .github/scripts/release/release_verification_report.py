@@ -5,10 +5,38 @@ from collections import Counter
 import hashlib
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from release_publication_checks import expected_assets
+
+
+STAGE_JOBS = {
+    "validate": "validate release publication",
+    "macos_e2e": "build and test macOS release ZIP",
+    "windows_e2e": "build and test Windows release ZIP",
+    "attest": "verify and attest release assets",
+}
+
+
+def workflow_stage_statuses(repository, run_id):
+    command = [
+        "gh", "api", "--paginate",
+        f"repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
+        "--jq", ".jobs[] | [.name, .conclusion] | @tsv",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"Could not read release job results: {error}", file=sys.stderr)
+        return {stage: "unknown" for stage in STAGE_JOBS}
+    jobs = {}
+    for line in result.stdout.splitlines():
+        name, separator, conclusion = line.partition("\t")
+        if separator:
+            jobs[name] = conclusion
+    return {stage: jobs.get(name) or "unknown" for stage, name in STAGE_JOBS.items()}
 
 
 def digest(path):
@@ -76,16 +104,17 @@ def main():
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--run-url", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--run-id", required=True)
     parser.add_argument("--expected-dir", required=True, type=Path)
     parser.add_argument("--actual-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--checks", type=Path)
-    for stage in ("validate", "macos_e2e", "windows_e2e", "attest", "publish", "post_publish_verify"):
+    for stage in ("publish", "post_publish_verify"):
         parser.add_argument(f"--{stage.replace('_', '-')}-status", required=True)
     args = parser.parse_args()
-    stages = {stage: getattr(args, f"{stage}_status") for stage in (
-        "validate", "macos_e2e", "windows_e2e", "attest", "publish", "post_publish_verify"
-    )}
+    stages = workflow_stage_statuses(args.repository, args.run_id)
+    stages.update({stage: getattr(args, f"{stage}_status") for stage in ("publish", "post_publish_verify")})
     checks = json.loads(args.checks.read_text(encoding="utf-8")) if args.checks and args.checks.is_file() else []
     report = build_report(args.version, args.commit, args.run_url, stages, args.expected_dir, args.actual_dir, checks)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

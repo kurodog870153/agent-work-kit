@@ -83,6 +83,20 @@ if ! printf '2\n%s\ny\n' "$interactive_target" | \
     printf 'FAIL: interactive custom Work directory install failed.\n' >&2; exit 1
 fi
 [[ -f "$interactive_target/scripts/work" ]] || { printf 'FAIL: custom Work target missing.\n' >&2; exit 1; }
+preview_global="$scratch/preview Global"
+mkdir -- "$preview_global"
+printf 'private existing instructions\n' > "$preview_global/AGENTS.md"
+preview_output="$(printf 'y\n2\n%s\n\nn\n' "$preview_global" | \
+    bash "$repo_root/os-scripts/mac/installer/runtime/execute-locked.sh" package "$root" \
+        --work-install-dir "$scratch/preview Work/work" --dry-run)" || {
+    printf 'FAIL: interactive Global AGENTS preview failed.\n' >&2; exit 1;
+}
+[[ "$preview_output" == *'Available Skills: general,web,backend'* &&
+   "$preview_output" == *'Global AGENTS.md differs'* &&
+   "$preview_output" != *'private existing instructions'* &&
+   "$preview_output" != *'Global AGENTS directory: 1) current/default'* ]] || {
+    printf 'FAIL: interactive Skills list or Global AGENTS comparison output is wrong.\n' >&2; exit 1;
+}
 global_work_target="$scratch/global Work/work"
 global_dir="$scratch/custom Global"
 if ! printf '2\n%s\ny\n' "$global_dir" | \
@@ -92,6 +106,16 @@ if ! printf '2\n%s\ny\n' "$global_dir" | \
 fi
 [[ -f "$global_work_target/scripts/work" && -f "$global_dir/AGENTS.md" ]] || {
     printf 'FAIL: custom Global AGENTS target missing.\n' >&2; exit 1;
+}
+default_global_home="$scratch/default Global home"
+mkdir -- "$default_global_home"
+if ! printf '\n1\n\ny\n' | HOME="$default_global_home" \
+    bash "$repo_root/os-scripts/mac/installer/runtime/execute-locked.sh" package "$root" \
+        --work-install-dir "$global_work_target" >/dev/null; then
+    printf 'FAIL: default Global AGENTS directory reinstall failed.\n' >&2; exit 1
+fi
+[[ -f "$default_global_home/.codex/AGENTS.md" && -f "$global_dir/AGENTS.md" ]] || {
+    printf 'FAIL: default Global AGENTS choice did not select the displayed directory.\n' >&2; exit 1;
 }
 default_target="$HOME/.agents/skills/work"
 bash "$repo_root/os-scripts/mac/installer/runtime/execute-locked.sh" package "$root" \

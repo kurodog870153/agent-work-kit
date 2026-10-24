@@ -126,8 +126,39 @@ installer_log() { [[ "$installer_cli_verbose" == 1 ]] && printf 'Installer: %s\n
 installer_log 'options parsed'
 default_target="$(installer_absolute_path "$HOME/.agents/skills/work")"
 target="${installer_cli_work_install_dir:-$default_target}"
+interactive_global_choice=''
+interactive_global_dir=''
+if [[ "$installer_cli_non_interactive" != 1 ]]; then
+    if [[ -z "$installer_cli_global_agents" ]]; then
+        initial_state=''
+        if installer_directory_path_safe "$(installer_absolute_path "$target")" &&
+           [[ -f "$target/install-state.json" && ! -L "$target/install-state.json" ]]; then
+            initial_state="$(cat -- "$target/install-state.json")" || exit 1
+        fi
+        initial_settings="$(osascript -l JavaScript "$state_module" settings "$initial_state" \
+            "$(installer_absolute_path "$target")" '' '')" || exit 1
+        IFS=$'\t' read -r initial_valid initial_skills initial_global initial_version initial_dir <<< "$initial_settings"
+        default_choice=y
+        [[ "$initial_global" == 1 ]] || default_choice=n
+        interactive_global_choice="$(installer_prompt 'Install Global AGENTS.md? (y/n)' "$default_choice")" || exit 1
+        [[ "$interactive_global_choice" == y || "$interactive_global_choice" == n ]] || {
+            installer_fail 'invalid Global AGENTS choice'; exit 1;
+        }
+    fi
+    if [[ "$installer_cli_global_agents" == 1 ||
+          ( -z "$installer_cli_global_agents" && "$interactive_global_choice" == y ) ]] &&
+          [[ -z "$installer_cli_global_agents_install_dir" ]]; then
+        choice="$(installer_prompt "Global AGENTS directory: 1) default ($HOME/.codex), 2) custom" 1)" || exit 1
+        case "$choice" in
+            1) interactive_global_dir="$HOME/.codex" ;;
+            2) interactive_global_dir="$(installer_prompt 'Custom Global AGENTS directory' '')" || exit 1
+               [[ -n "$interactive_global_dir" ]] || { installer_fail 'Global AGENTS directory cannot be empty'; exit 1; } ;;
+            *) installer_fail 'invalid Global AGENTS directory choice'; exit 1 ;;
+        esac
+    fi
+fi
 if [[ -z "$installer_cli_work_install_dir" && "$installer_cli_non_interactive" != 1 ]]; then
-    choice="$(installer_prompt 'Work directory: 1) default, 2) custom' 1)" || exit 1
+    choice="$(installer_prompt "Work directory: 1) default ($default_target), 2) custom" 1)" || exit 1
     case "$choice" in
         1) target="$default_target" ;;
         2) target="$(installer_prompt 'Custom Work directory' '')" || exit 1
@@ -167,6 +198,8 @@ skills_override="${installer_cli_skills:-}"
 global_override=''
 if [[ -n "$installer_cli_global_agents" ]]; then
     if [[ "$installer_cli_global_agents" == 1 ]]; then global_override=true; else global_override=false; fi
+elif [[ -n "$interactive_global_choice" ]]; then
+    if [[ "$interactive_global_choice" == y ]]; then global_override=true; else global_override=false; fi
 fi
 settings="$(osascript -l JavaScript "$state_module" settings "$raw_state" "$target" "$skills_override" "$global_override")" || exit 1
 IFS=$'\t' read -r state_valid skills_csv global_enabled prior_version saved_global_dir <<< "$settings"
@@ -192,16 +225,11 @@ if [[ "$state_valid" != 1 && "$target" != "$default_target" &&
 fi
 if [[ "$installer_cli_non_interactive" != 1 ]]; then
     if [[ -z "$installer_cli_skills" ]]; then
+        printf 'Available Skills: %s\n' "$(installer_cli_list_skills | paste -sd, -)"
         selection="$(installer_prompt 'Skills (general, all, or comma-separated IDs)' "$skills_csv")" || exit 1
         installer_cli_validate_skills "$selection" || { installer_fail 'invalid Skill selection'; exit 1; }
         settings="$(osascript -l JavaScript "$state_module" settings "$settings_raw" "$settings_dir" "$selection" "$global_override")" || exit 1
         IFS=$'\t' read -r state_valid skills_csv global_enabled prior_version saved_global_dir <<< "$settings"
-    fi
-    if [[ -z "$installer_cli_global_agents" ]]; then
-        default_choice=n
-        [[ "$global_enabled" == 1 ]] && default_choice=y
-        choice="$(installer_prompt 'Install Global AGENTS.md? (y/n)' "$default_choice")" || exit 1
-        case "$choice" in y) global_enabled=1 ;; n) global_enabled=0 ;; *) installer_fail 'invalid Global AGENTS choice'; exit 1 ;; esac
     fi
 fi
 global_dir="$HOME/.codex"
@@ -210,16 +238,8 @@ if [[ "$global_enabled" == 1 && "$saved_global_dir" != - ]]; then
 fi
 if [[ -n "$installer_cli_global_agents_install_dir" ]]; then
     global_dir="$installer_cli_global_agents_install_dir"
-fi
-if [[ "$global_enabled" == 1 && -z "$installer_cli_global_agents_install_dir" &&
-      "$installer_cli_non_interactive" != 1 ]]; then
-    choice="$(installer_prompt 'Global AGENTS directory: 1) current/default, 2) custom' 1)" || exit 1
-    case "$choice" in
-        1) ;;
-        2) global_dir="$(installer_prompt 'Custom Global AGENTS directory' '')" || exit 1
-           [[ -n "$global_dir" ]] || { installer_fail 'Global AGENTS directory cannot be empty'; exit 1; } ;;
-        *) installer_fail 'invalid Global AGENTS directory choice'; exit 1 ;;
-    esac
+elif [[ -n "$interactive_global_dir" ]]; then
+    global_dir="$interactive_global_dir"
 fi
 if [[ "$global_enabled" == 1 ]]; then
     global_dir="$(installer_absolute_path "$global_dir")"
@@ -262,8 +282,8 @@ installer_global_agents_plan "$global_source" "$global_target" "$global_enabled"
     installer_fail 'Global AGENTS target conflicts or is unsafe'; exit 1;
 }
 if [[ "$installer_global_agents_action" == confirm ]]; then
-    printf 'Global AGENTS.md differs (current SHA-256 %s, new %s):\n%s\n' \
-        "$installer_global_agents_target_sha256" "$installer_global_agents_source_sha256" "$installer_global_agents_diff"
+    printf 'Global AGENTS.md differs (current SHA-256 %s, new %s).\n' \
+        "$installer_global_agents_target_sha256" "$installer_global_agents_source_sha256"
     choice="$(installer_prompt 'Replace Global AGENTS.md? (y/n)' n)" || exit 1
     if [[ "$choice" == y ]]; then installer_global_agents_action=replace
     else installer_global_agents_action=skip; fi

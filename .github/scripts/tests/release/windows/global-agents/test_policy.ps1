@@ -16,7 +16,8 @@ try {
     if ((Get-InstallerGlobalAgentsPlan -Source $source -Target $target -Enabled $true -NonInteractive $true -Confirmed $false).Action -ne 'unchanged') { throw 'identical' }
     [IO.File]::WriteAllText($target, "old`n")
     $plan = Get-InstallerGlobalAgentsPlan -Source $source -Target $target -Enabled $true -NonInteractive $false -Confirmed $false
-    if ($plan.Action -ne 'confirm' -or $plan.Diff.Count -lt 2) { throw 'conflict preview' }
+    if ($plan.Action -ne 'confirm' -or -not $plan.SourceSha256 -or -not $plan.TargetSha256 -or
+        ($plan.PSObject.Properties.Name -contains 'Diff')) { throw 'conflict metadata' }
     if ((Get-InstallerGlobalAgentsPlan -Source $source -Target $target -Enabled $true -NonInteractive $false -Confirmed $true).Action -ne 'replace') { throw 'confirmed replacement' }
     try {
         $null = Get-InstallerGlobalAgentsPlan -Source $source -Target $target -Enabled $true -NonInteractive $true -Confirmed $true

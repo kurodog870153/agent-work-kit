@@ -13,11 +13,38 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
 from release_publication_checks import expected_assets
-from release_verification_report import build_report, main, required_checks
+from release_verification_report import build_report, main, required_checks, workflow_stage_statuses
 from release_post_publish_checks import main as post_publish_main, verify
 
 
 class ReleaseVerificationReportTests(unittest.TestCase):
+    def test_stage_statuses_read_only_current_run_jobs(self):
+        lines = (
+            "validate release publication\tsuccess\n"
+            "build and test macOS release ZIP\tsuccess\n"
+            "build and test Windows release ZIP\tfailure\n"
+            "verify and attest release assets\tskipped\n"
+        )
+        result = type("Result", (), {"stdout": lines})()
+        with patch("release_verification_report.subprocess.run", return_value=result) as runner:
+            stages = workflow_stage_statuses("owner/repo", "123")
+        self.assertEqual(stages, {
+            "validate": "success", "macos_e2e": "success", "windows_e2e": "failure", "attest": "skipped",
+        })
+        self.assertIn("repos/owner/repo/actions/runs/123/jobs?filter=latest&per_page=100", runner.call_args.args[0])
+
+    def test_missing_job_status_cannot_report_success(self):
+        result = type("Result", (), {"stdout": "validate release publication\tsuccess\n"})()
+        with patch("release_verification_report.subprocess.run", return_value=result):
+            stages = workflow_stage_statuses("owner/repo", "123")
+        self.assertEqual(stages["attest"], "unknown")
+
+    def test_api_failure_cannot_report_success(self):
+        with patch("release_verification_report.subprocess.run", side_effect=OSError("unavailable")), \
+             contextlib.redirect_stderr(io.StringIO()):
+            stages = workflow_stage_statuses("owner/repo", "123")
+        self.assertTrue(all(status == "unknown" for status in stages.values()))
+
     def test_post_publish_exit_status_and_json(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -150,13 +177,18 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             summary_path = root / "summary.md"
             arguments = [
                 "release_verification_report.py", "--version", "1.2.3", "--commit", "a" * 40,
-                "--run-url", "https://example.invalid/run", "--expected-dir", str(root / "expected"),
+                "--run-url", "https://example.invalid/run", "--repository", "owner/repo", "--run-id", "123",
+                "--expected-dir", str(root / "expected"),
                 "--actual-dir", str(root / "actual"), "--checks", str(checks_path),
                 "--output", str(report_path),
             ]
-            for stage in ("validate", "macos-e2e", "windows-e2e", "attest", "publish", "post-publish-verify"):
+            for stage in ("publish", "post-publish-verify"):
                 arguments.extend((f"--{stage}-status", "failure" if stage == "post-publish-verify" else "success"))
-            with patch("sys.argv", arguments), patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary_path)}), \
+            with patch("sys.argv", arguments), \
+                 patch("release_verification_report.workflow_stage_statuses", return_value={
+                     "validate": "success", "macos_e2e": "success", "windows_e2e": "success", "attest": "success",
+                 }), \
+                 patch.dict("os.environ", {"GITHUB_STEP_SUMMARY": str(summary_path)}), \
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(), 1)
             report = json.loads(report_path.read_text(encoding="utf-8"))
