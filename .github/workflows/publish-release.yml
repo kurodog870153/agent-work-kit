@@ -351,7 +351,7 @@ jobs:
   verify-published-release:
     name: verify published release
     if: always()
-    needs: [create-release-tag, validate-release-publication, build-and-test-macos-zip, build-and-test-windows-zip, verify-macos-release-package-checksums, verify-windows-release-package-checksums, verify-and-attest-release-assets, prepare-and-publish-release]
+    needs: [create-release-tag, validate-release-publication, build-and-test-macos-zip, build-and-test-windows-zip, verify-and-attest-release-assets, prepare-and-publish-release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
