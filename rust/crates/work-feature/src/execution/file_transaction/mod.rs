@@ -210,18 +210,17 @@ pub fn prepare(
             )
         })
         .collect();
-    if let Some(confirmation) = baseline_confirmation {
-        if history.head.is_empty()
+    if let Some(confirmation) = baseline_confirmation
+        && (history.head.is_empty()
             || confirmation.previous_transaction != history.head
             || confirmation.before_sha256
                 != work_operations::execution::file_transaction::history::before_sha256(
                     &before,
                     &prepared.path_identities,
                 )
-            || confirmation.evidence.trim().is_empty()
-        {
-            return Err(error("file_transaction_baseline_confirmation_invalid"));
-        }
+            || confirmation.evidence.trim().is_empty())
+    {
+        return Err(error("file_transaction_baseline_confirmation_invalid"));
     }
     for (path, expected) in &history.expected {
         if let Some(actual) = before.get(path) {

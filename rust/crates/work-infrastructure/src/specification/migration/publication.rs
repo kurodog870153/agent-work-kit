@@ -79,18 +79,19 @@ impl MigrationTransactionRepository for RecoveryBaseline<'_> {
             )?
         };
         for (path, after) in self.additional {
-            if let Some(current) = history.remove(path) {
-                if &current != after && self.sources.get(path) != Some(&current) {
-                    return Err(fail(
-                        "migration_source_changed",
-                        "An approved additional artifact changed during recovery.",
-                    ));
-                }
+            if let Some(current) = history.remove(path)
+                && &current != after
+                && self.sources.get(path) != Some(&current)
+            {
+                return Err(fail(
+                    "migration_source_changed",
+                    "An approved additional artifact changed during recovery.",
+                ));
             }
-            if path.starts_with(&format!("{execution}/")) {
-                if let Some(before) = self.sources.get(path) {
-                    history.insert(path.clone(), before.clone());
-                }
+            if path.starts_with(&format!("{execution}/"))
+                && let Some(before) = self.sources.get(path)
+            {
+                history.insert(path.clone(), before.clone());
             }
         }
         Ok(history)

@@ -39,14 +39,14 @@ pub fn check_task_eligibility(
                 json!({"task_id":task_id}),
             )
         })?;
-    if let Some(lock) = index.get("lock") {
-        if Some(lock) != allowed_lock {
-            return Err(issue(
-                "execute_preflight_lock_present",
-                "The execution index already contains a lock.",
-                json!({"lock":lock}),
-            ));
-        }
+    if let Some(lock) = index.get("lock")
+        && Some(lock) != allowed_lock
+    {
+        return Err(issue(
+            "execute_preflight_lock_present",
+            "The execution index already contains a lock.",
+            json!({"lock":lock}),
+        ));
     }
     let rows = index["tasks"].as_array().ok_or_else(|| {
         issue(
@@ -228,12 +228,13 @@ pub fn check_file_lifecycle(
     for entry in state.values() {
         *existence.entry(entry.identity.clone()).or_default() |= entry.exists;
     }
-    let files = task["files"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    let files = task["files"]
+        .as_array()
+        .map_or(&[] as &[Value], Vec::as_slice);
     crate::task::file_state::final_state(files, &existence, |path| {
         state
             .get(path)
-            .map(|s| s.identity.clone())
-            .unwrap_or_else(|| path.to_owned())
+            .map_or_else(|| path.to_owned(), |s| s.identity.clone())
     })
     .map_err(|e| {
         issue(

@@ -766,8 +766,7 @@ mod tests {
             let r = { store.submit_with_runtime("example", &op, false) };
             fs::write(
                 root.join(format!("{mode}.result")),
-                r.map(|s| s.revision.to_string())
-                    .unwrap_or_else(|e| e.reason_code),
+                r.map_or_else(|e| e.reason_code, |s| s.revision.to_string()),
             )
             .unwrap();
         }

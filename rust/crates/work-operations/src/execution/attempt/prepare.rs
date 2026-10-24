@@ -427,16 +427,14 @@ pub fn build_prepare_request(
         "command_positions",
         task["commands"]
             .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or(&[]),
+            .map_or(&[] as &[Value], Vec::as_slice),
     )?;
     let validations = selected(
         choice,
         "validation_positions",
         task["validations"]
             .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or(&[]),
+            .map_or(&[] as &[Value], Vec::as_slice),
     )?;
     let external = task["operations"]
         .as_array()

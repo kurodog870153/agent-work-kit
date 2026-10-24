@@ -524,8 +524,20 @@ impl Child {
         if self.terminated {
             return Ok(());
         }
+        #[cfg(test)]
+        let terminate_started = std::time::Instant::now();
         check(unsafe { TerminateJobObject(self.job.0, 1) })?;
-        if unsafe { WaitForSingleObject(self.process.0, 500) } != 0 {
+        #[cfg(test)]
+        let terminate_call_ms = terminate_started.elapsed().as_millis();
+        #[cfg(test)]
+        let leader_started = std::time::Instant::now();
+        let leader_wait_result = unsafe { WaitForSingleObject(self.process.0, 500) };
+        #[cfg(test)]
+        eprintln!(
+            "Windows Job termination: terminate_call_ms={terminate_call_ms} leader_wait_ms={} leader_wait_result={leader_wait_result}",
+            leader_started.elapsed().as_millis()
+        );
+        if leader_wait_result != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Process termination unverified",
@@ -544,9 +556,20 @@ impl Child {
                 )
             })?;
             if accounting.active == 0 {
+                #[cfg(test)]
+                eprintln!(
+                    "Windows Job termination: job_wait_ms={} active_processes=0",
+                    started.elapsed().as_millis()
+                );
                 break;
             }
             if started.elapsed() >= std::time::Duration::from_millis(500) {
+                #[cfg(test)]
+                eprintln!(
+                    "Windows Job termination: job_wait_ms={} active_processes={}",
+                    started.elapsed().as_millis(),
+                    accounting.active
+                );
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
                     "Job descendants still active",
@@ -554,7 +577,7 @@ impl Child {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        // Rust 1.85 may inherit transient pipe handles into unrelated concurrent children.
+        // Windows may inherit transient pipe handles into unrelated concurrent children.
         // Native EOF and verified owned-source completion are distinct observations:
         // only an empty read after every Job producer has exited completes this source.
         self.stdout.1 = true;

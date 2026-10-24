@@ -108,105 +108,102 @@ fn relationship_diagnostics(
         diagnostics.push(json!({"code":code,"path":path,"detail":detail,
             "next_command":"migration semantic-prepare","mode":"reconstruction"}));
     };
-    if let Some((index, index_raw)) = &index {
-        if index["schema"] == "work-task-index" {
-            let requirement = index["requirement_id"].as_str().unwrap_or("");
-            if let Err(error) =
-                work_operations::task::source::validate_formal_context(index, requirement)
-            {
+    if let Some((index, index_raw)) = &index
+        && index["schema"] == "work-task-index"
+    {
+        let requirement = index["requirement_id"].as_str().unwrap_or("");
+        if let Err(error) =
+            work_operations::task::source::validate_formal_context(index, requirement)
+        {
+            report(
+                error.reason_code,
+                index_path,
+                "TASK provenance or owned planning decisions are invalid",
+            );
+        } else {
+            let provenance =
+                serde_json::from_value(index["source"].clone()).expect("validated provenance");
+            let artifacts =
+                serde_json::from_value(index["artifacts"].clone()).expect("validated routes");
+            if let Err(error) = work_feature::task::source::verify_provenance(
+                &crate::artifact_paths::LocalArtifactPaths {
+                    project_root: root.to_path_buf(),
+                },
+                requirement,
+                &provenance,
+                &artifacts,
+            ) {
                 report(
-                    error.reason_code,
+                    &error.reason_code,
                     index_path,
-                    "TASK provenance or owned planning decisions are invalid",
+                    "TASK immutable source evidence differs from its retained binding",
                 );
-            } else {
-                let provenance =
-                    serde_json::from_value(index["source"].clone()).expect("validated provenance");
-                let artifacts =
-                    serde_json::from_value(index["artifacts"].clone()).expect("validated routes");
-                if let Err(error) = work_feature::task::source::verify_provenance(
-                    &crate::artifact_paths::LocalArtifactPaths {
-                        project_root: root.to_path_buf(),
-                    },
-                    requirement,
-                    &provenance,
-                    &artifacts,
-                ) {
-                    report(
-                        &error.reason_code,
-                        index_path,
-                        "TASK immutable source evidence differs from its retained binding",
-                    );
-                }
             }
-            if let Some((execution, _)) = &execution {
-                if execution["schema"] == "work-execution-index" {
-                    for (code, actual, expected) in [
-                        (
-                            "execution_spec_mismatch",
-                            &execution["task_spec_id"],
-                            &index["spec_id"],
-                        ),
-                        (
-                            "execution_index_fingerprint_mismatch",
-                            &execution["task_index_sha256"],
-                            &json!(fingerprint::raw(index_raw)),
-                        ),
-                        (
-                            "execution_instruction_mismatch",
-                            &execution["task_instructions_sha256"],
-                            &index["instruction_selection"]["instructions_sha256"],
-                        ),
-                        (
-                            "execution_hierarchy_mismatch",
-                            &execution["hierarchy_selection_sha256"],
-                            &index["hierarchy_selection"]["selection_sha256"],
-                        ),
-                        (
-                            "execution_skill_mismatch",
-                            &execution["skill_selection_sha256"],
-                            &index["skill_selection"]["selection_sha256"],
-                        ),
-                    ] {
-                        if actual != expected {
-                            report(
-                                code,
-                                &execution_path,
-                                "Execution binding differs from the installed TASK collection",
-                            );
-                        }
-                    }
+        }
+        if let Some((execution, _)) = &execution
+            && execution["schema"] == "work-execution-index"
+        {
+            for (code, actual, expected) in [
+                (
+                    "execution_spec_mismatch",
+                    &execution["task_spec_id"],
+                    &index["spec_id"],
+                ),
+                (
+                    "execution_index_fingerprint_mismatch",
+                    &execution["task_index_sha256"],
+                    &json!(fingerprint::raw(index_raw)),
+                ),
+                (
+                    "execution_instruction_mismatch",
+                    &execution["task_instructions_sha256"],
+                    &index["instruction_selection"]["instructions_sha256"],
+                ),
+                (
+                    "execution_hierarchy_mismatch",
+                    &execution["hierarchy_selection_sha256"],
+                    &index["hierarchy_selection"]["selection_sha256"],
+                ),
+                (
+                    "execution_skill_mismatch",
+                    &execution["skill_selection_sha256"],
+                    &index["skill_selection"]["selection_sha256"],
+                ),
+            ] {
+                if actual != expected {
+                    report(
+                        code,
+                        &execution_path,
+                        "Execution binding differs from the installed TASK collection",
+                    );
                 }
             }
         }
     }
-    if let Some((index, _)) = &index {
-        if index["schema"] == "work-task-index" {
-            let directory = index_path.rsplit_once('/').map_or("", |(parent, _)| parent);
-            for row in index["tasks"].as_array().into_iter().flatten() {
-                let Some(relative) = row["path"].as_str() else {
-                    continue;
-                };
-                let path = format!("{directory}/{relative}");
-                let absolute = match storage_path(root, &path) {
-                    Ok(path) => path,
-                    Err(_) => {
-                        report("invalid_task_item_path", &path, "TASK item path is invalid");
-                        continue;
-                    }
-                };
-                if !absolute.is_file() {
-                    report("missing_task_item", &path, "Indexed TASK item is absent");
-                    continue;
-                }
-                let raw = LocalFiles.read_raw(&absolute)?;
-                if row["canonical_sha256"] != fingerprint::raw(&raw) {
-                    report(
-                        "task_item_fingerprint_mismatch",
-                        &path,
-                        "Indexed TASK item SHA differs from installed bytes",
-                    );
-                }
+    if let Some((index, _)) = &index
+        && index["schema"] == "work-task-index"
+    {
+        let directory = index_path.rsplit_once('/').map_or("", |(parent, _)| parent);
+        for row in index["tasks"].as_array().into_iter().flatten() {
+            let Some(relative) = row["path"].as_str() else {
+                continue;
+            };
+            let path = format!("{directory}/{relative}");
+            let Ok(absolute) = storage_path(root, &path) else {
+                report("invalid_task_item_path", &path, "TASK item path is invalid");
+                continue;
+            };
+            if !absolute.is_file() {
+                report("missing_task_item", &path, "Indexed TASK item is absent");
+                continue;
+            }
+            let raw = LocalFiles.read_raw(&absolute)?;
+            if row["canonical_sha256"] != fingerprint::raw(&raw) {
+                report(
+                    "task_item_fingerprint_mismatch",
+                    &path,
+                    "Indexed TASK item SHA differs from installed bytes",
+                );
             }
         }
     }
@@ -315,7 +312,7 @@ pub fn analyze_with_evidence(
                 .map_err(|_| fail("migration_source_read", "Source evidence cannot be listed."))?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| fail("migration_source_read", "Source evidence cannot be listed."))?;
-            entries.sort_by_key(|entry| entry.file_name());
+            entries.sort_by_key(fs::DirEntry::file_name);
             for entry in entries {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let Ok(source_id) = name.parse() else {
@@ -351,7 +348,7 @@ pub fn analyze_with_evidence(
                     entry.map_err(|_| fail("migration_task_read", "TASK items cannot be listed."))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            entries.sort_by_key(|entry| entry.file_name());
+            entries.sort_by_key(fs::DirEntry::file_name);
             for entry in entries {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if name.starts_with("TASK-") && name.ends_with(".json") {

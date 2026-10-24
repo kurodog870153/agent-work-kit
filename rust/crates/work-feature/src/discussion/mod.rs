@@ -99,10 +99,10 @@ pub fn submit(
     }
     let view =
         read(repository, requirement).map_err(|error| annotate(error, committed.revision))?;
-    if let DiscussionChange::PrepareQuestion { .. } = &operation.change {
-        if view.continuation.question != committed.continuation.question {
-            return Err(rejected("discussion_question_changed_after_save"));
-        }
+    if let DiscussionChange::PrepareQuestion { .. } = &operation.change
+        && view.continuation.question != committed.continuation.question
+    {
+        return Err(rejected("discussion_question_changed_after_save"));
     }
     let added = match &operation.change {
         DiscussionChange::AddDecision { decision } => Some(decision),

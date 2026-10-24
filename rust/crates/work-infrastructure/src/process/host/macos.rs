@@ -71,10 +71,9 @@ impl Child {
                 -1
             },
             5,
-        ) {
-            if error.kind() != io::ErrorKind::Interrupted {
-                std::thread::sleep(Duration::from_millis(5));
-            }
+        ) && error.kind() != io::ErrorKind::Interrupted
+        {
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 

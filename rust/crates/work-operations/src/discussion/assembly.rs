@@ -46,12 +46,11 @@ pub fn task_records(session: &DiscussionSession) -> Result<Vec<Value>> {
                 .as_array_mut()
                 .expect("serialized references")
             {
-                if reference["kind"] == "decisions" {
-                    if let Some(id) = reference["key"].as_str() {
-                        if session.decisions.iter().any(|d| d.id == id) {
-                            reference["key"] = json!(id.to_ascii_lowercase());
-                        }
-                    }
+                if reference["kind"] == "decisions"
+                    && let Some(id) = reference["key"].as_str()
+                    && session.decisions.iter().any(|d| d.id == id)
+                {
+                    reference["key"] = json!(id.to_ascii_lowercase());
                 }
             }
         }

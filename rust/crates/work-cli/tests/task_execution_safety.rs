@@ -2345,10 +2345,10 @@ fn actual_failing_test_keeps_published_contents_then_scoped_correction_and_reval
     assert_eq!(run_command("CMD-001")["data"]["exit_code"], 0);
     let mut changes = work_infrastructure::fixture_support::file_changes_fixture(&root).unwrap();
     for change in &mut changes {
-        if let work_model::execution::file_transaction::FileChange::Write { path, bytes } = change {
-            if path == "c-existing.txt" {
-                *bytes = b"known failing output\n".to_vec();
-            }
+        if let work_model::execution::file_transaction::FileChange::Write { path, bytes } = change
+            && path == "c-existing.txt"
+        {
+            *bytes = b"known failing output\n".to_vec();
         }
     }
     let (code, first) = invoke(
@@ -2651,7 +2651,7 @@ fn development_fixture_retains_dirty_baseline_and_an_independent_task_without_a_
     assert!(
         context.task_context().collection["tasks"][2]["dependencies"]
             .as_array()
-            .is_none_or(|d| d.is_empty())
+            .is_none_or(Vec::is_empty)
     );
     // Independence does not bypass the shared active-writer lock.
     let (code, blocked) = invoke(&root, &skills, "preflight", "TASK-003", None);

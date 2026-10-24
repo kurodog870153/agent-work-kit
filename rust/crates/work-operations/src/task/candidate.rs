@@ -297,14 +297,14 @@ pub fn validate_semantic_candidate(value: &Value, refined: bool) -> Result<(), T
                     }
                     super::verification::validate(condition, &row["command_keys"])?;
                 }
-                if let Some(command_keys) = row.get("command_keys") {
-                    if command_keys.as_array().is_none_or(Vec::is_empty) {
-                        return Err(issue(
-                            "invalid_semantic_reference",
-                            "Automated validations require command keys.",
-                            json!({}),
-                        ));
-                    }
+                if let Some(command_keys) = row.get("command_keys")
+                    && command_keys.as_array().is_none_or(Vec::is_empty)
+                {
+                    return Err(issue(
+                        "invalid_semantic_reference",
+                        "Automated validations require command keys.",
+                        json!({}),
+                    ));
                 }
                 if let Some(ids) = row.get("acceptance_ids") {
                     validate_known_acceptance(ids, None)?;

@@ -82,6 +82,28 @@ class PerformanceReportTests(unittest.TestCase):
             (root / "performance.json").write_text('{"status":"passed"}', encoding="utf-8")
             self.assertEqual(ci_perf.enforce_command(SimpleNamespace(directory=root, junit=root / "junit.xml", min_doc_tests=0)), 1)
 
+    def test_enforcement_logs_failed_test_and_captured_stderr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for phase, code in (("compile", 0), ("test", 100), ("doc", 0)):
+                (root / f"{phase}.json").write_text(json.dumps({"phase": phase, "duration_seconds": 1, "exit_code": code}), encoding="utf-8")
+            (root / "doc.log").write_text("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n", encoding="utf-8")
+            (root / "junit.xml").write_text(
+                '<testsuites><testsuite name="work-infrastructure"><testcase classname="process::host::tests" name="termination" time="1">'
+                '<failure message="test failure">assertion failed: cleanup_error.is_none()<system-err>leader_wait_result=258\nassertion failed</system-err></failure>'
+                '</testcase><testcase name="passed" time="0.1" /></testsuite></testsuites>',
+                encoding="utf-8",
+            )
+            stderr = io.StringIO()
+            with patch.object(sys, "stderr", stderr):
+                self.assertEqual(ci_perf.enforce_command(SimpleNamespace(directory=root, junit=root / "junit.xml", min_doc_tests=1)), 1)
+            output = stderr.getvalue()
+            self.assertIn("Failed test: work-infrastructure::process::host::tests::termination", output)
+            self.assertIn("Failure: test failure", output)
+            self.assertIn("Failure output: assertion failed: cleanup_error.is_none()", output)
+            self.assertIn("stderr: leader_wait_result=258", output)
+            self.assertNotIn("Failed test: work-infrastructure::::passed", output)
+
     def test_five_matching_baselines_use_median_and_strict_threshold(self):
         base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "test_ids_sha256": "same", "status": "passed"}
         history = [{**base, "test_execution_seconds": seconds} for seconds in (8, 9, 10, 11, 50)]

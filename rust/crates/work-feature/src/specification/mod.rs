@@ -428,16 +428,12 @@ where
         }
         let old_row = old_rows.iter().find(|row| row["id"] == id);
         let next_row = next_rows.iter().find(|row| row["id"] == id);
-        let before = old_row
-            .map(|row| row["status"].clone())
-            .unwrap_or(Value::Null);
-        let after = next_row
-            .map(|row| row["status"].clone())
-            .unwrap_or(Value::Null);
+        let before = old_row.map_or(Value::Null, |row| row["status"].clone());
+        let after = next_row.map_or(Value::Null, |row| row["status"].clone());
         if before != after || affected.iter().any(|task_id| task_id == id) {
             lifecycle_impact.push(json!({"task_id":id,"before":before,"after":after,
-                "reason_before":old_row.map(|row| row["status_reason"].clone()).unwrap_or(Value::Null),
-                "reason_after":next_row.map(|row| row["status_reason"].clone()).unwrap_or(Value::Null)}));
+                "reason_before":old_row.map_or(Value::Null, |row| row["status_reason"].clone()),
+                "reason_after":next_row.map_or(Value::Null, |row| row["status_reason"].clone())}));
         }
     }
     let result = work_model::specification::verified::<work_model::specification::SpecUpdate>(

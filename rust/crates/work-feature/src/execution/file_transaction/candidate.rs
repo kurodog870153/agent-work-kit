@@ -384,10 +384,11 @@ mod tests {
             let count = self.reads.get() + 1;
             self.reads.set(count);
             let mut value = self.files.get(path).cloned();
-            if self.drift && count > 1 {
-                if let Some(state) = &mut value {
-                    state.bytes = b"foreign change".to_vec();
-                }
+            if self.drift
+                && count > 1
+                && let Some(state) = &mut value
+            {
+                state.bytes = b"foreign change".to_vec();
             }
             Ok(value)
         }

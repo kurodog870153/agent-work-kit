@@ -1,11 +1,143 @@
 # Work Release 安裝
 
-本 ZIP 包含對應平台的預編譯 Work binary、完整 Work Skill、Global `AGENTS.md` 與安裝器。安裝不需要 Rust、Cargo、Git、SDK、GitHub CLI 或網路。
+本 ZIP 包含對應平台的預編譯 Work binary、完整 Work Skill、Global `AGENTS.md` 與安裝器。
 
-1. 從同一個 GitHub Release 下載對應平台的 ZIP 與 `SHA256SUMS.txt`，核對 ZIP 的 SHA-256；如有 Artifact Attestation，也應核對資產的來源與 digest。
-2. 解壓 ZIP 到本機目錄。macOS ARM64 執行 `install-release.command`；Windows x64 執行 `install-release.bat`。安裝器會先驗證包內所有檔案，再詢問是否安裝 Global `AGENTS.md`，最後安裝 Work。
-3. Global `AGENTS.md` 預設不安裝。選擇安裝時可使用預設的 `.codex` 目錄或自訂位置；建立目錄及覆蓋現有檔案都需確認。Work 預設安裝至 `.agents/skills/work`，也可指定既有目錄，安裝至其 `skills/work`。
-4. 覆蓋安裝會把完整舊檔案保存在畫面顯示的復原目錄 `previous`。若替換失敗，安裝器會嘗試還原；若還原失敗，依錯誤訊息中的復原目錄手動處理。Global `AGENTS.md` 成功後若 Work 安裝失敗，前者不會回滾。
-5. 安裝後執行 `.agents/skills/work/scripts/work --help`（Windows 為 `.agents\skills\work\scripts\work.exe --help`）確認預編譯程式可啟動。自訂安裝位置時，改用該位置的 `skills/work/scripts` 路徑。
+## 1. 下載
+
+從同一個 [GitHub Release](https://github.com/kurodog870153/codex-workflow-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
+
+1. Windows x64 使用 `work-v<版本>-windows-x64-msvc.zip`
+2. macOS ARM64 使用 `work-v<版本>-macos-arm64.zip`
+
+`<版本>` 是 Release tag 去掉開頭 `v` 的版本；例如 tag `v1.2.3`，檔名即以 `work-v1.2.3-` 開頭。把兩個檔案放在同一目錄。
+
+## 2. 驗證 ZIP
+
+先切換到下載目錄，再將所屬平台的整段命令貼上執行；不必修改版本字串。
+
+命令會從 `SHA256SUMS.txt` 找出該平台唯一的 ZIP 項目，再比對下載檔的 SHA-256。
+
+找不到項目、ZIP 或雜湊不符時，不要解壓或執行安裝器。
+
+如有 Artifact Attestation，也應核對資產的來源與 digest。
+
+### Windows x64：在 PowerShell 執行
+
+```powershell
+& {
+  $entries = @(Select-String -LiteralPath .\SHA256SUMS.txt -Pattern '^[0-9a-fA-F]{64}\s+work-v.+-windows-x64-msvc\.zip$' |
+    ForEach-Object { $_.Line })
+  if ($entries.Count -ne 1) { throw 'SHA256SUMS.txt 中找不到唯一的 Windows ZIP 項目' }
+  $parts = $entries[0] -split '\s+', 3
+  $expected, $zip = $parts[0], $parts[1]
+  if ($expected -cnotmatch '^[0-9a-fA-F]{64}$') { throw 'SHA-256 格式不正確' }
+  $actual = (Get-FileHash -LiteralPath ".\$zip" -Algorithm SHA256 -ErrorAction Stop).Hash
+  if ($actual -ine $expected) { throw "SHA-256 不符：$zip" }
+  Write-Host "SHA-256 驗證通過：$zip"
+}
+```
+
+### macOS ARM64：在 Terminal 執行
+
+```sh
+(
+count=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { n++ } END { print n+0 }' SHA256SUMS.txt) || exit 1
+if [ "$count" -ne 1 ]; then
+  echo 'SHA256SUMS.txt 中找不到唯一的 macOS ZIP 項目' >&2
+  exit 1
+fi
+zip=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { print $2 }' SHA256SUMS.txt) || exit 1
+expected=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { print $1 }' SHA256SUMS.txt) || exit 1
+if ! printf '%s\n' "$expected" | grep -Eq '^[[:xdigit:]]{64}$'; then
+  echo 'SHA-256 格式不正確' >&2
+  exit 1
+fi
+if [ ! -f "$zip" ]; then
+  echo "找不到 ZIP：$zip" >&2
+  exit 1
+fi
+actual=$(shasum -a 256 "$zip" | awk '{ print $1 }') || exit 1
+if [ "$actual" != "$expected" ]; then
+  echo "SHA-256 不符：$zip" >&2
+  exit 1
+fi
+echo "SHA-256 驗證通過：$zip"
+)
+```
+
+`SHA256SUMS.txt` 只證明下載檔與清單一致；仍須確認兩者來自預期的 GitHub Release。
+
+## 3. 解壓並安裝
+
+### 3.1 解壓並切換目錄
+
+驗證 ZIP 通過後解壓，並在 PowerShell 或 Terminal 切換到解壓後的根目錄。下列命令都從該目錄執行。
+
+### 3.2 預覽安裝動作
+
+以下範例選取 `general` 與 `typescript`，只列出預計動作，不修改正式安裝目標。
+
+Windows PowerShell：
+
+```powershell
+.\install-work-from-package.bat --skills general,typescript --dry-run
+```
+
+macOS Terminal：
+
+```sh
+./install-work-from-package.command --skills general,typescript --dry-run
+```
+
+macOS 若顯示「權限不足」：
+
+1. 先依上一節確認 ZIP 與 `SHA256SUMS.txt` 來自預期的 Release，且雜湊相符。
+2. 在解壓後的根目錄執行 `chmod +x install-work-from-package.command`，再重試上方命令。
+3. 若不想更改權限，可直接執行 `bash install-work-from-package.command --skills general,typescript --dry-run`。
+
+### 3.3 執行安裝
+
+確認預計動作後，移除 `--dry-run` 執行安裝。
+
+Windows PowerShell：
+
+```powershell
+.\install-work-from-package.bat --skills general,typescript
+```
+
+macOS Terminal：
+
+```sh
+./install-work-from-package.command --skills general,typescript
+```
+
+若只需要預設選項，省略 `--skills general,typescript` 即可。首次安裝預設選取 `general` Skill，並啟用 Global `AGENTS.md`；已有有效安裝狀態時，沿用原本的 Skill 與 Global `AGENTS.md` 設定。安裝器會先驗證包內 manifest、平台及預編譯 binary，再修改正式目標。
+
+### 3.4 可用參數
+
+其他參數接在入口檔名後面，多個參數以空白分隔：
+
+1. `--help` 或 `-h`：顯示用法，不安裝。
+2. `--list-skills`：列出此 ZIP 可安裝的 Skill ID，不安裝。
+3. `--skills <general|all|id[,id...]>`：選取 `general`、`all`，或以逗號分隔的 Skill ID；可先用 `--list-skills` 查詢 ID。
+4. `--global-agents`／`--no-global-agents`：啟用／停用 Global `AGENTS.md` 安裝；兩者不可同時使用。
+5. `--work-install-dir <path>`：指定最終 Work 目錄；路徑含空白時須加引號。
+6. `--global-agents-install-dir <path>`：指定 Global `AGENTS.md` 所在目錄；路徑含空白時須加引號。
+7. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
+8. `--dry-run`：列出預計動作，不修改正式安裝目標。
+9. `--verbose`：顯示較詳細的診斷資訊。舊 `--install-dir` 不再接受。
+
+### 3.5 安裝時的確認
+
+安裝器會依目標目錄的狀態處理：
+
+1. Work 目錄不存在或為空時，視為首次安裝；沒有 `install-state.json` 是正常情況。
+2. Work 目錄已有內容，但 `install-state.json` 缺少、損毀或不符合目前規格時，視為首次更新。安裝器會先檢查目錄結構及內容；檢查通過後，仍須在互動模式明確確認接管。檢查未通過或未確認時，不修改原目錄。
+3. 已選擇安裝 Global `AGENTS.md`，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
+4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到首次更新接管或 Global `AGENTS.md` 差異等必須確認的情況，會拒絕安裝並保留原目標。
+
+### 3.6 安全警告與錯誤處理
 
 這些 binary 未經 Apple 或 Microsoft 平台簽章，作業系統可能顯示安全警告。確認下載來源、Checksum 與 Attestation 後，再依平台提供的正常操作方式允許執行。
+
+若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。首次更新因未知內容或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。

@@ -615,17 +615,15 @@ fn prepare_simple_update_scoped(
     ];
     let mut nested_edits = BTreeMap::<String, serde_json::Map<String, Value>>::new();
     for edit in edits {
-        if edit["target"]["artifact"] == "task_item" {
-            if let (Some(id), Some(field)) =
+        if edit["target"]["artifact"] == "task_item"
+            && let (Some(id), Some(field)) =
                 (edit["target"]["task_id"].as_str(), edit["field"].as_str())
-            {
-                if nested_groups.contains(&field) {
-                    nested_edits
-                        .entry(id.to_owned())
-                        .or_default()
-                        .insert(field.to_owned(), edit["semantic_after"].clone());
-                }
-            }
+            && nested_groups.contains(&field)
+        {
+            nested_edits
+                .entry(id.to_owned())
+                .or_default()
+                .insert(field.to_owned(), edit["semantic_after"].clone());
         }
     }
     let mut nested_candidates = BTreeMap::<String, Value>::new();

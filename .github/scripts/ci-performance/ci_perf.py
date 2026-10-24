@@ -121,6 +121,32 @@ def parse_junit(path):
         return [], f"JUnit report invalid: {error}"
 
 
+def print_junit_failures(path):
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError):
+        return
+    for suite in root.iter("testsuite"):
+        for case in suite.findall("testcase"):
+            failure = case.find("failure")
+            if failure is None:
+                failure = case.find("error")
+            if failure is None:
+                continue
+            identifier = f"{suite.get('name', '')}::{case.get('classname', '')}::{case.get('name', '')}"
+            print(f"Failed test: {identifier}", file=sys.stderr)
+            message = " ".join((failure.get("message") or "").split())
+            if message:
+                print(f"  Failure: {message[:500]}", file=sys.stderr)
+            detail = " ".join((failure.text or "").split())
+            if detail and detail != message:
+                print(f"  Failure output: {detail[-1000:]}", file=sys.stderr)
+            stderr = case.findall(".//system-err")
+            if stderr:
+                for line in (stderr[-1].text or "").strip().splitlines()[-12:]:
+                    print(f"  stderr: {line[:300]}", file=sys.stderr)
+
+
 def parse_doc_results(path, phase):
     path = Path(path)
     if not path.is_file():
@@ -331,6 +357,8 @@ def enforce_command(args):
     result = build_report(args.directory, args.junit, {}, args.min_doc_tests)
     if result["status"] != "passed":
         print("Rust tests did not pass: " + "; ".join(result.get("diagnostics", [])), file=sys.stderr)
+        if any(test["outcome"] == "failed" for test in result["tests"]):
+            print_junit_failures(args.junit)
         return 1
     return 0
 

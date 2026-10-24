@@ -9,16 +9,16 @@ from pathlib import Path
 
 
 APPROVED = {
-    "actions/checkout@v5",
-    "actions/upload-artifact@v6",
-    "actions/download-artifact@v7",
+    "actions/checkout@v7",
+    "actions/upload-artifact@v7",
+    "actions/download-artifact@v8",
     "actions/attest@v4",
     "taiki-e/install-action@v2",
 }
 RUBY_REFERENCES = r"""
 require "json"
 require "yaml"
-workflow = YAML.safe_load_file(ARGV[0], aliases: true)
+workflow = YAML.safe_load(File.read(ARGV[0]), aliases: true)
 references = []
 jobs = workflow.is_a?(Hash) ? workflow["jobs"] : nil
 if jobs.is_a?(Hash)

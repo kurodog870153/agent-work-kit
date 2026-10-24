@@ -117,10 +117,10 @@ pub fn validate(session: &DiscussionSession) -> Result<()> {
             nonempty(&o.label)?;
             nonempty(&o.explanation)?;
         }
-        if let Nullable::Value(id) = &d.tentative_option_id {
-            if !options.contains(id) {
-                return Err(DiscussionIssue("invalid_decision_option"));
-            }
+        if let Nullable::Value(id) = &d.tentative_option_id
+            && !options.contains(id)
+        {
+            return Err(DiscussionIssue("invalid_decision_option"));
         }
         if let Nullable::Value(r) = &d.resolution {
             if !options.contains(&r.option_id) {
@@ -198,10 +198,10 @@ pub fn validate(session: &DiscussionSession) -> Result<()> {
             .map(|t| (t.id.clone(), t.dependencies.clone()))
             .collect(),
     )?;
-    if let Nullable::Value(id) = &session.continuation.current_task_id {
-        if !tasks.contains(id) {
-            return Err(DiscussionIssue("dangling_discussion_reference"));
-        }
+    if let Nullable::Value(id) = &session.continuation.current_task_id
+        && !tasks.contains(id)
+    {
+        return Err(DiscussionIssue("dangling_discussion_reference"));
     }
     if let Nullable::Value(q) = &session.continuation.question {
         validate_question(session, q)?;

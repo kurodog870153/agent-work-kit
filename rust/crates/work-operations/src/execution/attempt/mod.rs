@@ -6,6 +6,7 @@ pub mod start;
 
 use std::collections::{HashMap, HashSet};
 
+use chrono::{Datelike, NaiveDate};
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeSeq},
@@ -233,44 +234,24 @@ pub(crate) fn timestamp(value: &Value, location: &str) -> Result<i64, ExecutionI
     let minute = number(14, 16);
     let offset_hour = number(17, 19);
     let offset_minute = number(20, 22);
-    let leap = |year: i64| year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = [
-        31,
-        if leap(year) { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    if year == 0
-        || !(1..=12).contains(&month)
-        || day < 1
-        || day > days[(month - 1) as usize]
-        || hour > 23
-        || minute > 59
-        || offset_hour > 23
-        || offset_minute > 59
-    {
+    let calendar = (year > 0)
+        .then(|| NaiveDate::from_ymd_opt(year as i32, month as u32, day as u32))
+        .flatten()
+        .and_then(|date| date.and_hms_opt(hour as u32, minute as u32, 0));
+    if calendar.is_none() || offset_hour > 23 || offset_minute > 59 {
         return Err(issue(
             "attempt_invalid_timestamp",
             "The Attempt timestamp is not a valid calendar time.",
             json!({"location":location,"value":text}),
         ));
     }
-    let mut absolute_days = 0;
-    for candidate in 1..year {
-        absolute_days += if leap(candidate) { 366 } else { 365 };
-    }
-    for length in days.iter().take((month - 1) as usize) {
-        absolute_days += length;
-    }
-    absolute_days += day - 1;
+    let absolute_days = i64::from(
+        calendar
+            .expect("checked calendar")
+            .date()
+            .num_days_from_ce()
+            - 1,
+    );
     let offset = (offset_hour * 60 + offset_minute) * if bytes[16] == b'+' { 1 } else { -1 };
     Ok(absolute_days * 1440 + hour * 60 + minute - offset)
 }
@@ -545,18 +526,18 @@ fn validate_records(
                                 )
                             })?;
                     }
-                    if let Some(version) = row.get("file_version") {
-                        if !version.as_str().is_some_and(|s| {
+                    if let Some(version) = row.get("file_version")
+                        && !version.as_str().is_some_and(|s| {
                             s.len() == 64
                                 && s.bytes()
                                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                        }) {
-                            return Err(issue(
-                                "attempt_file_version_invalid",
-                                "A complete file version fingerprint is required.",
-                                json!({"location":location}),
-                            ));
-                        }
+                        })
+                    {
+                        return Err(issue(
+                            "attempt_file_version_invalid",
+                            "A complete file version fingerprint is required.",
+                            json!({"location":location}),
+                        ));
                     }
                     if let Some(value) = row.get("verification_evidence") {
                         let _: work_model::execution::command::capture::ValidationExecutionEvidence =
@@ -767,14 +748,14 @@ pub fn validate_authorization(value: &Value) -> Result<(), ExecutionIssue> {
             } else {
                 row.as_str()
             };
-            if let Some(identity) = identity {
-                if !unique.insert(identity) {
-                    return Err(issue(
-                        "attempt_invalid_authorization",
-                        "The Attempt authorization scope contains duplicates.",
-                        json!({"field":field}),
-                    ));
-                }
+            if let Some(identity) = identity
+                && !unique.insert(identity)
+            {
+                return Err(issue(
+                    "attempt_invalid_authorization",
+                    "The Attempt authorization scope contains duplicates.",
+                    json!({"field":field}),
+                ));
             }
         }
     }
@@ -1251,6 +1232,38 @@ pub fn validate_attempt_bytes(value: &Value, raw: &[u8]) -> Result<Value, Execut
 mod tests {
     use super::*;
     use crate::canonical::sha256_hex;
+
+    #[test]
+    fn attempt_timestamps_keep_exact_shape_offsets_and_calendar_bounds() {
+        let start = timestamp(&json!("0001-01-01T00:00+00:00"), "started_at").unwrap();
+        assert_eq!(start, 0);
+        let utc = timestamp(&json!("2024-02-29T12:30+00:00"), "started_at").unwrap();
+        assert_eq!(
+            utc,
+            timestamp(&json!("2024-02-29T20:30+08:00"), "started_at").unwrap()
+        );
+        assert_eq!(
+            utc,
+            timestamp(&json!("2024-02-29T00:30-12:00"), "started_at").unwrap()
+        );
+        for value in [
+            "0000-01-01T00:00+00:00",
+            "1900-02-29T00:00+00:00",
+            "2026-02-30T00:00+00:00",
+            "2024-02-29T24:00+00:00",
+            "2024-02-29T00:60+00:00",
+            "2024-02-29T00:00+24:00",
+            "2024-02-29T00:00+00:60",
+        ] {
+            assert_eq!(
+                timestamp(&json!(value), "started_at")
+                    .unwrap_err()
+                    .reason_code,
+                "attempt_invalid_timestamp",
+                "{value}"
+            );
+        }
+    }
 
     #[test]
     fn acceptance_completion_requires_an_actual_authorized_val_record() {

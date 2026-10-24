@@ -23,15 +23,14 @@ impl TaskCollectionRepository for LocalTaskStorage {
             if let (Ok(parent), Ok(collection)) = (
                 path.parent().expect("item path has parent").canonicalize(),
                 collection_path.canonicalize(),
-            ) {
-                if !parent.starts_with(&collection) {
-                    return Err(WorkError::new(
-                        ExitCode::Contract,
-                        "task_item_path_escapes_collection",
-                        "The resolved TASK item path escapes the formal TASK directory.",
-                        json!({"path": relative_path}),
-                    ));
-                }
+            ) && !parent.starts_with(&collection)
+            {
+                return Err(WorkError::new(
+                    ExitCode::Contract,
+                    "task_item_path_escapes_collection",
+                    "The resolved TASK item path escapes the formal TASK directory.",
+                    json!({"path": relative_path}),
+                ));
             }
         }
         LocalFiles.read_raw(&path)
@@ -199,19 +198,19 @@ mod tests {
         ) -> Result<Vec<work_feature::execution::StagingRecoverySnapshot>, WorkError> {
             let mut transactions = self.inner.staging_transactions(context)?;
             self.inventory_calls.set(self.inventory_calls.get() + 1);
-            if self.inventory_calls.get() == 2 {
-                if let Some(change) = self.staging_change {
-                    let files = &mut transactions[0].files;
-                    match change {
-                        StagingEvidenceChange::Add => {
-                            files.insert("foreign.tmp".into(), b"foreign".to_vec());
-                        }
-                        StagingEvidenceChange::Delete => {
-                            files.remove("index.json.tmp");
-                        }
-                        StagingEvidenceChange::Bytes => {
-                            files.get_mut("index.json.tmp").unwrap().push(0);
-                        }
+            if self.inventory_calls.get() == 2
+                && let Some(change) = self.staging_change
+            {
+                let files = &mut transactions[0].files;
+                match change {
+                    StagingEvidenceChange::Add => {
+                        files.insert("foreign.tmp".into(), b"foreign".to_vec());
+                    }
+                    StagingEvidenceChange::Delete => {
+                        files.remove("index.json.tmp");
+                    }
+                    StagingEvidenceChange::Bytes => {
+                        files.get_mut("index.json.tmp").unwrap().push(0);
                     }
                 }
             }

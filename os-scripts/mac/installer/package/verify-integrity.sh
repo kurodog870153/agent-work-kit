@@ -59,8 +59,8 @@ verify_release_package() {
         for (( index=0; index<${#paths[@]}; index++ )); do
             if [[ "${paths[index]}" == "$relative" ]]; then
                 found=1
-                actual_hash="$(shasum -a 256 -- "$entry")" || return 1
-                if [[ "${actual_hash:0:64}" != "${hashes[index]}" ]]; then
+                actual_hash="$(/usr/bin/openssl dgst -sha256 "$entry")" || return 1
+                if [[ "${actual_hash##* }" != "${hashes[index]}" ]]; then
                     printf 'Error: release SHA-256 mismatch: %s\n' "$relative" >&2
                     return 1
                 fi

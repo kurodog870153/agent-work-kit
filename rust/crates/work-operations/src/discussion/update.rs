@@ -103,16 +103,16 @@ fn invalidate_with_previous(
         }
     }
     for t in &mut session.tasks {
-        if previous_tasks.contains(&t.id) {
-            if let Nullable::Value(review) = &mut t.review {
-                review.needs_review = true;
-            }
+        if previous_tasks.contains(&t.id)
+            && let Nullable::Value(review) = &mut t.review
+        {
+            review.needs_review = true;
         }
     }
-    if let Nullable::Value(q) = &session.continuation.question {
-        if affected.contains(&q.decision_id) {
-            session.continuation.question = Nullable::Null;
-        }
+    if let Nullable::Value(q) = &session.continuation.question
+        && affected.contains(&q.decision_id)
+    {
+        session.continuation.question = Nullable::Null;
     }
 }
 
@@ -130,10 +130,10 @@ fn invalidate_planning(session: &mut DiscussionSession, changed: &str) {
         }
     }
     for task in &mut session.tasks {
-        if affected.contains(&task.id) {
-            if let Nullable::Value(review) = &mut task.review {
-                review.needs_review = true;
-            }
+        if affected.contains(&task.id)
+            && let Nullable::Value(review) = &mut task.review
+        {
+            review.needs_review = true;
         }
     }
 }
@@ -682,10 +682,8 @@ mod tests {
             seal(&mut s);
             let mut d = s.decisions[0].clone();
             d.task_ids = new_links.clone();
-            if change_resolution {
-                if let Nullable::Value(r) = &mut d.resolution {
-                    r.option_id = "second".into();
-                }
+            if change_resolution && let Nullable::Value(r) = &mut d.resolution {
+                r.option_id = "second".into();
             }
             let next = apply(
                 &s,

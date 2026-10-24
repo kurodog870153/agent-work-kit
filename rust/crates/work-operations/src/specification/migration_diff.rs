@@ -136,11 +136,12 @@ fn opcodes(old: &[String], new: &[String]) -> Vec<Opcode> {
     matches.sort_unstable();
     let mut merged: Vec<(usize, usize, usize)> = Vec::new();
     for (a, b, size) in matches {
-        if let Some(last) = merged.last_mut() {
-            if last.0 + last.2 == a && last.1 + last.2 == b {
-                last.2 += size;
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && last.0 + last.2 == a
+            && last.1 + last.2 == b
+        {
+            last.2 += size;
+            continue;
         }
         merged.push((a, b, size));
     }

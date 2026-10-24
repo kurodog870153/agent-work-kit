@@ -73,7 +73,7 @@ class ReleaseIntegrityTests(unittest.TestCase):
             item = root / "work.txt"
             item.write_bytes(b"work")
             integrity.create_manifest(root)
-            script = Path(__file__).resolve().parents[4] / "os-scripts/windows/installer/verify-package.ps1"
+            script = Path(__file__).resolve().parents[4] / "os-scripts/windows/installer/package/verify-integrity.ps1"
             command = ["powershell.exe", "-NoProfile", "-File", str(script), "-PackageRoot", str(root)]
             environment = os.environ.copy()
             system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))

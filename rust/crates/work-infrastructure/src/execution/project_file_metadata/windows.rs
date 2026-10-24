@@ -17,7 +17,7 @@ fn canonical_descriptor(descriptor: &[u8]) -> Result<Vec<u8>, work_feature::erro
         let offset = u32::from_le_bytes(descriptor[field..field + 4].try_into().unwrap()) as usize;
         let header = descriptor
             .get(offset..offset.checked_add(8).ok_or_else(invalid)?)
-            .filter(|_| offset >= 20 && offset % 4 == 0)
+            .filter(|_| offset >= 20 && offset.is_multiple_of(4))
             .ok_or_else(invalid)?;
         let length = if field == 16 {
             usize::from(u16::from_le_bytes([header[2], header[3]]))
