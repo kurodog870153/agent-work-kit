@@ -44,7 +44,7 @@ impl ArtifactStore for LocalFiles {
                 )
             }
         })?;
-        if !file.metadata().map(|meta| meta.is_file()).unwrap_or(false) {
+        if !file.metadata().is_ok_and(|meta| meta.is_file()) {
             return Err(error(
                 ExitCode::ArtifactIntegrity,
                 "file_not_found",

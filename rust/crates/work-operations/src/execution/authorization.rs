@@ -128,10 +128,10 @@ pub fn authorization_evidence(
     if let Some(evidence) = lock["retry_authorization_evidence"].as_str() {
         return Ok(evidence.to_owned());
     }
-    if let Some(supplemental) = supplemental_authorizations(attempt)?.get(base_record_id) {
-        if let Some(evidence) = supplemental["authorization_evidence"].as_str() {
-            return Ok(evidence.to_owned());
-        }
+    if let Some(supplemental) = supplemental_authorizations(attempt)?.get(base_record_id)
+        && let Some(evidence) = supplemental["authorization_evidence"].as_str()
+    {
+        return Ok(evidence.to_owned());
     }
     attempt["authorization"]["authorization_evidence"]
         .as_str()

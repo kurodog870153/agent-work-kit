@@ -35,10 +35,10 @@ impl RoutingSourceSession {
     }
 
     pub fn fingerprint(&mut self, logical_name: &str, relative: &str) -> Result<String, WorkError> {
-        if let Some((stored_path, _, canonical)) = self.sources.get(logical_name) {
-            if stored_path == relative {
-                return Ok(canonical.clone());
-            }
+        if let Some((stored_path, _, canonical)) = self.sources.get(logical_name)
+            && stored_path == relative
+        {
+            return Ok(canonical.clone());
         }
         let raw = self.read(logical_name, relative)?;
         let canonical = fingerprint::canonical(&raw).map_err(|_| {

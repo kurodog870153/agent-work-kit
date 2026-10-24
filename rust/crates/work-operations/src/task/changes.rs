@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use chrono::NaiveDate;
 use serde_json::{Value, json};
 
 use crate::task::TaskIssue;
@@ -82,28 +83,10 @@ fn date(value: &Value) -> bool {
     {
         return false;
     }
-    let year: u32 = value[0..4].parse().unwrap_or(0);
-    let month: usize = value[5..7].parse().unwrap_or(0);
+    let year: i32 = value[0..4].parse().unwrap_or(0);
+    let month: u32 = value[5..7].parse().unwrap_or(0);
     let day: u32 = value[8..10].parse().unwrap_or(0);
-    if year == 0 || !(1..=12).contains(&month) {
-        return false;
-    }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    (1..=days[month - 1]).contains(&day)
+    year > 0 && NaiveDate::from_ymd_opt(year, month, day).is_some()
 }
 
 pub fn validate_index_changes(
@@ -241,6 +224,22 @@ pub fn validate_index_changes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn change_dates_keep_exact_shape_and_calendar_bounds() {
+        for value in ["0001-01-01", "2024-02-29", "9999-12-31"] {
+            assert!(date(&json!(value)), "{value}");
+        }
+        for value in [
+            "0000-01-01",
+            "1900-02-29",
+            "2026-02-30",
+            "2024-2-29",
+            "２０２４-02-29",
+        ] {
+            assert!(!date(&json!(value)), "{value}");
+        }
+    }
 
     #[test]
     fn current_contract_task_change_cases_match_formal_artifact_edits() {

@@ -1,5 +1,6 @@
 //! Canonical raw-byte snapshots for transaction evidence.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 
 use crate::canonical::sha256_hex;
@@ -39,69 +40,12 @@ fn sha(value: &Value) -> bool {
 }
 
 fn base64_encode(raw: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::with_capacity(raw.len().div_ceil(3) * 4);
-    for chunk in raw.chunks(3) {
-        let first = chunk[0];
-        let second = *chunk.get(1).unwrap_or(&0);
-        let third = *chunk.get(2).unwrap_or(&0);
-        result.push(ALPHABET[(first >> 2) as usize] as char);
-        result.push(ALPHABET[(((first & 3) << 4) | (second >> 4)) as usize] as char);
-        result.push(if chunk.len() > 1 {
-            ALPHABET[(((second & 15) << 2) | (third >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        result.push(if chunk.len() > 2 {
-            ALPHABET[(third & 63) as usize] as char
-        } else {
-            '='
-        });
-    }
-    result
+    STANDARD.encode(raw)
 }
 
 fn base64_decode(value: &str) -> Option<Vec<u8>> {
-    if value.len() % 4 != 0 || !value.is_ascii() {
-        return None;
-    }
-    let mut result = Vec::with_capacity(value.len() / 4 * 3);
-    for (index, chunk) in value.as_bytes().chunks_exact(4).enumerate() {
-        let last = index + 1 == value.len() / 4;
-        let digit = |byte: u8| -> Option<u8> {
-            match byte {
-                b'A'..=b'Z' => Some(byte - b'A'),
-                b'a'..=b'z' => Some(byte - b'a' + 26),
-                b'0'..=b'9' => Some(byte - b'0' + 52),
-                b'+' => Some(62),
-                b'/' => Some(63),
-                _ => None,
-            }
-        };
-        let a = digit(chunk[0])?;
-        let b = digit(chunk[1])?;
-        let c = if chunk[2] == b'=' && last {
-            0
-        } else {
-            digit(chunk[2])?
-        };
-        let d = if chunk[3] == b'=' && last {
-            0
-        } else {
-            digit(chunk[3])?
-        };
-        if chunk[2] == b'=' && chunk[3] != b'=' {
-            return None;
-        }
-        result.push((a << 2) | (b >> 4));
-        if chunk[2] != b'=' {
-            result.push((b << 4) | (c >> 2));
-        }
-        if chunk[3] != b'=' {
-            result.push((c << 6) | d);
-        }
-    }
-    (base64_encode(&result) == value).then_some(result)
+    let decoded = STANDARD.decode(value).ok()?;
+    (STANDARD.encode(&decoded) == value).then_some(decoded)
 }
 
 pub fn encode_snapshot(raw: &[u8]) -> Value {
@@ -129,4 +73,24 @@ pub fn decode_snapshot(value: &Value) -> Result<Vec<u8>, TransactionIssue> {
         ));
     }
     Ok(raw)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_base64_round_trips_and_rejects_noncanonical_input() {
+        for raw in [b"".as_slice(), b"f", b"fo", b"foo", &[0, 255]] {
+            assert_eq!(decode_snapshot(&encode_snapshot(raw)).unwrap(), raw);
+        }
+        for invalid in ["Zg", "Zh==", "Zg===", "Zg==\n", "Zg--"] {
+            let mut snapshot = encode_snapshot(b"f");
+            snapshot["base64"] = json!(invalid);
+            assert_eq!(
+                decode_snapshot(&snapshot).unwrap_err().reason_code,
+                "invalid_contract_value"
+            );
+        }
+    }
 }

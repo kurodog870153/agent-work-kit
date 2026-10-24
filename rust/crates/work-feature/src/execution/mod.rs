@@ -1908,10 +1908,9 @@ where
             && step["references"]
                 .as_array()
                 .is_some_and(|references| references.iter().any(|reference| reference == base))
+            && let Some(id) = step["id"].as_str()
         {
-            if let Some(id) = step["id"].as_str() {
-                basis.push(id.to_owned());
-            }
+            basis.push(id.to_owned());
         }
     }
     let effective = effective_task(task, &attempt).map_err(rule)?;
@@ -3047,8 +3046,7 @@ pub fn close_attempt_from_context(
         .into_iter()
         .flatten()
         .find(|row| row["id"] == task_id)
-        .map(|row| &row["status"])
-        .unwrap_or(&Value::Null)
+        .map_or(&Value::Null, |row| &row["status"])
         .clone();
     Ok(work_model::execution::response::verified::<
         work_model::execution::response::AttemptCloseResponse,
@@ -3560,28 +3558,27 @@ pub fn preflight_index<R: ExecutionIndexRepository>(
             }
             _ => None,
         };
-        if let Some(source) = source {
-            if continued
+        if let Some(source) = source
+            && continued
                 .get(source)
                 .copied()
                 .unwrap_or(repository.inspect_path(source)?.exists)
-            {
-                present_sources.insert(source.to_owned());
-            }
+        {
+            present_sources.insert(source.to_owned());
         }
     }
     let input_readiness = check_input_sources(collection, &task, &present_sources).map_err(rule)?;
     let mut file_state = HashMap::new();
     for file in task["files"].as_array().into_iter().flatten() {
         for field in ["path", "source", "destination"] {
-            if let Some(path) = file[field].as_str() {
-                if !file_state.contains_key(path) {
-                    let mut state = repository.inspect_path(path)?;
-                    if let Some(exists) = continued.get(path) {
-                        state.exists = *exists;
-                    }
-                    file_state.insert(path.to_owned(), state);
+            if let Some(path) = file[field].as_str()
+                && !file_state.contains_key(path)
+            {
+                let mut state = repository.inspect_path(path)?;
+                if let Some(exists) = continued.get(path) {
+                    state.exists = *exists;
                 }
+                file_state.insert(path.to_owned(), state);
             }
         }
     }

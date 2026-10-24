@@ -5,8 +5,10 @@ import hashlib
 import json
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
+from release_package import DOWNLOADERS
 from release_publication_checks import expected_assets
 
 
@@ -14,7 +16,8 @@ def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 
-def verify(version, repository, tag, commit, manifest_sha256, expected_dir, actual_dir, runner=subprocess.run):
+def verify(version, repository, tag, commit, manifest_sha256, expected_dir, actual_dir,
+           runner=subprocess.run, fetcher=urllib.request.urlopen):
     checks = []
 
     def record(name, command, asset=None):
@@ -60,6 +63,27 @@ def verify(version, repository, tag, commit, manifest_sha256, expected_dir, actu
                                    "--signer-workflow", f"{repository}/.github/workflows/publish-release.yml",
                                    "--source-ref", f"refs/tags/{tag}", "--source-digest", commit], name)
             record("release_asset", ["gh", "release", "verify-asset", tag, asset, "--repo", repository], name)
+    for relative in DOWNLOADERS.values():
+        name = Path(relative).name
+        expected = sha256(expected_dir / name)
+        for channel, url in (
+            ("fixed", f"https://github.com/{repository}/releases/download/{tag}/{name}"),
+            ("latest", f"https://github.com/{repository}/releases/latest/download/{name}"),
+        ):
+            item = {"check": f"download_url_{channel}", "asset": name, "url": url,
+                    "expected_sha256": expected}
+            try:
+                request = urllib.request.Request(url, headers={"User-Agent": "codex-workflow-kit-release-check"})
+                with fetcher(request, timeout=30) as response:
+                    actual = hashlib.sha256(response.read()).hexdigest()
+                item["actual_sha256"] = actual
+                item["status"] = "success" if expected and actual == expected else "failure"
+                if item["status"] == "failure":
+                    item["error"] = f"downloaded SHA-256 differs: expected={expected}, actual={actual}"
+            except OSError as error:
+                item["status"] = "failure"
+                item["error"] = str(error)
+            checks.append(item)
     record("release", ["gh", "release", "verify", tag, "--repo", repository])
     return checks
 

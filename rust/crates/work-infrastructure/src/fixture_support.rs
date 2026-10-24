@@ -891,14 +891,13 @@ fn file_transaction_fixture_configured(
         session.next_task_number = 4;
         for (position, path) in development.files.keys().enumerate() {
             session.tasks[0].inputs.push(serde_json::from_value(json!({"key":format!("development-{}",position+1),"kind":"project_state","source":path,"precondition":"Existing local project source used by the declared verification command"})).map_err(|e|e.to_string())?);
-            if let Some((parent, _)) = path.rsplit_once('/') {
-                if !session.tasks[0]
+            if let Some((parent, _)) = path.rsplit_once('/')
+                && !session.tasks[0]
                     .inputs
                     .iter()
                     .any(|input| input.source.as_deref() == Some(parent))
-                {
-                    session.tasks[0].inputs.push(serde_json::from_value(json!({"key":format!("directory-{}",position+1),"kind":"project_state","source":parent,"precondition":"Directory dependency range; file contents have separate evidence"})).map_err(|e|e.to_string())?);
-                }
+            {
+                session.tasks[0].inputs.push(serde_json::from_value(json!({"key":format!("directory-{}",position+1),"kind":"project_state","source":parent,"precondition":"Directory dependency range; file contents have separate evidence"})).map_err(|e|e.to_string())?);
             }
         }
     }

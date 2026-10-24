@@ -1,5 +1,6 @@
 //! Pure validation of immutable Source Snapshot metadata and original bytes.
 
+use chrono::NaiveDate;
 use work_model::identifiers::RequirementId;
 use work_model::schema::PublicSchema;
 use work_model::source::snapshot::{SnapshotSource, SourceSnapshot};
@@ -172,28 +173,13 @@ fn valid_timestamp(value: &str) -> bool {
             .iter()
             .fold(0u32, |n, b| n * 10 + u32::from(b - b'0'))
     };
-    let year = number(0..4);
+    let year = number(0..4) as i32;
     let month = number(5..7);
     let day = number(8..10);
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let days = match month {
-        2 => {
-            if leap {
-                29
-            } else {
-                28
-            }
-        }
-        4 | 6 | 9 | 11 => 30,
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        _ => 0,
-    };
     year > 0
-        && day > 0
-        && day <= days
-        && number(11..13) < 24
-        && number(14..16) < 60
-        && number(17..19) < 60
+        && NaiveDate::from_ymd_opt(year, month, day)
+            .and_then(|date| date.and_hms_opt(number(11..13), number(14..16), number(17..19)))
+            .is_some()
 }
 
 #[cfg(test)]
@@ -351,7 +337,21 @@ mod tests {
                 "invalid_source_timestamp"
             );
         }
-        assert!(valid_timestamp("2024-02-29T23:59:59Z"));
+        for timestamp in [
+            "0001-01-01T00:00:00Z",
+            "2024-02-29T23:59:59Z",
+            "9999-12-31T23:59:59Z",
+        ] {
+            assert!(valid_timestamp(timestamp), "{timestamp}");
+        }
+        for timestamp in [
+            "0000-01-01T00:00:00Z",
+            "1900-02-29T00:00:00Z",
+            "2024-02-29T00:00:60Z",
+            "2024-02-29t00:00:00Z",
+        ] {
+            assert!(!valid_timestamp(timestamp), "{timestamp}");
+        }
         let mut saved = manifest(b"");
         saved.schema = PublicSchema::WorkTaskIndex;
         assert_eq!(

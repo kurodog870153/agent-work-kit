@@ -36,13 +36,14 @@ class WorkflowActionTests(unittest.TestCase):
                 "      - uses: 'actions/checkout@v5'",
             )), encoding="utf-8")
             errors = check_workflow(path)
-            self.assertEqual(len(errors), 7)
+            self.assertEqual(len(errors), 8)
             self.assertTrue(any("owner/unapproved-action@v1" in error for error in errors))
+            self.assertTrue(any("actions/checkout@v5" in error for error in errors))
 
     def test_approved_flow_mapping(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workflow.yml"
-            path.write_text("jobs: { build: { steps: [ { uses: actions/checkout@v5 } ] } }\n",
+            path.write_text("jobs: { build: { steps: [ { uses: actions/checkout@v7 } ] } }\n",
                             encoding="utf-8")
             self.assertEqual(check_workflow(path), [])
 
@@ -65,7 +66,7 @@ class WorkflowActionTests(unittest.TestCase):
     def test_non_scalar_uses_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workflow.yml"
-            path.write_text("jobs: { build: { steps: [ { uses: [actions/checkout@v5] } ] } }\n",
+            path.write_text("jobs: { build: { steps: [ { uses: [actions/checkout@v7] } ] } }\n",
                             encoding="utf-8")
             self.assertEqual(len(check_workflow(path)), 1)
 

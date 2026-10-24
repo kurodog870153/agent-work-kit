@@ -163,7 +163,7 @@ pub fn validate_correction(value: &Value) -> Result<Value, ExecutionIssue> {
 struct Ordered<'a>(&'a Value);
 impl Serialize for Ordered<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut result = serializer.serialize_map(self.0.as_object().map(|object| object.len()))?;
+        let mut result = serializer.serialize_map(self.0.as_object().map(serde_json::Map::len))?;
         for field in ORDER {
             if let Some(value) = self.0.get(*field) {
                 result.serialize_entry(field, value)?;

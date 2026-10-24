@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 from release_package_integrity import verify_tree, verify_zip
+from rust_toolchain import rust_toolchain
 
 
 HIERARCHIES = {
@@ -29,6 +30,13 @@ HIERARCHIES = {
     11: "web/frontend/css/tailwind",
     12: "programming-language/java/spring-boot",
 }
+
+EXPECTED_SKILLS = frozenset(("general", "web", "backend", "frontend", "astro", "css",
+                             "tailwind", "programming-language", "java", "spring-boot",
+                             "persistence", "jpa", "mybatis", "typescript"))
+CLI_OPTIONS = ("--skills", "--global-agents", "--no-global-agents", "--work-install-dir",
+               "--global-agents-install-dir", "--non-interactive", "--dry-run", "--verbose",
+               "--list-skills", "--help")
 
 
 def verify_readme_download(archive_path, checksum_path, platform):
@@ -83,52 +91,21 @@ def extract_checked(archive_path, destination):
     verify_tree(destination)
 
 
-def run_windows(script, home, prompts, extra_env=None):
-    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+def run_installer(script, home, options=(), answers=None, extra_env=None, stream_output=False):
     environment = os.environ.copy()
-    system_paths = [Path(system_root) / "System32", Path(system_root) / "System32/WindowsPowerShell/v1.0"]
-    environment.update({"USERPROFILE": str(home), "HOME": str(home), "PATH": os.pathsep.join(map(str, system_paths))})
-    environment["CI"] = "true"
+    if sys.platform == "win32":
+        system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        system_paths = (system_root / "System32", system_root / "System32/WindowsPowerShell/v1.0")
+        environment["PATH"] = os.pathsep.join(map(str, system_paths))
+        command = ["cmd.exe", "/D", "/C", str(script), *options]
+    else:
+        environment["PATH"] = "/usr/bin:/bin"
+        command = ["bash", str(script), *options]
+    environment.update({"USERPROFILE": str(home), "HOME": str(home), "CI": "true"})
     environment.update(extra_env or {})
-    process = subprocess.Popen(
-        ["cmd.exe", "/C", str(script)],
-        cwd=home,
-        env=environment,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    output = bytearray()
-    next_prompt = 0
-    while byte := process.stdout.read(1):
-        output.extend(byte)
-        if next_prompt < len(prompts):
-            prompt, answer = prompts[next_prompt]
-            if output.endswith(prompt.encode("utf-8")):
-                process.stdin.write(answer.encode("utf-8") + b"\r\n")
-                process.stdin.flush()
-                next_prompt += 1
-                if next_prompt == len(prompts):
-                    process.stdin.close()
-    stderr = process.stderr.read()
-    code = process.wait(timeout=120)
-    if next_prompt != len(prompts):
-        raise AssertionError(f"installer did not show expected prompt {next_prompt}: {output!r}, {stderr!r}")
-    return code, bytes(output), stderr
-
-
-def run_macos(script, home, answers, extra_env=None):
-    environment = os.environ.copy()
-    environment.update({"HOME": str(home), "PATH": "/usr/bin:/bin"})
-    environment.update(extra_env or {})
-    result = subprocess.run(
-        ["bash", str(script)],
-        cwd=home,
-        env=environment,
-        input=("\n".join(answers) + "\n").encode("utf-8"),
-        capture_output=True,
-        timeout=120,
-    )
+    kwargs = {"input": answers.encode("utf-8")} if answers is not None else {"stdin": subprocess.DEVNULL}
+    result = subprocess.run(command, cwd=home, env=environment,
+                            capture_output=not stream_output, timeout=600, **kwargs)
     return result.returncode, result.stdout, result.stderr
 
 
@@ -138,207 +115,306 @@ def assert_success(result):
         raise AssertionError(f"installer failed ({code}): stdout={stdout!r}, stderr={stderr!r}")
 
 
-def assert_failure_before_write(result, home):
-    code, stdout, stderr = result
-    if code == 0 or (home / ".codex").exists() or (home / ".agents").exists():
-        raise AssertionError(f"invalid package reached installation target: {code}, {stdout!r}, {stderr!r}")
+def assert_failed(result, expected=None):
+    if result[0] == 0 or (expected is not None and result[0] != expected):
+        raise AssertionError(f"expected installer failure {expected}: {result!r}")
 
 
-def assert_failed(result):
-    if result[0] == 0:
-        raise AssertionError(f"expected installer failure: {result[1]!r}, {result[2]!r}")
-
-
-def recovery_directory(result, label):
-    output = result[1].decode("utf-8", errors="replace") + result[2].decode("utf-8", errors="replace")
-    match = re.search(re.escape(label) + r'[^\n]*?"([^"]+)"', output)
-    if not match:
-        raise AssertionError(f"recovery directory not reported: {output}")
-    return Path(match.group(1))
-
-
-def forbidden_command_blockers(root):
-    directory = root / "blocked commands"
-    directory.mkdir()
-    log = root / "forbidden-commands.log"
-    for name in ("cargo", "rustc", "git", "gh", "curl", "wget", "xcrun"):
-        command = directory / name
-        command.write_text('#!/bin/sh\nprintf "%s\\n" "$0" >> "$FORBIDDEN_COMMAND_LOG"\nexit 97\n', encoding="utf-8")
-        command.chmod(0o755)
-    return {"PATH": f"{directory}:/usr/bin:/bin", "FORBIDDEN_COMMAND_LOG": str(log)}, log
-
-
-def windows_forbidden_command_blockers(root):
-    directory = root / "Windows blocked commands"
-    directory.mkdir()
-    log = root / "windows-forbidden-commands.log"
-    for name in ("cargo", "rustc", "git", "gh", "curl", "wget"):
-        (directory / f"{name}.cmd").write_bytes(
-            b'@echo off\r\necho %~f0>>"%FORBIDDEN_COMMAND_LOG%"\r\nexit /b 97\r\n'
-        )
-    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
-    system_paths = (system_root / "System32", system_root / "System32/WindowsPowerShell/v1.0")
-    return {
-        "PATH": os.pathsep.join((str(directory), *(str(path) for path in system_paths))),
-        "FORBIDDEN_COMMAND_LOG": str(log),
-    }, log
-
-
-def windows_default_prompts():
-    return [
-        ("Install Global AGENTS.md? [y/N] ", "n"),
-        ("Select an installation location [1]: ", "1"),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "1"),
-    ]
-
-
-def macos_mismatched_uname(root, flag, value):
-    directory = root / f"uname mismatch {flag}"
-    directory.mkdir()
-    command = directory / "uname"
-    command.write_text(
-        f'#!/bin/sh\nif [ "$1" = "{flag}" ]; then printf "%s\\n" "{value}"; '
-        'else /usr/bin/uname "$@"; fi\n', encoding="utf-8"
-    )
-    command.chmod(0o755)
-    return {"PATH": f"{directory}:/usr/bin:/bin"}
-
-
-def e2e_windows(package, root):
-    script = package / "install-release.bat"
-    wrong_arch_home = root / "Windows wrong CPU"
-    wrong_arch_home.mkdir()
-    assert_failure_before_write(
-        run_windows(script, wrong_arch_home, [], {"PROCESSOR_ARCHITECTURE": "x86"}), wrong_arch_home
-    )
-    blocked_environment, blocked_log = windows_forbidden_command_blockers(root)
-    home = root / "windows default"
-    home.mkdir()
-    assert_success(run_windows(script, home, windows_default_prompts(), blocked_environment))
-    work = home / ".agents/skills/work"
-    if not (work / "scripts/work.exe").is_file() or (home / ".codex").exists():
-        raise AssertionError("Windows default installation content is incorrect")
-    subprocess.run([str(work / "scripts/work.exe"), "--help"], check=True, capture_output=True)
-    (work / "previous-marker").write_text("keep", encoding="utf-8")
-    repeat = run_windows(script, home, [
-        ("Install Global AGENTS.md? [y/N] ", "n"),
-        ("Select an installation location [1]: ", "1"),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "8 11"),
-    ], blocked_environment)
-    assert_success(repeat)
-    recovery = recovery_directory(repeat, "Installation recovery directory:")
-    if (recovery / "previous/previous-marker").read_text(encoding="utf-8") != "keep":
-        raise AssertionError("Windows Work backup did not preserve the full prior installation")
-    for hierarchy in (
-        "programming-language/typescript", "web/frontend/css/tailwind", "web/frontend/css", "web/frontend", "web"
-    ):
-        if not (work / f"references/instructions/task/{hierarchy}/instructions.md").is_file():
-            raise AssertionError(f"Windows multi-selection omitted {hierarchy}")
-
-    custom = root / "Windows 測試 user"
-    custom.mkdir()
-    global_target = custom / "Global 指引"
-    assert_success(run_windows(script, custom, [
-        ("Install Global AGENTS.md? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "2"),
-        ("Enter the target directory: ", str(global_target)),
-        ("The directory does not exist. Create it? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "2"),
-        ("Enter the installation directory: ", str(custom)),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "all"),
-    ], blocked_environment))
-    if (global_target / "AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
-        raise AssertionError("Windows Global AGENTS.md differs from package")
-    if not (custom / "skills/work/references/instructions/task/web/frontend/css/tailwind/instructions.md").is_file():
-        raise AssertionError("Windows all hierarchy installation is incomplete")
-    for selected in HIERARCHIES:
-        individual = root / f"Windows hierarchy {selected}"
-        individual.mkdir()
-        assert_success(run_windows(script, individual, [
-            ("Install Global AGENTS.md? [y/N] ", "n"),
-            ("Select an installation location [1]: ", "1"),
-            ('Select hierarchy numbers, enter "all", or press Enter for general only: ', str(selected)),
-        ]))
-        assert_hierarchy(individual / ".agents/skills/work", selected)
-    if blocked_log.exists():
-        raise AssertionError(f"Windows installer called a forbidden tool: {blocked_log.read_text(encoding='utf-8')}")
-
-    refusal = root / "Windows refusal"
-    refusal.mkdir()
-    (refusal / ".codex").mkdir()
-    (refusal / ".codex/AGENTS.md").write_text("old", encoding="utf-8")
-    assert_success(run_windows(script, refusal, [
-        ("Install Global AGENTS.md? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "1"),
-        ("AGENTS.md already exists. Overwrite it? [y/N] ", "n"),
-        ("Select an installation location [1]: ", "1"),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "1"),
-    ]))
-    if (refusal / ".codex/AGENTS.md").read_text(encoding="utf-8") != "old":
-        raise AssertionError("Windows rejected Global AGENTS overwrite changed the old file")
-    missing_directory = root / "Windows no directory"
-    assert_success(run_windows(script, refusal, [
-        ("Install Global AGENTS.md? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "2"),
-        ("Enter the target directory: ", str(missing_directory)),
-        ("The directory does not exist. Create it? [y/N] ", "n"),
-        ("Select an installation location [1]: ", "1"),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "1"),
-    ]))
-    if missing_directory.exists():
-        raise AssertionError("Windows rejected directory creation still wrote a target")
-
-    for fault in ("global_prepare", "global_copy", "global_backup", "global_replace", "global_restore"):
-        target_home = root / f"Windows {fault}"
-        target_home.mkdir()
-        (target_home / ".codex").mkdir()
-        target = target_home / ".codex/AGENTS.md"
-        target.write_text("old", encoding="utf-8")
-        result = run_windows(script, target_home, [
-            ("Install Global AGENTS.md? [y/N] ", "y"),
-            ("Select an installation location [1]: ", "1"),
-            ("AGENTS.md already exists. Overwrite it? [y/N] ", "y"),
-        ], {"WORK_INSTALL_TEST_FAIL": fault})
-        assert_failed(result)
-        if (target_home / ".agents").exists():
-            raise AssertionError(f"Windows {fault} continued into Work installation")
-        if fault == "global_restore":
-            backups = list((target_home / ".codex").glob(".agents-install-*/previous"))
-            if target.exists() or len(backups) != 1 or backups[0].read_text(encoding="utf-8") != "old":
-                raise AssertionError("Windows Global AGENTS recovery evidence is missing")
-        elif target.read_text(encoding="utf-8") != "old":
-            raise AssertionError(f"Windows {fault} changed the prior Global AGENTS")
-
-    for fault in ("work_prepare", "work_copy", "work_backup", "work_replace", "work_restore"):
-        target_home = root / f"Windows {fault}"
-        target_home.mkdir()
-        assert_success(run_windows(script, target_home, windows_default_prompts()))
-        installed = target_home / ".agents/skills/work"
-        (installed / "previous-marker").write_text("old", encoding="utf-8")
-        result = run_windows(script, target_home, windows_default_prompts(), {"WORK_INSTALL_TEST_FAIL": fault})
-        assert_failed(result)
-        if fault == "work_restore":
-            backups = list((target_home / ".agents/skills").glob(".work-install-*/previous/previous-marker"))
-            if installed.exists() or len(backups) != 1 or backups[0].read_text(encoding="utf-8") != "old":
-                raise AssertionError("Windows Work recovery evidence is missing")
-        elif (installed / "previous-marker").read_text(encoding="utf-8") != "old":
-            raise AssertionError(f"Windows {fault} changed the prior Work installation")
-
-    after_global = root / "Windows global first"
-    after_global.mkdir()
-    result = run_windows(script, after_global, [
-        ("Install Global AGENTS.md? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "1"),
-        ("The directory does not exist. Create it? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "1"),
-        ('Select hierarchy numbers, enter "all", or press Enter for general only: ', "1"),
-    ], {"WORK_INSTALL_TEST_FAIL": "work_prepare"})
+def assert_no_target(result, home, target):
     assert_failed(result)
-    if (after_global / ".codex/AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
-        raise AssertionError("Windows Work failure rolled back completed Global AGENTS installation")
+    if target.exists() or (home / ".codex").exists():
+        raise AssertionError(f"rejected package changed the target: {result!r}")
 
-    for scenario in ("hash", "extra", "missing", "duplicate-manifest", "unsafe-manifest"):
-        bad = root / f"windows bad {scenario}"
+
+def assert_state(work, version, skills, global_agents, global_dir=None):
+    state = json.loads((work / "install-state.json").read_text(encoding="utf-8"))
+    if (state["version"] != version or state["skills"] != skills or
+            Path(state["work_dir"]) != work or
+            state["global_agents_dir"] != (str(global_dir) if global_agents else None) or
+            set(state) != {"version", "skills", "work_dir", "global_agents_dir"}):
+        raise AssertionError(f"unexpected Work state: {state!r}")
+    binary = work / "scripts" / ("work.exe" if sys.platform == "win32" else "work")
+    subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
+
+
+def assert_no_work_transactions(work):
+    parent = work.parent
+    if any(parent.glob(".work-install.*")) or any(parent.glob(".agents-install.*")):
+        raise AssertionError(f"successful installation retained a transaction under {parent}")
+
+
+def exercise_package(package, root, platform, source_install=False):
+    suffix = ".bat" if platform == "windows-x64-msvc" else ".command"
+    script = package / f"install-work-from-package{suffix}"
+    source = Path(__file__).resolve().parents[3] / "os-scripts" / (
+        "windows" if suffix == ".bat" else "mac") / f"install-work-from-source{suffix}"
+    if not script.is_file() or not source.is_file():
+        raise AssertionError("a formal installer entry is missing")
+    for entry in (script, source):
+        help_home = root / f"help {entry.name}"
+        help_home.mkdir()
+        for option in ("--help", "-h"):
+            result = run_installer(entry, help_home, [option])
+            assert_success(result)
+            if not all(flag.encode() in result[1] for flag in CLI_OPTIONS):
+                raise AssertionError(f"{entry.name} {option} omitted a CLI option: {result!r}")
+        listed = run_installer(entry, help_home, ["--list-skills"])
+        assert_success(listed)
+        skill_lines = listed[1].decode("utf-8").splitlines()[-len(EXPECTED_SKILLS):]
+        if len(skill_lines) != len(EXPECTED_SKILLS) or set(skill_lines) != EXPECTED_SKILLS:
+            raise AssertionError(f"{entry.name} listed unexpected Skill IDs: {listed!r}")
+        dry = run_installer(entry, help_home,
+            ["--non-interactive", "--no-global-agents", "--dry-run"])
+        assert_success(dry)
+        if b"Version:" not in dry[1] or b"Skills:" not in dry[1] or b"Dry run:" not in dry[1]:
+            raise AssertionError(f"{entry.name} dry run omitted its summary: {dry!r}")
+        verbose = run_installer(entry, help_home,
+            ["--non-interactive", "--no-global-agents", "--dry-run", "--verbose"])
+        assert_success(verbose)
+        if b"Installer" not in verbose[1] or b"Dry run:" not in verbose[1]:
+            raise AssertionError(f"{entry.name} verbose dry run omitted diagnostics: {verbose!r}")
+        for invalid in (["--unknown"], ["--install-dir", "old/work"], ["--skills"],
+                        ["--skills", "unknown"], ["--skills", ""],
+                        ["--work-install-dir"], ["--global-agents-install-dir"],
+                        ["--global-agents", "--no-global-agents"],
+                        ["--verbose", "--verbose"], ["--help", "-h"],
+                        ["--yes"], ["--force"]):
+            assert_failed(run_installer(entry, help_home, invalid), 2)
+        if (help_home / ".agents").exists() or (help_home / ".codex").exists():
+            raise AssertionError("read-only CLI actions wrote installation data")
+
+    home = root / "default install"
+    home.mkdir()
+    work = home / ".agents/skills/work"
+    common = ["--non-interactive", "--no-global-agents"]
+    version = json.loads((package / "release-info.json").read_text(encoding="utf-8"))["version"]
+    assert_success(run_installer(script, home, [*common, "--dry-run"]))
+    if work.exists():
+        raise AssertionError("dry run created Work")
+    assert_success(run_installer(script, home, common))
+    assert_state(work, version, ["general"], False)
+    assert_no_work_transactions(work)
+    if (home / ".codex").exists():
+        raise AssertionError("disabled Global AGENTS created a target")
+
+    default_home = root / "first install defaults"
+    default_home.mkdir()
+    assert_success(run_installer(script, default_home, ["--non-interactive"]))
+    assert_state(default_home / ".agents/skills/work", version, ["general"], True, default_home / ".codex")
+    if (default_home / ".codex/AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
+        raise AssertionError("first installation did not enable the default Global AGENTS")
+
+    saved_home = root / "saved Global AGENTS directory"
+    saved_home.mkdir()
+    saved_work = saved_home / ".agents/skills/work"
+    saved_global = root / "自訂 Global AGENTS & path"
+    saved_options = ["--non-interactive", "--global-agents",
+                     "--global-agents-install-dir", str(saved_global)]
+    assert_success(run_installer(script, saved_home, saved_options))
+    assert_state(saved_work, version, ["general"], True, saved_global)
+    assert_success(run_installer(script, saved_home, ["--non-interactive"]))
+    assert_state(saved_work, version, ["general"], True, saved_global)
+    if (saved_home / ".codex").exists():
+        raise AssertionError("saved Global AGENTS directory was replaced by the default")
+
+    empty_home = root / "empty Work directory"
+    empty_home.mkdir()
+    empty_work = empty_home / ".agents/skills/work"
+    empty_work.mkdir(parents=True)
+    assert_success(run_installer(script, empty_home, common))
+    assert_state(empty_work, version, ["general"], False)
+    assert_no_work_transactions(empty_work)
+
+    cancelled_home = root / "cancelled installation"
+    cancelled_home.mkdir()
+    cancelled_work = cancelled_home / ".agents/skills/work"
+    assert_no_target(run_installer(script, cancelled_home,
+        ["--no-global-agents", "--skills", "general"], answers="\nn\n"), cancelled_home, cancelled_work)
+
+    conflict_home = root / "Global AGENTS conflict"
+    conflict_home.mkdir()
+    global_target = conflict_home / ".codex/AGENTS.md"
+    global_target.parent.mkdir()
+    global_target.write_bytes(b"user-owned Global AGENTS\r\n")
+    conflict_work = conflict_home / ".agents/skills/work"
+    assert_failed(run_installer(script, conflict_home,
+        ["--non-interactive", "--global-agents", "--skills", "general"]))
+    if conflict_work.exists() or global_target.read_bytes() != b"user-owned Global AGENTS\r\n":
+        raise AssertionError("Global AGENTS conflict changed existing data")
+    assert_success(run_installer(script, conflict_home,
+        ["--global-agents", "--skills", "general"], answers="\n\ny\ny\n"))
+    assert_state(conflict_work, version, ["general"], True, conflict_home / ".codex")
+    if global_target.read_bytes() != (package / "AGENTS.md").read_bytes():
+        raise AssertionError("confirmed Global AGENTS replacement did not publish source bytes")
+    assert_no_work_transactions(conflict_work)
+
+    retained_home = root / "retained Global AGENTS"
+    retained_home.mkdir()
+    retained_target = retained_home / ".codex/AGENTS.md"
+    retained_target.parent.mkdir()
+    retained_target.write_bytes(b"keep user Global AGENTS\n")
+    assert_success(run_installer(script, retained_home,
+        ["--global-agents", "--skills", "general"], answers="\n\nn\ny\n"))
+    assert_state(retained_home / ".agents/skills/work", version, ["general"], True, retained_home / ".codex")
+    if retained_target.read_bytes() != b"keep user Global AGENTS\n":
+        raise AssertionError("declined Global AGENTS replacement changed original bytes")
+    assert_success(run_installer(script, home, [*common, "--skills", "java,spring-boot"]))
+    assert_state(work, version, ["general", "programming-language", "java", "spring-boot"], False)
+    for mode in ("task", "execute"):
+        path = work / "references/instructions" / mode / "programming-language/java/spring-boot/instructions.md"
+        if not path.is_file():
+            raise AssertionError(f"selected hierarchy is missing: {path}")
+    assert_no_work_transactions(work)
+
+    custom_home = root / "custom home"
+    custom_home.mkdir()
+    custom = root / "路徑 with spaces & symbols" / "work"
+    custom_options = [*common, "--work-install-dir", str(custom), "--skills", "all"]
+    assert_success(run_installer(script, custom_home, custom_options))
+    assert_state(custom, version, json.loads((custom / "install-state.json").read_text(encoding="utf-8"))["skills"], False)
+    for mode in ("task", "execute"):
+        path = custom / "references/instructions" / mode / "web/frontend/css/tailwind/instructions.md"
+        if not path.is_file():
+            raise AssertionError(f"all hierarchy omitted {path}")
+    assert_no_work_transactions(custom)
+
+    migration_home = root / "migrate default Work"
+    migration_home.mkdir()
+    old_work = migration_home / ".agents/skills/work"
+    shutil.copytree(work, old_work)
+    old_state = json.loads((old_work / "install-state.json").read_text(encoding="utf-8"))
+    old_state["work_dir"] = str(old_work)
+    (old_work / "install-state.json").write_text(json.dumps(old_state) + "\n", encoding="utf-8")
+    moved_work = root / "migrated Work" / "work"
+    assert_success(run_installer(script, migration_home,
+        ["--non-interactive", "--work-install-dir", str(moved_work)]))
+    if old_work.exists():
+        raise AssertionError("migration left the old default Work installation")
+    assert_state(moved_work, version, old_state["skills"], False)
+    assert_no_work_transactions(moved_work)
+
+    if source_install:
+        source_home = root / "source install"
+        source_home.mkdir()
+        source_work = source_home / ".agents/skills/work"
+        target = "x86_64-pc-windows-msvc" if suffix == ".bat" else "aarch64-apple-darwin"
+        toolchain = rust_toolchain(target)
+        source_environment = {
+            "PATH": os.environ["PATH"],
+            "RUSTUP_TOOLCHAIN": toolchain,
+            "RUSTUP_AUTO_INSTALL": "0",
+            "CARGO_NET_OFFLINE": "true",
+            "RUSTUP_HOME": os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup")),
+            "CARGO_HOME": os.environ.get("CARGO_HOME", str(Path.home() / ".cargo")),
+        }
+        print("Running Source installation with cached Cargo dependencies.", flush=True)
+        assert_success(run_installer(source, source_home, common,
+                                     extra_env=source_environment, stream_output=True))
+        assert_state(source_work, version, ["general"], False)
+        assert_no_work_transactions(source_work)
+        source_interactive_home = root / "source interactive install"
+        source_interactive_home.mkdir()
+        assert_success(run_installer(source, source_interactive_home,
+                                     ["--no-global-agents", "--skills", "general"],
+                                     answers="\ny\n", extra_env=source_environment,
+                                     stream_output=True))
+        assert_state(source_interactive_home / ".agents/skills/work", version, ["general"], False)
+
+    first_update = root / "first update"
+    first_update.mkdir()
+    legacy = first_update / ".agents/skills/work"
+    shutil.copytree(work, legacy)
+    (legacy / "install-state.json").unlink()
+    rejected = run_installer(script, first_update, common)
+    assert_failed(rejected)
+    if not (legacy / "scripts" / ("work.exe" if suffix == ".bat" else "work")).is_file() or (legacy / "install-state.json").exists():
+        raise AssertionError("noninteractive first update changed prior Work")
+    assert_success(run_installer(script, first_update, ["--no-global-agents"], answers="\n\nYES\ny\n"))
+    assert_state(legacy, version, ["general"], False)
+    assert_no_work_transactions(legacy)
+
+    declined_home = root / "declined first update"
+    declined_home.mkdir()
+    declined = declined_home / ".agents/skills/work"
+    shutil.copytree(work, declined)
+    (declined / "install-state.json").unlink()
+    prior_binary = (declined / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes()
+    assert_failed(run_installer(script, declined_home,
+        ["--no-global-agents", "--skills", "general", "--work-install-dir", str(declined)], answers="no\n"))
+    if (declined / "install-state.json").exists() or (declined / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes() != prior_binary:
+        raise AssertionError("declined first update changed Work")
+
+    invalid_home = root / "invalid install state"
+    invalid_home.mkdir()
+    invalid_work = invalid_home / ".agents/skills/work"
+    shutil.copytree(work, invalid_work)
+    invalid_state = invalid_work / "install-state.json"
+    invalid_state.write_bytes(b"{invalid json\n")
+    assert_failed(run_installer(script, invalid_home, common))
+    if invalid_state.read_bytes() != b"{invalid json\n":
+        raise AssertionError("noninteractive first update changed invalid state")
+    assert_success(run_installer(script, invalid_home,
+        ["--no-global-agents", "--skills", "general"], answers="\nYES\ny\n"))
+    assert_state(invalid_work, version, ["general"], False)
+    assert_no_work_transactions(invalid_work)
+
+    for name, raw in (("empty", b""), ("missing field", b'{"version":"1.0.5"}'),
+                      ("incompatible", b'{"schema_version":999}')):
+        case_home = root / f"invalid state {name}"
+        case_home.mkdir()
+        case_work = case_home / ".agents/skills/work"
+        shutil.copytree(work, case_work)
+        state_file = case_work / "install-state.json"
+        state_file.write_bytes(raw)
+        assert_failed(run_installer(script, case_home, common))
+        if state_file.read_bytes() != raw:
+            raise AssertionError(f"{name} state changed on noninteractive rejection")
+        assert_success(run_installer(script, case_home,
+            ["--no-global-agents", "--skills", "general", "--work-install-dir", str(case_work)],
+            answers="YES\ny\n"))
+        assert_state(case_work, version, ["general"], False)
+
+    unknown_home = root / "unknown contents"
+    unknown_home.mkdir()
+    unknown = unknown_home / ".agents/skills/work"
+    unknown.mkdir(parents=True)
+    marker = unknown / "user-notes.txt"
+    marker.write_text("keep", encoding="utf-8")
+    assert_failed(run_installer(script, unknown_home, common))
+    unknown_result = run_installer(script, unknown_home,
+        ["--no-global-agents", "--skills", "general", "--work-install-dir", str(unknown)], answers="y\n")
+    assert_failed(unknown_result)
+    diagnostic = unknown_result[1] + unknown_result[2]
+    if b"user-notes.txt" not in diagnostic or b"--work-install-dir" not in diagnostic:
+        raise AssertionError("unsafe Work diagnostic omitted the conflicting path or remedy")
+    if marker.read_text(encoding="utf-8") != "keep" or (unknown / "install-state.json").exists():
+        raise AssertionError("unknown Work content was modified")
+
+    link_home = root / "unsafe managed link"
+    link_home.mkdir()
+    linked_work = link_home / ".agents/skills/work"
+    shutil.copytree(work, linked_work)
+    outside = root / "linked user data"
+    outside.mkdir()
+    (outside / "marker.txt").write_text("keep", encoding="utf-8")
+    linked_directory = linked_work / "references/instructions/task/general"
+    shutil.rmtree(linked_directory)
+    if suffix == ".bat":
+        result = subprocess.run(["cmd.exe", "/D", "/C", "mklink", "/J",
+                                 str(linked_directory), str(outside)],
+                                capture_output=True, timeout=30)
+        if result.returncode:
+            raise AssertionError(f"failed to create Windows junction: stdout={result.stdout!r}, stderr={result.stderr!r}")
+    else:
+        linked_directory.symlink_to(outside, target_is_directory=True)
+    assert_failed(run_installer(script, link_home, common))
+    assert_failed(run_installer(script, link_home,
+        ["--no-global-agents", "--skills", "general", "--work-install-dir", str(linked_work)], answers="y\n"))
+    if (outside / "marker.txt").read_text(encoding="utf-8") != "keep" or not linked_directory.exists():
+        raise AssertionError("unsafe Work link or linked data changed after rejection")
+
+    for scenario in ("hash", "extra", "missing", "missing-options", "duplicate-manifest", "unsafe-manifest"):
+        bad = root / f"bad {scenario}"
         shutil.copytree(package, bad)
         if scenario == "hash":
             (bad / "AGENTS.md").write_bytes(b"tampered")
@@ -346,6 +422,8 @@ def e2e_windows(package, root):
             (bad / "extra.txt").write_bytes(b"extra")
         elif scenario == "missing":
             (bad / "AGENTS.md").unlink()
+        elif scenario == "missing-options":
+            (bad / "installer/cli/options.tsv").unlink()
         elif scenario == "duplicate-manifest":
             manifest = bad / "SHA256SUMS"
             lines = manifest.read_bytes().splitlines(keepends=True)
@@ -355,167 +433,35 @@ def e2e_windows(package, root):
                 stream.write(b"0" * 64 + b"  ../outside\n")
         bad_home = root / f"target {scenario}"
         bad_home.mkdir()
-        assert_failure_before_write(run_windows(bad / "install-release.bat", bad_home, []), bad_home)
+        target = bad_home / ".agents/skills/work"
+        assert_no_target(run_installer(bad / script.name, bad_home, common), bad_home, target)
 
-    import ctypes
-    kernel = ctypes.windll.kernel32
-    kernel.CreateFileW.argtypes = [
-        ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
-        ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
-    ]
-    kernel.CreateFileW.restype = ctypes.c_void_p
-    handle = kernel.CreateFileW(str(work / "scripts/work.exe"), 0x80000000, 1, None, 3, 0x80, None)
-    if handle == ctypes.c_void_p(-1).value:
-        raise AssertionError("could not acquire Windows binary lock")
-    try:
-        result = run_windows(script, home, windows_default_prompts())
-        assert_failed(result)
-        if not (work / "scripts/work.exe").is_file():
-            raise AssertionError("Windows locked binary installation lost the prior Work")
-    finally:
-        kernel.CloseHandle(ctypes.c_void_p(handle))
+    if suffix == ".command":
+        for flag, value in (("-s", "Linux"), ("-m", "x86_64")):
+            wrong = root / f"wrong macOS {flag}"
+            wrong.mkdir()
+            shim = root / f"uname-{flag[1:]}"
+            shim.mkdir()
+            command = shim / "uname"
+            command.write_text(
+                f'#!/bin/sh\nif [ "$1" = "{flag}" ]; then printf "%s\\n" "{value}"; '
+                'else /usr/bin/uname "$@"; fi\n', encoding="utf-8")
+            command.chmod(0o755)
+            assert_no_target(run_installer(script, wrong, common,
+                extra_env={"PATH": f"{shim}:/usr/bin:/bin"}), wrong, wrong / ".agents/skills/work")
+    else:
+        wrong = root / "wrong Windows architecture"
+        wrong.mkdir()
+        assert_no_target(run_installer(script, wrong, common,
+            extra_env={"PROCESSOR_ARCHITECTURE": "x86"}), wrong, wrong / ".agents/skills/work")
 
-    source_home = root / "Windows source Global first"
-    source_home.mkdir()
-    source_script = Path(__file__).resolve().parents[3] / "os-scripts/windows/install-work.bat"
-    result = run_windows(source_script, source_home, [
-        ("Install Global AGENTS.md? [y/N] ", "y"),
-        ("Select an installation location [1]: ", "1"),
-        ("The directory does not exist. Create it? [y/N] ", "y"),
-    ], {"CARGO_HOME": str(source_home / "missing-cargo")})
-    assert_failed(result)
-    if not (source_home / ".codex/AGENTS.md").is_file() or (source_home / ".agents").exists():
-        raise AssertionError("Windows source installer did not keep Global AGENTS after Work toolchain failure")
-
-def e2e_macos(package, root):
-    script = package / "install-release.command"
-    for flag, value in (("-s", "Linux"), ("-m", "x86_64")):
-        wrong_platform_home = root / f"macOS wrong {flag}"
-        wrong_platform_home.mkdir()
-        assert_failure_before_write(
-            run_macos(script, wrong_platform_home, [], macos_mismatched_uname(root, flag, value)),
-            wrong_platform_home,
-        )
-    blocked_environment, blocked_log = forbidden_command_blockers(root)
-    home = root / "macOS default"
-    home.mkdir()
-    assert_success(run_macos(script, home, ["n", "1", "1"], blocked_environment))
-    binary = home / ".agents/skills/work/scripts/work"
-    subprocess.run([str(binary), "--help"], check=True, capture_output=True)
-    marker = home / ".agents/skills/work/previous-marker"
-    marker.write_text("keep", encoding="utf-8")
-    repeat = run_macos(script, home, ["n", "1", "8 11"], blocked_environment)
-    assert_success(repeat)
-    recovery = recovery_directory(repeat, "Installation recovery directory:")
-    if (recovery / "previous/previous-marker").read_text(encoding="utf-8") != "keep":
-        raise AssertionError("macOS Work backup did not preserve the full prior installation")
-    for hierarchy in (
-        "programming-language/typescript", "web/frontend/css/tailwind", "web/frontend/css", "web/frontend", "web"
-    ):
-        if not (home / f".agents/skills/work/references/instructions/task/{hierarchy}/instructions.md").is_file():
-            raise AssertionError(f"macOS multi-selection omitted {hierarchy}")
-    custom = root / "macOS 測試 user"
-    custom.mkdir()
-    assert_success(run_macos(script, custom, ["y", "1", "y", "2", str(custom), "all"], blocked_environment))
-    if (custom / ".codex/AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
-        raise AssertionError("macOS Global AGENTS.md differs from package")
-    if not (custom / "skills/work/references/instructions/task/web/frontend/css/tailwind/instructions.md").is_file():
-        raise AssertionError("macOS all hierarchy installation is incomplete")
-    for selected in HIERARCHIES:
-        individual = root / f"macOS hierarchy {selected}"
-        individual.mkdir()
-        assert_success(run_macos(script, individual, ["n", "1", str(selected)]))
-        assert_hierarchy(individual / ".agents/skills/work", selected)
-    if blocked_log.exists():
-        raise AssertionError(f"macOS installer called a forbidden tool: {blocked_log.read_text(encoding='utf-8')}")
-
-    refusal = root / "macOS refusal"
-    refusal.mkdir()
-    (refusal / ".codex").mkdir()
-    (refusal / ".codex/AGENTS.md").write_text("old", encoding="utf-8")
-    assert_success(run_macos(script, refusal, ["y", "1", "n", "1", "1"]))
-    if (refusal / ".codex/AGENTS.md").read_text(encoding="utf-8") != "old":
-        raise AssertionError("macOS rejected Global AGENTS overwrite changed the old file")
-    missing_directory = root / "macOS no directory"
-    assert_success(run_macos(script, refusal, ["y", "2", str(missing_directory), "n", "1", "1"]))
-    if missing_directory.exists():
-        raise AssertionError("macOS rejected directory creation still wrote a target")
-
-    for fault in ("global_prepare", "global_copy", "global_backup", "global_replace", "global_restore"):
-        target_home = root / f"macOS {fault}"
-        target_home.mkdir()
-        (target_home / ".codex").mkdir()
-        target = target_home / ".codex/AGENTS.md"
-        target.write_text("old", encoding="utf-8")
-        result = run_macos(script, target_home, ["y", "1", "y"], {"WORK_INSTALL_TEST_FAIL": fault})
-        assert_failed(result)
-        if (target_home / ".agents").exists():
-            raise AssertionError(f"macOS {fault} continued into Work installation")
-        if fault == "global_restore":
-            backups = list((target_home / ".codex").glob(".agents-install.*/previous"))
-            if target.exists() or len(backups) != 1 or backups[0].read_text(encoding="utf-8") != "old":
-                raise AssertionError("macOS Global AGENTS recovery evidence is missing")
-        elif target.read_text(encoding="utf-8") != "old":
-            raise AssertionError(f"macOS {fault} changed the prior Global AGENTS")
-
-    for fault in ("work_prepare", "work_copy", "work_backup", "work_replace", "work_restore"):
-        target_home = root / f"macOS {fault}"
-        target_home.mkdir()
-        assert_success(run_macos(script, target_home, ["n", "1", "1"]))
-        work = target_home / ".agents/skills/work"
-        (work / "previous-marker").write_text("old", encoding="utf-8")
-        result = run_macos(script, target_home, ["n", "1", "1"], {"WORK_INSTALL_TEST_FAIL": fault})
-        assert_failed(result)
-        if fault == "work_restore":
-            backups = list((target_home / ".agents/skills").glob(".work-install.*/previous/previous-marker"))
-            if work.exists() or len(backups) != 1 or backups[0].read_text(encoding="utf-8") != "old":
-                raise AssertionError("macOS Work recovery evidence is missing")
-        elif (work / "previous-marker").read_text(encoding="utf-8") != "old":
-            raise AssertionError(f"macOS {fault} changed the prior Work installation")
-
-    after_global = root / "macOS global first"
-    after_global.mkdir()
-    result = run_macos(script, after_global, ["y", "1", "y", "1", "1"], {"WORK_INSTALL_TEST_FAIL": "work_prepare"})
-    assert_failed(result)
-    if (after_global / ".codex/AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
-        raise AssertionError("macOS Work failure rolled back completed Global AGENTS installation")
-
-    for scenario in ("hash", "extra", "missing", "duplicate-manifest", "unsafe-manifest", "permission"):
-        bad = root / f"macOS bad {scenario}"
-        shutil.copytree(package, bad)
-        if scenario == "hash":
-            (bad / "AGENTS.md").write_bytes(b"tampered")
-        elif scenario == "extra":
-            (bad / "extra.txt").write_bytes(b"extra")
-        elif scenario == "missing":
-            (bad / "AGENTS.md").unlink()
-        elif scenario == "duplicate-manifest":
-            manifest = bad / "SHA256SUMS"
-            lines = manifest.read_bytes().splitlines(keepends=True)
-            manifest.write_bytes(b"".join(lines + [lines[0]]))
-        elif scenario == "unsafe-manifest":
-            with (bad / "SHA256SUMS").open("ab") as stream:
-                stream.write(b"0" * 64 + b"  ../outside\n")
-        else:
-            (bad / "bin/work").chmod(0o644)
-        bad_home = root / f"macOS target {scenario}"
-        bad_home.mkdir()
-        assert_failure_before_write(run_macos(bad / "install-release.command", bad_home, []), bad_home)
-
-    source_home = root / "macOS source Global first"
-    source_home.mkdir()
-    source_script = Path(__file__).resolve().parents[3] / "os-scripts/mac/install-work.command"
-    result = run_macos(source_script, source_home, ["y", "1", "y"], {"RUSTUP_TOOLCHAIN": "work-release-e2e-uninstalled"})
-    assert_failed(result)
-    if not (source_home / ".codex/AGENTS.md").is_file() or (source_home / ".agents").exists():
-        raise AssertionError("macOS source installer did not keep Global AGENTS after Work toolchain failure")
-
-
+    print(f"Package native E2E passed: {platform}, version {version}, {script.name}")
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--zip", required=True, type=Path)
     parser.add_argument("--checksums", required=True, type=Path)
     parser.add_argument("--platform", required=True, choices=("macos-arm64", "windows-x64-msvc"))
+    parser.add_argument("--source-install", action="store_true", help="also build and install through Source")
     args = parser.parse_args()
     if args.platform == "windows-x64-msvc" and sys.platform != "win32":
         parser.error("Windows ZIP requires a Windows runner")
@@ -524,16 +470,16 @@ def main():
     if args.platform == "macos-arm64":
         assert_macos_network_sandbox()
     verify_readme_download(args.zip, args.checksums, args.platform)
-    with tempfile.TemporaryDirectory(prefix="work-release-e2e-") as directory:
+    repository = Path(__file__).resolve().parents[3]
+    with tempfile.TemporaryDirectory(prefix=".issue95-release-e2e.", dir=repository) as directory:
         root = Path(directory)
+        if root.resolve().parent != repository.resolve():
+            raise AssertionError("Release E2E fixture path escaped the repository")
         package = root / "package"
         package.mkdir()
         extract_checked(args.zip, package)
         (root / "original.zip").write_bytes(args.zip.read_bytes())
-        if args.platform == "windows-x64-msvc":
-            e2e_windows(package, root)
-        else:
-            e2e_macos(package, root)
+        exercise_package(package, root, args.platform, args.source_install)
     print(f"Final ZIP E2E passed: {args.platform}")
     return 0
 

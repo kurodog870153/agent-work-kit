@@ -98,9 +98,7 @@ fn validate_task_instruction(context: &Value, selected: &Value) -> Result<(), Wo
         serde_json::from_value(instruction.clone())
             .map_err(|_| boundary("Stored Work instruction selection is invalid."))?;
     if instruction["selected_paths"] != *selected
-        || instruction["sources"]
-            .as_array()
-            .is_none_or(|rows| rows.is_empty())
+        || instruction["sources"].as_array().is_none_or(Vec::is_empty)
         || !instruction["instructions_sha256"]
             .as_str()
             .is_some_and(valid_sha256)

@@ -26,7 +26,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -55,27 +55,32 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Select Rust toolchain
+        run: |
+          toolchain="$(python3 -B .github/scripts/release/rust_toolchain.py --target aarch64-apple-darwin)"
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - name: Require native ARM64 runner
         run: test "$(uname -m)" = arm64 && test "$RUNNER_ARCH" = ARM64
+      - name: Verify macOS downloader against loopback fixture
+        run: python3 -B .github/scripts/tests/release/mac/downloader/test_entry.py
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.85.0-aarch64-apple-darwin
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
         working-directory: rust
-        env:
-          RUSTUP_TOOLCHAIN: 1.85.0-aarch64-apple-darwin
-        run: cargo build --release --locked -p work-cli --target aarch64-apple-darwin
+        run: cargo build --release --locked -p work-cli
       - name: Package and verify final macOS ZIP
         env:
           COMMIT: ${{ inputs.expected_sha }}
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           python3 .github/scripts/release/release_package_integrity.py verify-zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip"
           (cd dist && shasum -a 256 "work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" > SHA256SUMS.txt)
-          sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
-      - uses: actions/upload-artifact@v6
+          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+          sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v${GITHUB_REF_NAME#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
+      - uses: actions/upload-artifact@v7
         with:
           name: release-macos-arm64
           path: dist/*.zip
@@ -88,44 +93,51 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Select Rust toolchain
+        run: |
+          $toolchain = python -B .github/scripts/release/rust_toolchain.py --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "RUSTUP_TOOLCHAIN=$toolchain" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Require native x64 runner
         run: |
           if ($env:RUNNER_ARCH -ne 'X64' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Expected Windows x64 runner' }
+      - name: Verify Windows downloader against loopback fixture
+        run: python -B .github/scripts/tests/release/windows/downloader/test_entry.py
       - name: Verify batch line endings
         run: |
-          foreach ($path in @('os-scripts/windows/install-release.bat', 'os-scripts/windows/installer/global-agents.bat', 'os-scripts/windows/installer/work-core.bat')) {
+          foreach ($path in @('os-scripts/windows/install-work-from-package.bat', 'os-scripts/windows/install-work-from-source.bat', 'os-scripts/windows/install-work-from-github-release.bat')) {
             $entry = git ls-files --eol -- $path
             if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
           }
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.85.0-x86_64-pc-windows-msvc
+        run: rustup toolchain install $env:RUSTUP_TOOLCHAIN
       - name: Build native release binary
         working-directory: rust
-        env:
-          RUSTUP_TOOLCHAIN: 1.85.0-x86_64-pc-windows-msvc
-        run: cargo build --release --locked -p work-cli --target x86_64-pc-windows-msvc
+        run: cargo build --release --locked -p work-cli
       - name: Package and verify final Windows ZIP
         env:
           COMMIT: ${{ inputs.expected_sha }}
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "dist/work-v${version}-windows-x64-msvc.zip"
           python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $(Split-Path $zip -Leaf)`n")
+          python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
           New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
           try {
             $active = Get-NetFirewallRule -Name $rule -ErrorAction Stop
             if ($active.Enabled -ne 'True' -or $active.Action -ne 'Block') { throw 'Network isolation rule is inactive' }
-            python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+            python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             Remove-NetFirewallRule -Name $rule -ErrorAction Stop
@@ -156,7 +168,7 @@ jobs:
               Start-Sleep -Seconds 5
             }
           }
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: release-windows-x64-msvc
           path: dist/*.zip
@@ -175,10 +187,10 @@ jobs:
     outputs:
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: dist
@@ -197,6 +209,7 @@ jobs:
         run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Verify ZIPs and create outer checksums
         run: |
+          python3 .github/scripts/release/release_package.py downloaders --output dist
           python3 .github/scripts/release/release_package.py checksums --output dist
           cd dist
           sha256sum --check SHA256SUMS.txt
@@ -205,21 +218,23 @@ jobs:
           subject-path: |
             dist/work-v${{ needs.validate-release-publication.outputs.version }}-macos-arm64.zip
             dist/work-v${{ needs.validate-release-publication.outputs.version }}-windows-x64-msvc.zip
+            dist/install-work-from-github-release.command
+            dist/install-work-from-github-release.bat
             dist/SHA256SUMS.txt
-      - name: Verify all three build attestations
+      - name: Verify all five build attestations
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
-          for asset in dist/*.zip dist/SHA256SUMS.txt; do
+          for asset in dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt; do
             gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
           done
       - name: Record signed asset manifest digest
         id: digest
         run: echo "manifest_sha256=$(sha256sum dist/SHA256SUMS.txt | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: signed-release-assets
           path: dist/
@@ -234,11 +249,11 @@ jobs:
       actions: read
       attestations: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: signed-release-assets
           path: dist
@@ -255,7 +270,7 @@ jobs:
           sha256sum --check SHA256SUMS.txt
           cd ..
           python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
-          for asset in dist/*.zip dist/SHA256SUMS.txt; do
+          for asset in dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt; do
             gh attestation verify "$asset" --repo "$REPOSITORY" --signer-workflow "$REPOSITORY/.github/workflows/publish-release.yml" --source-ref "refs/tags/$TAG" --source-digest "$EXPECTED_SHA"
           done
       - name: Verify and prepare release notes
@@ -275,7 +290,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" dist/*.zip dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --notes-file release-notes.md
+        run: gh release create "$TAG" dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --notes-file release-notes.md
       - name: Verify draft and source identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -307,10 +322,10 @@ jobs:
       actions: read
       attestations: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         if: needs.verify-and-attest-release-assets.result == 'success'
         with:
           name: signed-release-assets
@@ -341,7 +356,7 @@ jobs:
           python3 .github/scripts/release/release_verification_report.py --version "${VERSION:-${GITHUB_REF_NAME#v}}" --commit "$EXPECTED_SHA" --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --expected-dir dist --actual-dir published --checks release-checks.json --output release-verification.json --validate-status "$VALIDATE_STATUS" --macos-e2e-status "$MACOS_STATUS" --windows-e2e-status "$WINDOWS_STATUS" --attest-status "$ATTEST_STATUS" --publish-status "$PUBLISH_STATUS" --post-publish-verify-status "$VERIFY_STATUS"
       - name: Upload verification report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-verification-${{ github.ref_name }}
           path: |

@@ -56,7 +56,7 @@ fn check_edge(source: &str, destination: &str, kind: &str) -> Result<(), String>
 fn workspace_has_only_six_work_crates_and_allowed_direct_edges() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let output = Command::new(env!("CARGO"))
-        .env("RUSTUP_TOOLCHAIN", "1.85.0")
+        .env("RUSTUP_TOOLCHAIN", env!("CARGO_PKG_RUST_VERSION"))
         .args([
             "metadata",
             "--locked",

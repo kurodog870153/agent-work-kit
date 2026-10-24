@@ -144,13 +144,14 @@ fn classify_entry(mode: InvocationMode, request: &str) -> Result<InvocationEntry
             kind: InvocationEntryKind::DiscussionResume,
             requirement_id: Some(id.as_str().into()),
         };
-    } else if mode == InvocationMode::Task && request_words.len() == 1 {
-        if let Ok(id) = request_words[0].parse::<RequirementId>() {
-            entry = InvocationEntry {
-                kind: InvocationEntryKind::TaskDiscussion,
-                requirement_id: Some(id.as_str().into()),
-            };
-        }
+    } else if mode == InvocationMode::Task
+        && request_words.len() == 1
+        && let Ok(id) = request_words[0].parse::<RequirementId>()
+    {
+        entry = InvocationEntry {
+            kind: InvocationEntryKind::TaskDiscussion,
+            requirement_id: Some(id.as_str().into()),
+        };
     }
     Ok(entry)
 }

@@ -402,8 +402,10 @@ fn load_workflow_snapshot_scoped(
         let relative = session_source
             .as_ref()
             .filter(|_| task.is_none())
-            .map(|source| &source["artifacts"]["source"])
-            .unwrap_or(&artifacts["source"])
+            .map_or(
+                &artifacts["source"],
+                |source| &source["artifacts"]["source"],
+            )
             .as_str()
             .ok_or_else(|| {
                 fail(

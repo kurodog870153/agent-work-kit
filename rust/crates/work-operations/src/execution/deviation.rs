@@ -1055,14 +1055,12 @@ pub fn formalize_semantic_action(
                 } else {
                     "add_validation"
                 }
-            {
-                if let Some(number) = prior[field]["id"]
+                && let Some(number) = prior[field]["id"]
                     .as_str()
                     .and_then(|id| id.strip_prefix(&format!("{prefix}-")))
                     .and_then(|number| number.parse::<u16>().ok())
-                {
-                    maximum = maximum.max(number);
-                }
+            {
+                maximum = maximum.max(number);
             }
         }
         if maximum >= 999 {

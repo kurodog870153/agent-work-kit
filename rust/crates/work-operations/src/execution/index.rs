@@ -546,14 +546,14 @@ fn validate_lock(lock: &Value) -> Result<(), ExecutionIssue> {
                     json!({"location":"lock.execute_instructions_sha256"}),
                 ));
             }
-            if let Some(record) = lock.get("record_id") {
-                if !record_id(record) {
-                    return Err(issue(
-                        "invalid_execution_lock_record_id",
-                        "Invalid execution lock record ID.",
-                        json!({}),
-                    ));
-                }
+            if let Some(record) = lock.get("record_id")
+                && !record_id(record)
+            {
+                return Err(issue(
+                    "invalid_execution_lock_record_id",
+                    "Invalid execution lock record ID.",
+                    json!({}),
+                ));
             }
             let retry_record = lock["record_id"]
                 .as_str()

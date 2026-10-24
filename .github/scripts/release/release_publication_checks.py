@@ -10,7 +10,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from release_package import PLATFORMS
+from release_package import DOWNLOADERS, PLATFORMS
 
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -41,7 +41,8 @@ def check_identity(root, repository, tag, expected_sha, *, require_latest_main=T
 
 
 def expected_assets(version):
-    return {f"work-v{version}-{platform}.zip" for platform in PLATFORMS} | {"SHA256SUMS.txt"}
+    return ({f"work-v{version}-{platform}.zip" for platform in PLATFORMS}
+            | {Path(path).name for path in DOWNLOADERS.values()} | {"SHA256SUMS.txt"})
 
 
 def check_assets(repository, tag, directory, *, published):
@@ -58,7 +59,7 @@ def check_assets(repository, tag, directory, *, published):
     names = expected_assets(tag.removeprefix("v"))
     assets = release["assets"]
     if {asset["name"] for asset in assets} != names or len(assets) != len(names):
-        raise ValueError("release asset names or count differ from the expected three")
+        raise ValueError("release asset names or count differ from the expected five")
     for asset in assets:
         path = directory / asset["name"]
         digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()

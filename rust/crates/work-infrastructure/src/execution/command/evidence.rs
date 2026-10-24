@@ -145,16 +145,14 @@ fn verified_command(
         if path == &index_path || path == &attempt_path {
             continue;
         }
-        if !require_current_files {
-            if let Some(state) = historical.get(path) {
-                let Some(state) = state else {
-                    return Err(unverified());
-                };
-                if *expected != work_operations::derivation::fingerprint::raw(&state.bytes) {
-                    return Err(unverified());
-                }
-                continue;
+        if !require_current_files && let Some(state) = historical.get(path) {
+            let Some(state) = state else {
+                return Err(unverified());
+            };
+            if *expected != work_operations::derivation::fingerprint::raw(&state.bytes) {
+                return Err(unverified());
             }
+            continue;
         }
         let path = crate::files::resolve_runtime_path(root, path)?;
         let bytes = super::super::evidence_file::read(&path, 256 * 1024 * 1024)?;

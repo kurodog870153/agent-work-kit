@@ -276,7 +276,7 @@ fn dispatch_with_operation_context(
     ) {
         return dispatch(parsed, root, input, skill_root);
     }
-    let operation = parsed.path.get(1).map(String::as_str).unwrap_or(command);
+    let operation = parsed.path.get(1).map_or(command, String::as_str);
     let artifacts = operation_artifacts(parsed, root, input, true)?;
     let mut routing = RoutingSourceSession::new(skill_root.to_path_buf());
     let (envelope, selection) = build_operation_context(

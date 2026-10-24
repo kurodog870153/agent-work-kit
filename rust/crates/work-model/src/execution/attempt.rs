@@ -230,7 +230,7 @@ pub enum AttemptRecord {
     Skipped(SkippedRecord),
     Command(CommandRecord),
     Operation(OperationRecord),
-    Validation(ValidationRecord),
+    Validation(Box<ValidationRecord>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

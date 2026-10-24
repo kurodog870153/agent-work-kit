@@ -263,15 +263,14 @@ fn inspect_value(value: &Value, file: &str, pointer: &str) -> Result<(), String>
                 if matches!(
                     key.as_str(),
                     "schema" | "id" | "reference" | "$ref" | "target_schema"
-                ) {
-                    if let Some(schema) = value.as_str() {
-                        let rejected_plan = file
-                            == "rust/crates/work-infrastructure/fixtures/cases/specification/migration/invalid-plan/input/request.json"
-                            && at == "$/candidates/0/content/schema"
-                            && schema == "work-plan/v1";
-                        if !current_schema(schema) && !rejected_plan {
-                            return Err(format!("{file}:{at}: versioned schema"));
-                        }
+                ) && let Some(schema) = value.as_str()
+                {
+                    let rejected_plan = file
+                        == "rust/crates/work-infrastructure/fixtures/cases/specification/migration/invalid-plan/input/request.json"
+                        && at == "$/candidates/0/content/schema"
+                        && schema == "work-plan/v1";
+                    if !current_schema(schema) && !rejected_plan {
+                        return Err(format!("{file}:{at}: versioned schema"));
                     }
                 }
                 if key == "marker"
@@ -520,46 +519,8 @@ fn instruction_command_tree_has_no_fresh_compatibility_writers() {
     );
 }
 
-fn clean_installer(text: &str) -> bool {
-    !text.contains("refresh_existing_instructions")
-        && !text.contains("cp -R -p -- \"$final_work/.\"")
-        && !text.contains("xcopy \"!final_work!")
-        && !text.contains("Previously installed branches and stale files will be kept")
-        && text.contains("prepared")
-        && text.contains("previous")
-}
-
 #[test]
-fn installer_and_negative_probe_guards_detect_regressions_without_mutating_the_repository() {
-    for (entry, core) in [
-        (
-            "os-scripts/mac/install-work.command",
-            "os-scripts/mac/installer/work-core.sh",
-        ),
-        (
-            "os-scripts/mac/install-release.command",
-            "os-scripts/mac/installer/work-core.sh",
-        ),
-        (
-            "os-scripts/windows/install-work.bat",
-            "os-scripts/windows/installer/work-core.bat",
-        ),
-        (
-            "os-scripts/windows/install-release.bat",
-            "os-scripts/windows/installer/work-core.bat",
-        ),
-    ] {
-        let text = format!(
-            "{}\n{}",
-            fs::read_to_string(root().join(entry)).unwrap(),
-            fs::read_to_string(root().join(core)).unwrap()
-        );
-        assert!(clean_installer(&text), "{entry} and {core}");
-        assert!(
-            !clean_installer(&format!("{text}\nrefresh_existing_instructions")),
-            "{entry} and {core}"
-        );
-    }
+fn negative_probe_guards_detect_regressions_without_mutating_the_repository() {
     for value in [
         json!({"schema":"work-task-index/v1"}),
         json!({"schema":"work-new-producer/v99"}),

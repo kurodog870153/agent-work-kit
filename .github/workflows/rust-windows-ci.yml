@@ -21,19 +21,23 @@ jobs:
           - x86_64-pc-windows-msvc
           - x86_64-pc-windows-gnu
     env:
-      RUSTUP_TOOLCHAIN: 1.85.0-${{ matrix.target }}
       WORK_RUST_TARGET: ${{ matrix.target }}
     defaults:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
         env:
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: "false"
+      - name: Select Rust toolchain
+        run: |
+          $toolchain = python -B ../.github/scripts/release/rust_toolchain.py --target $env:WORK_RUST_TARGET
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "RUSTUP_TOOLCHAIN=$toolchain" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Verify checkout preserves repository line endings
         working-directory: .
         run: |
@@ -50,9 +54,9 @@ jobs:
           }
           $batchPaths = @(
             'os-scripts/windows/clean-codex-data.bat',
-            'os-scripts/windows/install-work.bat',
-            'os-scripts/windows/installer/global-agents.bat',
-            'os-scripts/windows/installer/work-core.bat'
+            'os-scripts/windows/install-work-from-source.bat',
+            'os-scripts/windows/install-work-from-package.bat',
+            'os-scripts/windows/install-work-from-github-release.bat'
           )
           foreach ($path in $batchPaths) {
             $entry = git ls-files --eol -- $path
@@ -62,7 +66,7 @@ jobs:
           }
       - name: Test CI performance reporter
         run: python -B -m unittest discover -s ../.github/scripts/tests/ci-performance -p test_ci_perf.py
-      - name: Set up Rust 1.85 toolchain
+      - name: Set up Rust toolchain
         run: |
           rustup toolchain install $env:RUSTUP_TOOLCHAIN
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -105,9 +109,6 @@ jobs:
         id: test_compile
         continue-on-error: true
         run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --target $env:WORK_RUST_TARGET
-      - name: Build Work for installer tests
-        if: steps.test_compile.outcome == 'success'
-        run: cargo build --release --locked -p work-cli
       - name: Run Rust unit and integration tests
         if: steps.test_compile.outcome == 'success'
         continue-on-error: true
@@ -121,7 +122,7 @@ jobs:
         run: python ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform windows --target $env:WORK_RUST_TARGET --min-doc-tests 1
       - name: Upload Rust performance report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: rust-perf-${{ matrix.target }}
           path: |

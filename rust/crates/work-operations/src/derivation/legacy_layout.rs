@@ -102,22 +102,22 @@ pub fn classify(path: &str, execution: &str, source: &str) -> Option<LegacyLayou
     }
     let relative = path.strip_prefix(&format!("{execution}/"))?;
     let parts: Vec<_> = relative.split('/').collect();
-    if parts.len() == 3 {
-        if let Some(receipt) = name.strip_prefix(".work-command-") {
-            for (suffix, filename) in [
-                (".started.json", "started.json"),
-                (".finished.json", "finished.json"),
-            ] {
-                if let Some(instance) = receipt.strip_suffix(suffix) {
-                    let record = command_receipt_instance(instance).ok()?;
-                    let directory =
-                        command_receipt_directory(execution, parts[0], parts[1], &record).ok()?;
-                    return result(
-                        "command_receipt",
-                        Some(format!("{directory}/{filename}")),
-                        "preserve_raw_and_require_current_attempt_proof_never_rerun",
-                    );
-                }
+    if parts.len() == 3
+        && let Some(receipt) = name.strip_prefix(".work-command-")
+    {
+        for (suffix, filename) in [
+            (".started.json", "started.json"),
+            (".finished.json", "finished.json"),
+        ] {
+            if let Some(instance) = receipt.strip_suffix(suffix) {
+                let record = command_receipt_instance(instance).ok()?;
+                let directory =
+                    command_receipt_directory(execution, parts[0], parts[1], &record).ok()?;
+                return result(
+                    "command_receipt",
+                    Some(format!("{directory}/{filename}")),
+                    "preserve_raw_and_require_current_attempt_proof_never_rerun",
+                );
             }
         }
     }
@@ -186,8 +186,7 @@ pub fn validate_offline_review(request: &serde_json::Value) -> Result<(), &'stat
     use std::collections::BTreeSet;
     let decisions = request["semantic_decisions"]
         .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice);
     let reviews: Vec<_> = decisions
         .iter()
         .filter(|row| row["id"] == "offline-layout")

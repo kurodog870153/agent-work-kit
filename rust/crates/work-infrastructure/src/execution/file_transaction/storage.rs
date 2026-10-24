@@ -1736,8 +1736,8 @@ fn attempt_lineage(
         if attempt["task_id"] != context.target().task_id || attempt["attempt_id"] != id {
             return Err(error("file_transaction_continuation_invalid"));
         }
-        if let Some(child) = &child {
-            if attempt["status"] != "stopped"
+        if let Some(child) = &child
+            && (attempt["status"] != "stopped"
                 || work_operations::execution::closed_task_status(
                     "stopped",
                     attempt["final_type"].as_str(),
@@ -1749,10 +1749,9 @@ fn attempt_lineage(
                     "task_instructions_sha256",
                 ]
                 .iter()
-                .any(|key| attempt[*key] != child[*key])
-            {
-                return Err(error("file_transaction_continuation_invalid"));
-            }
+                .any(|key| attempt[*key] != child[*key]))
+        {
+            return Err(error("file_transaction_continuation_invalid"));
         }
         let Some(previous) = attempt["continued_from"].as_str() else {
             break;

@@ -147,19 +147,19 @@ fn constant_at_error(text: &str, line: usize, column: usize) -> Option<&'static 
 }
 
 fn json_error_position(text: &str, line: usize, column: usize) -> (usize, usize) {
-    if column > 1 {
-        if let Some(line_text) = text.lines().nth(line.saturating_sub(1)) {
-            let start = column - 2;
-            if let Some(suffix) = line_text.get(start..) {
-                let invalid_literal = match suffix.as_bytes().first() {
-                    Some(b'n') => !suffix.starts_with("null"),
-                    Some(b't') => !suffix.starts_with("true"),
-                    Some(b'f') => !suffix.starts_with("false"),
-                    _ => false,
-                };
-                if invalid_literal {
-                    return (line, column - 1);
-                }
+    if column > 1
+        && let Some(line_text) = text.lines().nth(line.saturating_sub(1))
+    {
+        let start = column - 2;
+        if let Some(suffix) = line_text.get(start..) {
+            let invalid_literal = match suffix.as_bytes().first() {
+                Some(b'n') => !suffix.starts_with("null"),
+                Some(b't') => !suffix.starts_with("true"),
+                Some(b'f') => !suffix.starts_with("false"),
+                _ => false,
+            };
+            if invalid_literal {
+                return (line, column - 1);
             }
         }
     }
@@ -241,6 +241,7 @@ pub(crate) fn instructions_sha256(scope: &str, sources: &[InstructionSource<'_>]
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use serde_json::Value;
 
     #[test]
@@ -258,27 +259,7 @@ mod tests {
     }
 
     fn decode_base64(input: &str) -> Vec<u8> {
-        let mut result = Vec::new();
-        let mut bits = 0_u32;
-        let mut count = 0_u8;
-        for byte in input.bytes().take_while(|byte| *byte != b'=') {
-            let digit = match byte {
-                b'A'..=b'Z' => byte - b'A',
-                b'a'..=b'z' => byte - b'a' + 26,
-                b'0'..=b'9' => byte - b'0' + 52,
-                b'+' => 62,
-                b'/' => 63,
-                _ => panic!("invalid fixture base64"),
-            };
-            bits = (bits << 6) | u32::from(digit);
-            count += 6;
-            if count >= 8 {
-                count -= 8;
-                result.push((bits >> count) as u8);
-                bits &= (1 << count) - 1;
-            }
-        }
-        result
+        STANDARD.decode(input).expect("valid fixture base64")
     }
 
     #[test]

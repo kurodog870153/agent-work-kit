@@ -115,7 +115,7 @@ mod native {
         }
         let uuid = |words: &[u32]| -> [u8; 16] {
             let mut result = [0; 16];
-            for (chunk, word) in result.chunks_exact_mut(4).zip(words) {
+            for (chunk, word) in result.as_chunks_mut::<4>().0.iter_mut().zip(words) {
                 chunk.copy_from_slice(&word.to_ne_bytes());
             }
             result

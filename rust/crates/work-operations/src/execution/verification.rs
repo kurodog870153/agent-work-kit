@@ -250,17 +250,17 @@ pub fn evaluate(
             }
             Not { condition } => Ok(!visit(condition, results)?),
             leaf => {
-                let command = match leaf {
-                    ExitCode { command, .. }
-                    | StdoutEquals { command, .. }
-                    | StdoutContains { command, .. }
-                    | StderrEquals { command, .. }
-                    | StderrContains { command, .. }
-                    | StdoutSha256 { command, .. }
-                    | StderrSha256 { command, .. }
-                    | ReportSha256 { command, .. }
-                    | JsonReportEquals { command, .. } => command,
-                    _ => return Err(unknown()),
+                let (ExitCode { command, .. }
+                | StdoutEquals { command, .. }
+                | StdoutContains { command, .. }
+                | StderrEquals { command, .. }
+                | StderrContains { command, .. }
+                | StdoutSha256 { command, .. }
+                | StderrSha256 { command, .. }
+                | ReportSha256 { command, .. }
+                | JsonReportEquals { command, .. }) = leaf
+                else {
+                    return Err(unknown());
                 };
                 let result = results.get(command).ok_or_else(unknown)?;
                 let report = |path: &str| {

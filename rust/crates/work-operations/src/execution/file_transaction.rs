@@ -74,14 +74,13 @@ pub mod history {
                 return Err("file_transaction_history_cycle");
             }
             let entry = by_id[id];
-            if let Some(confirmation) = entry.confirmation {
-                if entry.previous != Some(confirmation.previous_transaction.as_str())
+            if let Some(confirmation) = entry.confirmation
+                && (entry.previous != Some(confirmation.previous_transaction.as_str())
                     || confirmation.before_sha256
                         != before_sha256(entry.before, entry.path_identities)
-                    || confirmation.evidence.trim().is_empty()
-                {
-                    return Err("file_transaction_baseline_confirmation_invalid");
-                }
+                    || confirmation.evidence.trim().is_empty())
+            {
+                return Err("file_transaction_baseline_confirmation_invalid");
             }
             for (path, state) in entry.before {
                 let state_changed = result

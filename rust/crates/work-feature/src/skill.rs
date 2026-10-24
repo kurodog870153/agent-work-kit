@@ -45,12 +45,9 @@ pub fn catalog(
                 "{}/SKILL.md",
                 directory.file_name().unwrap_or_default().to_string_lossy()
             );
-            let resolved = match repository.resolve_directory(&directory) {
-                Some(resolved) => resolved,
-                None => {
-                    unavailable.push(json!({"scope": root.scope, "root": root.locator, "source": source, "code": "skill_path_resolution_failed"}));
-                    continue;
-                }
+            let Some(resolved) = repository.resolve_directory(&directory) else {
+                unavailable.push(json!({"scope": root.scope, "root": root.locator, "source": source, "code": "skill_path_resolution_failed"}));
+                continue;
             };
             if !seen_paths.insert(resolved.to_string_lossy().to_lowercase())
                 || disabled_sources.contains(&source)

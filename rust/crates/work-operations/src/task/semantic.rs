@@ -46,7 +46,9 @@ pub fn validate_task_file_state(
             .find(|task| task["id"] == task_id.as_str())
             .expect("ordered TASK");
         existence = super::file_state::final_state(
-            task["files"].as_array().map(Vec::as_slice).unwrap_or(&[]),
+            task["files"]
+                .as_array()
+                .map_or(&[] as &[serde_json::Value], Vec::as_slice),
             &existence,
             portable_path_identity,
         )

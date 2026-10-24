@@ -98,10 +98,10 @@ pub fn check_project(
     project_root: &str,
     requirement: &str,
 ) -> Result<(), ExecutionIssue> {
-    if let Some(scope) = from_authorization(authorization)? {
-        if scope.project_root != project_root || scope.requirement_id != requirement {
-            return Err(fail("execution_authorization_project_mismatch"));
-        }
+    if let Some(scope) = from_authorization(authorization)?
+        && (scope.project_root != project_root || scope.requirement_id != requirement)
+    {
+        return Err(fail("execution_authorization_project_mismatch"));
     }
     Ok(())
 }
@@ -143,16 +143,17 @@ pub fn permits_adjustment(
                 .map_err(|_| fail("execution_authorization_boundary_invalid"))?;
         if types.is_empty()
             || types.iter().any(|t| !scope.modification_types.contains(t))
-            || files.as_array().is_none_or(|files| files.is_empty())
+            || files.as_array().is_none_or(Vec::is_empty)
         {
             return Ok(false);
         }
     }
     for field in ["replacement", "command"] {
-        if let Some(directory) = action[field]["execution"]["working_directory"].as_str() {
-            if directory != "." && !path(directory) {
-                return Ok(false);
-            }
+        if let Some(directory) = action[field]["execution"]["working_directory"].as_str()
+            && directory != "."
+            && !path(directory)
+        {
+            return Ok(false);
         }
     }
     if let Some(rows) = files.as_array() {

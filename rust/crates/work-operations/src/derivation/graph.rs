@@ -94,12 +94,11 @@ pub fn reconcile_artifact_bindings(
     } else {
         render_task(index, TaskDocumentKind::Index).map_err(|_| ArtifactBindingIssue::Render)?
     };
-    if let Some(execution) = execution {
-        if affected.contains(&ArtifactNode::ExecutionIndexBytes)
-            || changed_roots.contains(&ArtifactNode::ExecutionIndexBytes)
-        {
-            rebind_execution_index(&index_raw, index, items, execution)?;
-        }
+    if let Some(execution) = execution
+        && (affected.contains(&ArtifactNode::ExecutionIndexBytes)
+            || changed_roots.contains(&ArtifactNode::ExecutionIndexBytes))
+    {
+        rebind_execution_index(&index_raw, index, items, execution)?;
     }
     Ok(index_raw)
 }

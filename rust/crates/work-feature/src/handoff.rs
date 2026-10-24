@@ -831,19 +831,18 @@ pub fn validate_task_handoff(
 ) -> Result<Value, WorkError> {
     let result = validate_handoff_structure(contract).map_err(domain)?;
     for field in ["source", "task", "execution"] {
-        if let Some(path) = contract["artifacts"][field].as_str() {
-            if path.is_empty()
+        if let Some(path) = contract["artifacts"][field].as_str()
+            && (path.is_empty()
                 || path.starts_with('/')
                 || path.contains('\\')
-                || path.split('/').any(|part| matches!(part, "" | "." | ".."))
-            {
-                return Err(WorkError::new(
-                    ExitCode::Contract,
-                    "noncanonical_artifact_paths",
-                    "Handoff artifact paths must use their normalized project-relative form.",
-                    json!({"field":field}),
-                ));
-            }
+                || path.split('/').any(|part| matches!(part, "" | "." | "..")))
+        {
+            return Err(WorkError::new(
+                ExitCode::Contract,
+                "noncanonical_artifact_paths",
+                "Handoff artifact paths must use their normalized project-relative form.",
+                json!({"field":field}),
+            ));
         }
     }
     let requirement = contract["requirement_id"]

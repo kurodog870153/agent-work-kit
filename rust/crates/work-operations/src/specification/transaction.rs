@@ -557,7 +557,7 @@ pub fn verified_retained_journal_kind<'a>(
                 &[],
             )?;
             hash("analysis_fingerprint")?;
-            if request["item_id"].as_str().is_none_or(|id| id.is_empty()) {
+            if request["item_id"].as_str().is_none_or(str::is_empty) {
                 return Err(issue(
                     "journal_layout_metadata",
                     "The original migration item identity is required.",

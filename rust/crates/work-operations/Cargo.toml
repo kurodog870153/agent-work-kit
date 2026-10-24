@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
+chrono.workspace = true
 work-model = { path = "../work-model" }
 serde.workspace = true
 serde_json.workspace = true

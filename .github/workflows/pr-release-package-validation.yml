@@ -11,7 +11,7 @@ jobs:
     name: validate release preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Check workflow YAML syntax
@@ -30,24 +30,41 @@ jobs:
     needs: validate-release-preflight
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Select Rust toolchain
+        run: |
+          toolchain="$(python3 -B .github/scripts/release/rust_toolchain.py --target aarch64-apple-darwin)"
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
       - name: Require native ARM64 runner
         run: test "$(uname -m)" = arm64 && test "$RUNNER_ARCH" = ARM64
+      - name: Verify native macOS installation lock
+        run: bash .github/scripts/tests/release/mac/lock/test_native_lock.sh
+      - name: Verify macOS installer modules
+        run: |
+          bash .github/scripts/tests/release/mac/cli/test_parse_options.sh
+          node .github/scripts/tests/release/mac/state/test_state_model.js
+          bash .github/scripts/tests/release/mac/transaction/test_work.sh
+          bash .github/scripts/tests/release/mac/global-agents/test_policy.sh
+          bash .github/scripts/tests/release/mac/global-agents/test_transaction.sh
+          python3 -B .github/scripts/tests/release/mac/downloader/test_entry.py
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.85.0-aarch64-apple-darwin
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
         working-directory: rust
-        env:
-          RUSTUP_TOOLCHAIN: 1.85.0-aarch64-apple-darwin
-        run: cargo build --release --locked -p work-cli --target aarch64-apple-darwin
+        run: cargo build --release --locked -p work-cli
+      - name: Verify macOS target identity
+        run: |
+          bash .github/scripts/tests/release/mac/target/test_preflight.sh
+          bash .github/scripts/tests/release/mac/runtime/test_install.sh
       - name: Package and verify macOS ZIP
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/aarch64-apple-darwin/release/work --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           (cd dist && shasum -a 256 "work-v$(cat ../VERSION)-macos-arm64.zip" > SHA256SUMS.txt)
-          sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
-      - uses: actions/upload-artifact@v6
+          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+          sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
+      - uses: actions/upload-artifact@v7
         with:
           name: pr-release-macos-arm64
           path: dist/*.zip
@@ -58,46 +75,71 @@ jobs:
     needs: validate-release-preflight
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
         env:
           GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: "false"
+      - name: Select Rust toolchain
+        run: |
+          $toolchain = python -B .github/scripts/release/rust_toolchain.py --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "RUSTUP_TOOLCHAIN=$toolchain" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Require native x64 runner
         run: |
           if ($env:RUNNER_ARCH -ne 'X64' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Expected Windows x64 runner' }
+      - name: Verify native Windows installation lock
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/lock/test_mutex.ps1
+      - name: Verify Windows Release downloader against loopback fixture
+        run: python -B .github/scripts/tests/release/windows/downloader/test_entry.py
+      - name: Verify Windows installer modules
+        run: |
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/cli/test_parse_options.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/state/test_state_model.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/transaction/test_work.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_policy.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_transaction.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify batch line endings
         run: |
-          foreach ($path in @('os-scripts/windows/install-release.bat', 'os-scripts/windows/installer/global-agents.bat', 'os-scripts/windows/installer/work-core.bat')) {
+          foreach ($path in @('os-scripts/windows/install-work-from-package.bat', 'os-scripts/windows/install-work-from-source.bat', 'os-scripts/windows/install-work-from-github-release.bat')) {
             $entry = git ls-files --eol -- $path
             if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
           }
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.85.0-x86_64-pc-windows-msvc
+        run: rustup toolchain install $env:RUSTUP_TOOLCHAIN
       - name: Build native release binary
         working-directory: rust
-        env:
-          RUSTUP_TOOLCHAIN: 1.85.0-x86_64-pc-windows-msvc
-        run: cargo build --release --locked -p work-cli --target x86_64-pc-windows-msvc
+        run: cargo build --release --locked -p work-cli
+      - name: Verify Windows target identity
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/target/test_preflight.ps1 -Binary rust/target/release/work.exe
+      - name: Verify Windows installer core
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/runtime/test_install.ps1 -Binary rust/target/release/work.exe
+      - name: Verify Windows offline Package entry
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe
       - name: Package and verify Windows ZIP
-        env:
-          RUSTUP_TOOLCHAIN: 1.85.0-x86_64-pc-windows-msvc
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/x86_64-pc-windows-msvc/release/work.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "work-v${version}-windows-x64-msvc.zip"
           $hash = (Get-FileHash "dist/$zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $zip`n")
+          python -B .github/scripts/release/release_downloader_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
           New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
           try {
             $active = Get-NetFirewallRule -Name $rule -ErrorAction Stop
             if ($active.Enabled -ne 'True' -or $active.Action -ne 'Block') { throw 'Network isolation rule is inactive' }
-            python -B .github/scripts/release/release_install_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+            python -B .github/scripts/release/release_install_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally {
             Remove-NetFirewallRule -Name $rule -ErrorAction Stop
@@ -128,7 +170,7 @@ jobs:
               Start-Sleep -Seconds 5
             }
           }
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: pr-release-windows-x64-msvc
           path: dist/*.zip
@@ -139,16 +181,17 @@ jobs:
     needs: [build-and-verify-macos-package, build-and-verify-windows-package]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: pr-release-*
           path: dist
           merge-multiple: true
       - name: Verify both ZIPs and outer checksums
         run: |
+          python3 .github/scripts/release/release_package.py downloaders --output dist
           python3 .github/scripts/release/release_package.py checksums --output dist
           cd dist
           sha256sum --check SHA256SUMS.txt
