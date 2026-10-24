@@ -327,7 +327,7 @@ def compare_command(args):
         previous = []
         incompatible = False
         for page in range(1, 4):
-            data = api_json(f"repos/{repository}/actions/workflows/{workflow}/runs?branch=main&status=success&per_page=30&page={page}", token)
+            data = api_json(f"repos/{repository}/actions/workflows/{workflow}/runs?branch=main&status=completed&per_page=30&page={page}", token)
             runs = data.get("workflow_runs", [])
             for run in runs:
                 try:

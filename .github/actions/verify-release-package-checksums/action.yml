@@ -1,0 +1,35 @@
+name: verify release package checksums
+description: Verify a release ZIP and its outer checksum manifest
+inputs:
+  platform:
+    required: true
+    description: Release package platform
+  package-artifact:
+    required: true
+    description: ZIP artifact name
+  checksum-artifact:
+    required: true
+    description: Checksum artifact name
+runs:
+  using: composite
+  steps:
+    - name: Download release ZIP
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.package-artifact }}
+        path: dist
+    - name: Download release checksums
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.checksum-artifact }}
+        path: dist
+    - name: Verify ZIP and checksums
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+      run: |
+        zip="work-v$(cat VERSION)-${PLATFORM}.zip"
+        python3 -B .github/scripts/release/release_package_integrity.py verify-zip "dist/$zip"
+        test "$(cat dist/SHA256SUMS.txt)" = "$(cd dist && sha256sum "$zip")"
+        cd dist
+        sha256sum --check --strict SHA256SUMS.txt

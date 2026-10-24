@@ -61,7 +61,7 @@ def verify(version, repository, tag, commit, manifest_sha256, expected_dir, actu
             asset = str(actual_dir / name)
             record("attestation", ["gh", "attestation", "verify", asset, "--repo", repository,
                                    "--signer-workflow", f"{repository}/.github/workflows/publish-release.yml",
-                                   "--source-ref", f"refs/tags/{tag}", "--source-digest", commit], name)
+                                   "--source-ref", "refs/heads/main", "--source-digest", commit], name)
             record("release_asset", ["gh", "release", "verify-asset", tag, asset, "--repo", repository], name)
     for relative in DOWNLOADERS.values():
         name = Path(relative).name

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from release_package import checked_version
-from main_release_coordinator import release_exists, tag_exists
+from release_tag_creation import release_exists, tag_exists
 
 
 def check_version_available(root, repository):

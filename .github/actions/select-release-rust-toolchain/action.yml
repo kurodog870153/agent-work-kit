@@ -1,0 +1,26 @@
+name: select release Rust toolchain
+description: Select the pinned Rust toolchain for a native release package
+inputs:
+  target:
+    description: Rust target triple
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Select Rust toolchain on macOS
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        toolchain="$(python3 -B .github/scripts/release/rust_toolchain.py --target "$TARGET")"
+        echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+    - name: Select Rust toolchain on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        $toolchain = python -B .github/scripts/release/rust_toolchain.py --target $env:TARGET
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        "RUSTUP_TOOLCHAIN=$toolchain" | Out-File -FilePath $env:GITHUB_ENV -Append
