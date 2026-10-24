@@ -130,8 +130,9 @@ class PerformanceReportTests(unittest.TestCase):
             report.write_text(json.dumps({**base, "test_execution_seconds": 13.01}), encoding="utf-8")
             runs = [{"id": index} for index in range(6)]
             reports = {index: {**base, "test_execution_seconds": seconds} for index, seconds in enumerate((8, 9, 10, 11, 50), start=1)}
-            with patch.dict("os.environ", {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}), patch.object(ci_perf, "api_json", return_value={"workflow_runs": runs}), patch.object(ci_perf, "artifact_report", side_effect=lambda _repo, run_id, _name, _token: reports.get(run_id)), patch.object(ci_perf, "append_summary") as summary:
+            with patch.dict("os.environ", {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}), patch.object(ci_perf, "api_json", return_value={"workflow_runs": runs}) as api, patch.object(ci_perf, "artifact_report", side_effect=lambda _repo, run_id, _name, _token: reports.get(run_id)), patch.object(ci_perf, "append_summary") as summary:
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=report, workflow="workflow.yml", artifact="rust-perf")), 0)
+            self.assertIn("status=completed", api.call_args.args[0])
             self.assertIn("效能退化警告", summary.call_args.args[0])
 
     def test_history_skips_broken_artifact_before_selecting_five(self):

@@ -14,9 +14,25 @@ class WorkflowActionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workflow.yml"
             path.write_text("jobs:\n  build:\n    steps:\n" +
-                            "\n".join(f"      - uses: {action}" for action in sorted(APPROVED)),
+                            "\n".join(f"      - uses: {action}" for action in sorted(APPROVED) if not action.startswith("./.github/workflows/")),
                             encoding="utf-8")
             self.assertEqual(check_workflow(path), [])
+
+    def test_approved_reusable_workflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            path.write_text("jobs: { rust: { uses: ./.github/workflows/rust-validation.yml } }\n",
+                            encoding="utf-8")
+            self.assertEqual(check_workflow(path), [])
+
+    def test_composite_action_references_are_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "action.yml"
+            path.write_text("runs: { using: composite, steps: [ { uses: actions/download-artifact@v8 }, "
+                            "{ uses: owner/unapproved-action@v1 } ] }\n", encoding="utf-8")
+            errors = check_workflow(path)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("runs.steps[1]", errors[0])
 
     def test_rejects_source_version_and_nonliteral_uses(self):
         with tempfile.TemporaryDirectory() as directory:

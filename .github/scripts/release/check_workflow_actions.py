@@ -1,4 +1,4 @@
-"""Reject workflow action references outside the approved source and version list."""
+"""Reject workflow uses references outside the approved source and version list."""
 
 import argparse
 import json
@@ -14,6 +14,12 @@ APPROVED = {
     "actions/download-artifact@v8",
     "actions/attest@v4",
     "taiki-e/install-action@v2",
+    "ruby/setup-ruby@v1",
+    "./.github/workflows/rust-validation.yml",
+    "./.github/actions/verify-release-package-checksums",
+    "./.github/actions/select-release-rust-toolchain",
+    "./.github/actions/verify-windows-batch-line-endings",
+    "./.github/actions/verify-windows-release-install",
 }
 RUBY_REFERENCES = r"""
 require "json"
@@ -26,13 +32,19 @@ if jobs.is_a?(Hash)
     next unless job.is_a?(Hash)
     references << ["jobs.#{job_name}.uses", job["uses"]] if job.key?("uses")
     if job["steps"].is_a?(Array)
-      job["steps"].each_with_index do |step, index|
-        if step.is_a?(Hash) && step.key?("uses")
-          references << ["jobs.#{job_name}.steps[#{index}].uses", step["uses"]]
-        end
-      end
+      references.concat(job["steps"].each_with_index.filter_map do |step, index|
+        next unless step.is_a?(Hash) && step.key?("uses")
+        ["jobs.#{job_name}.steps[#{index}].uses", step["uses"]]
+      end)
     end
   end
+end
+runs = workflow.is_a?(Hash) ? workflow["runs"] : nil
+if runs.is_a?(Hash) && runs["using"] == "composite" && runs["steps"].is_a?(Array)
+  references.concat(runs["steps"].each_with_index.filter_map do |step, index|
+    next unless step.is_a?(Hash) && step.key?("uses")
+    ["runs.steps[#{index}].uses", step["uses"]]
+  end)
 end
 puts JSON.generate(references)
 """
@@ -64,6 +76,11 @@ def workflow_references(path):
                 for index, step in enumerate(job["steps"]):
                     if isinstance(step, dict) and "uses" in step:
                         references.append((f"jobs.{job_name}.steps[{index}].uses", step["uses"]))
+    runs = workflow.get("runs") if isinstance(workflow, dict) else None
+    if isinstance(runs, dict) and runs.get("using") == "composite" and isinstance(runs.get("steps"), list):
+        for index, step in enumerate(runs["steps"]):
+            if isinstance(step, dict) and "uses" in step:
+                references.append((f"runs.steps[{index}].uses", step["uses"]))
     return references
 
 
@@ -86,6 +103,8 @@ def main():
     parser.add_argument("directory", nargs="?", type=Path, default=Path(".github/workflows"))
     args = parser.parse_args()
     paths = sorted((*args.directory.glob("*.yml"), *args.directory.glob("*.yaml")))
+    if args.directory == Path(".github/workflows"):
+        paths.extend(sorted(Path(".github/actions").glob("*/action.y*ml")))
     if not paths:
         parser.error("no workflow files found")
     errors = [error for path in paths for error in check_workflow(path)]

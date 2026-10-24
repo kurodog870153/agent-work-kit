@@ -116,12 +116,12 @@ def check_first_publish_attempt(repository, tag, expected_sha, run_id, run_attem
     if not SHA.fullmatch(expected_sha) or not run_id.isdecimal() or run_attempt != "1":
         raise ValueError("release rerun or invalid run identity is forbidden")
     pages = api(
-        f"repos/{repository}/actions/workflows/publish-release.yml/runs?head_sha={expected_sha}&event=workflow_dispatch&per_page=100",
+        f"repos/{repository}/actions/workflows/publish-release.yml/runs?head_sha={expected_sha}&event=push&per_page=100",
         "--paginate", "--slurp",
     )
     runs = [run for page in pages for run in page["workflow_runs"] if run["head_sha"] == expected_sha]
     if len(runs) != 1 or str(runs[0]["id"]) != run_id:
-        raise ValueError(f"release tag {tag} has another dispatch or an unverifiable run history")
+        raise ValueError(f"release tag {tag} has another run or an unverifiable run history")
     releases = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
     if any(release["tag_name"] == tag for page in releases for release in page):
         raise ValueError(f"release tag {tag} already has a draft or published release")

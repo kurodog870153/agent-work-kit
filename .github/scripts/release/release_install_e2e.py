@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -104,8 +105,17 @@ def run_installer(script, home, options=(), answers=None, extra_env=None, stream
     environment.update({"USERPROFILE": str(home), "HOME": str(home), "CI": "true"})
     environment.update(extra_env or {})
     kwargs = {"input": answers.encode("utf-8")} if answers is not None else {"stdin": subprocess.DEVNULL}
-    result = subprocess.run(command, cwd=home, env=environment,
-                            capture_output=not stream_output, timeout=600, **kwargs)
+    started = time.monotonic()
+    print(f"Installer E2E started: {script.name}, case={home.name}", flush=True)
+    try:
+        result = subprocess.run(command, cwd=home, env=environment,
+                                capture_output=not stream_output, timeout=600, **kwargs)
+    except BaseException as error:
+        print(f"Installer E2E interrupted: {script.name}, case={home.name}, "
+              f"elapsed={time.monotonic() - started:.1f}s, reason={type(error).__name__}", flush=True)
+        raise
+    print(f"Installer E2E finished: {script.name}, case={home.name}, "
+          f"elapsed={time.monotonic() - started:.1f}s, exit={result.returncode}", flush=True)
     return result.returncode, result.stdout, result.stderr
 
 

@@ -1,0 +1,12 @@
+name: verify Windows batch line endings
+description: Check checkout CRLF conversion for the release installers
+runs:
+  using: composite
+  steps:
+    - name: Verify batch line endings
+      shell: pwsh
+      run: |
+        foreach ($path in @('os-scripts/windows/install-work-from-package.bat', 'os-scripts/windows/install-work-from-source.bat', 'os-scripts/windows/install-work-from-github-release.bat')) {
+          $entry = git ls-files --eol -- $path
+          if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
+        }

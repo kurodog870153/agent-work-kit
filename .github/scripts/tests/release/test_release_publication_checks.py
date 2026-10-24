@@ -33,12 +33,13 @@ class ReleaseGateTests(unittest.TestCase):
     def test_forward_only_blocks_reruns_redispatch_and_drafts(self):
         sha = "a" * 40
         run = {"id": 42, "head_sha": sha}
-        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]):
+        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]) as api:
             check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
+        self.assertIn("event=push", api.call_args_list[0].args[0])
         with self.assertRaisesRegex(ValueError, "rerun"):
             check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "2")
         with patch("release_publication_checks.api", return_value=[{"workflow_runs": [run, dict(run, id=41)]}]):
-            with self.assertRaisesRegex(ValueError, "another dispatch"):
+            with self.assertRaisesRegex(ValueError, "another run"):
                 check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
         for draft in (True, False):
             with self.subTest(draft=draft), patch("release_publication_checks.api", side_effect=[
@@ -57,7 +58,7 @@ class ReleaseGateTests(unittest.TestCase):
                 def api(path, *_):
                     return [{"workflow_runs": [previous, current]}] if "/runs?" in path else [[]]
                 with patch("release_publication_checks.api", side_effect=api):
-                    with self.assertRaisesRegex(ValueError, "another dispatch"):
+                    with self.assertRaisesRegex(ValueError, "another run"):
                         check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
 
     def test_failed_version_is_not_reused_as_next_version(self):
@@ -69,7 +70,7 @@ class ReleaseGateTests(unittest.TestCase):
                 return [{"workflow_runs": [old_run if "head_sha=" + old_sha in path else new_run]}]
             return [[]]
         with patch("release_publication_checks.api", side_effect=api):
-            with self.assertRaisesRegex(ValueError, "another dispatch"):
+            with self.assertRaisesRegex(ValueError, "another run"):
                 check_first_publish_attempt("owner/repo", "v1.2.3", old_sha, "42", "1")
             check_first_publish_attempt("owner/repo", "v1.2.4", new_sha, "42", "1")
 

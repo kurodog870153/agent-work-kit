@@ -14,8 +14,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
       - name: Check workflow YAML syntax
-        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { |path| YAML.parse_file(path) }'
+        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { YAML.parse_file(it) }'
       - name: Check approved workflow actions
         run: python3 -B .github/scripts/release/check_workflow_actions.py
       - name: Test release scripts
@@ -34,9 +37,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Select Rust toolchain
-        run: |
-          toolchain="$(python3 -B .github/scripts/release/rust_toolchain.py --target aarch64-apple-darwin)"
-          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+        uses: ./.github/actions/select-release-rust-toolchain
+        with:
+          target: aarch64-apple-darwin
       - name: Require native ARM64 runner
         run: test "$(uname -m)" = arm64 && test "$RUNNER_ARCH" = ARM64
       - name: Verify native macOS installation lock
@@ -69,6 +72,11 @@ jobs:
           name: pr-release-macos-arm64
           path: dist/*.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums-pr-release-macos-arm64
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
 
   build-and-verify-windows-package:
     name: build and verify Windows package
@@ -83,10 +91,9 @@ jobs:
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: "false"
       - name: Select Rust toolchain
-        run: |
-          $toolchain = python -B .github/scripts/release/rust_toolchain.py --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "RUSTUP_TOOLCHAIN=$toolchain" | Out-File -FilePath $env:GITHUB_ENV -Append
+        uses: ./.github/actions/select-release-rust-toolchain
+        with:
+          target: x86_64-pc-windows-msvc
       - name: Require native x64 runner
         run: |
           if ($env:RUNNER_ARCH -ne 'X64' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Expected Windows x64 runner' }
@@ -107,11 +114,7 @@ jobs:
           powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_transaction.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify batch line endings
-        run: |
-          foreach ($path in @('os-scripts/windows/install-work-from-package.bat', 'os-scripts/windows/install-work-from-source.bat', 'os-scripts/windows/install-work-from-github-release.bat')) {
-            $entry = git ls-files --eol -- $path
-            if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
-          }
+        uses: ./.github/actions/verify-windows-batch-line-endings
       - name: Install Rust toolchain
         run: rustup toolchain install $env:RUSTUP_TOOLCHAIN
       - name: Build native release binary
@@ -134,72 +137,57 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $zip`n")
           python -B .github/scripts/release/release_downloader_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
-          New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
-          try {
-            $active = Get-NetFirewallRule -Name $rule -ErrorAction Stop
-            if ($active.Enabled -ne 'True' -or $active.Action -ne 'Block') { throw 'Network isolation rule is inactive' }
-            python -B .github/scripts/release/release_install_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          } finally {
-            Remove-NetFirewallRule -Name $rule -ErrorAction Stop
-            for ($attempt = 1; $attempt -le 10; $attempt++) {
-              if (-not (Get-NetFirewallRule -PolicyStore ActiveStore -Name $rule -ErrorAction SilentlyContinue)) { break }
-              if ($attempt -eq 10) { throw 'Network isolation rule is still active' }
-              Start-Sleep -Seconds 1
-            }
-            Clear-DnsClientCache
-          }
-      - name: Wait for artifact network after Windows isolation
-        run: |
-          $artifactHost = 'results-receiver.actions.githubusercontent.com'
-          for ($attempt = 1; $attempt -le 12; $attempt++) {
-            try {
-              Clear-DnsClientCache
-              $addresses = [System.Net.Dns]::GetHostAddresses($artifactHost)
-              if ($addresses.Count -eq 0) { throw 'Artifact host has no DNS address' }
-              $client = [System.Net.Sockets.TcpClient]::new()
-              try {
-                if (-not $client.ConnectAsync($artifactHost, 443).Wait(5000)) { throw 'Artifact host is unreachable' }
-              } finally {
-                $client.Dispose()
-              }
-              break
-            } catch {
-              if ($attempt -eq 12) { throw "Artifact network did not recover: $_" }
-              Start-Sleep -Seconds 5
-            }
-          }
+      - name: Verify Windows release installation and restore artifact network
+        uses: ./.github/actions/verify-windows-release-install
       - uses: actions/upload-artifact@v7
         with:
           name: pr-release-windows-x64-msvc
           path: dist/*.zip
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: checksums-pr-release-windows-x64-msvc
+          path: dist/SHA256SUMS.txt
+          if-no-files-found: error
 
-  verify-release-package-checksums:
-    name: verify release package checksums
-    needs: [build-and-verify-macos-package, build-and-verify-windows-package]
+  verify-macos-release-package-checksums:
+    name: verify macOS release package checksums
+    needs: build-and-verify-macos-package
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - uses: ./.github/actions/verify-release-package-checksums
         with:
-          pattern: pr-release-*
-          path: dist
-          merge-multiple: true
-      - name: Verify both ZIPs and outer checksums
-        run: |
-          python3 .github/scripts/release/release_package.py downloaders --output dist
-          python3 .github/scripts/release/release_package.py checksums --output dist
-          cd dist
-          sha256sum --check SHA256SUMS.txt
+          platform: macos-arm64
+          package-artifact: pr-release-macos-arm64
+          checksum-artifact: checksums-pr-release-macos-arm64
+
+  verify-windows-release-package-checksums:
+    name: verify Windows release package checksums
+    needs: build-and-verify-windows-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/verify-release-package-checksums
+        with:
+          platform: windows-x64-msvc
+          package-artifact: pr-release-windows-x64-msvc
+          checksum-artifact: checksums-pr-release-windows-x64-msvc
 
   confirm-release-validation:
     name: confirm release validation
     if: always()
-    needs: [validate-release-preflight, build-and-verify-macos-package, build-and-verify-windows-package, verify-release-package-checksums]
+    needs: [validate-release-preflight, build-and-verify-macos-package, build-and-verify-windows-package, verify-macos-release-package-checksums, verify-windows-release-package-checksums]
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check to pass
@@ -207,9 +195,10 @@ jobs:
           PREFLIGHT: ${{ needs.validate-release-preflight.result }}
           MACOS: ${{ needs.build-and-verify-macos-package.result }}
           WINDOWS: ${{ needs.build-and-verify-windows-package.result }}
-          CHECKSUMS: ${{ needs.verify-release-package-checksums.result }}
+          MACOS_CHECKSUMS: ${{ needs.verify-macos-release-package-checksums.result }}
+          WINDOWS_CHECKSUMS: ${{ needs.verify-windows-release-package-checksums.result }}
         run: |
-          for result in "$PREFLIGHT" "$MACOS" "$WINDOWS" "$CHECKSUMS"; do
+          for result in "$PREFLIGHT" "$MACOS" "$WINDOWS" "$MACOS_CHECKSUMS" "$WINDOWS_CHECKSUMS"; do
             if [[ "$result" != success ]]; then
               echo "A release check did not pass: $result"
               exit 1

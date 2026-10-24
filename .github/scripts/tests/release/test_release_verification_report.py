@@ -47,7 +47,10 @@ class ReleaseVerificationReportTests(unittest.TestCase):
                 (expected / name).write_bytes(name.encode())
                 (actual / name).write_bytes(name.encode())
 
+            commands = []
+
             def runner(command, **_kwargs):
+                commands.append(command)
                 return type("Result", (), {"returncode": 0, "stderr": "", "stdout": ""})()
 
             def fetcher(request, timeout):
@@ -60,6 +63,10 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             self.assertEqual(required_checks("1.2.3"),
                              {(item["check"], item["asset"]) for item in checks})
             self.assertTrue(all(item["status"] == "success" for item in checks))
+            attestations = [command for command in commands if command[:3] == ["gh", "attestation", "verify"]]
+            self.assertEqual(len(attestations), 5)
+            self.assertTrue(all(command[command.index("--source-ref") + 1] == "refs/heads/main"
+                                for command in attestations))
             (actual / "install-work-from-github-release.command").unlink()
             checks = verify("1.2.3", "owner/repo", "v1.2.3", "a" * 40,
                             manifest, expected, actual, runner, fetcher)
