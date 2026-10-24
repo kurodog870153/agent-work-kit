@@ -23,13 +23,13 @@ function Get-InstallerGlobalAgentsPlan {
         [bool] $NonInteractive,
         [bool] $Confirmed
     )
-    if (-not $Enabled) { return [pscustomobject]@{ Action = 'skip'; SourceSha256 = ''; TargetSha256 = ''; Diff = @() } }
+    if (-not $Enabled) { return [pscustomobject]@{ Action = 'skip'; SourceSha256 = ''; TargetSha256 = '' } }
     if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) { throw "Global AGENTS source does not exist: $Source" }
     $sourceItem = Get-Item -LiteralPath $Source -Force
     if (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Global AGENTS source is a link' }
     $sourceHash = Get-InstallerFileSha256 -Path $Source
     if (-not (Test-Path -LiteralPath $Target)) {
-        return [pscustomobject]@{ Action = 'install'; SourceSha256 = $sourceHash; TargetSha256 = ''; Diff = @() }
+        return [pscustomobject]@{ Action = 'install'; SourceSha256 = $sourceHash; TargetSha256 = '' }
     }
     $targetItem = Get-Item -LiteralPath $Target -Force
     if ($targetItem.PSIsContainer -or ($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -37,14 +37,9 @@ function Get-InstallerGlobalAgentsPlan {
     }
     $targetHash = Get-InstallerFileSha256 -Path $Target
     if ($sourceHash -ceq $targetHash) {
-        return [pscustomobject]@{ Action = 'unchanged'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash; Diff = @() }
+        return [pscustomobject]@{ Action = 'unchanged'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
     }
-    $oldLines = @(Get-Content -LiteralPath $Target -Encoding UTF8)
-    $newLines = @(Get-Content -LiteralPath $Source -Encoding UTF8)
-    $diff = @(Compare-Object -ReferenceObject $oldLines -DifferenceObject $newLines | Select-Object -First 100 | ForEach-Object {
-        if ($_.SideIndicator -eq '<=') { '- ' + $_.InputObject } else { '+ ' + $_.InputObject }
-    })
     if ($NonInteractive) { throw 'Global AGENTS differs and requires interactive confirmation' }
     $action = if ($Confirmed) { 'replace' } else { 'confirm' }
-    return [pscustomobject]@{ Action = $action; SourceSha256 = $sourceHash; TargetSha256 = $targetHash; Diff = $diff }
+    return [pscustomobject]@{ Action = $action; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
 }

@@ -119,8 +119,36 @@ function Invoke-InstallerCore {
     param($sourceWork, $cli, $Root, $Mode, $stateTemplatePath)
     $defaultTarget = Join-Path $env:USERPROFILE '.agents/skills/work'
     $targetInput = if ($null -ne $cli.WorkInstallDir) { $cli.WorkInstallDir } else { $defaultTarget }
+    $defaultGlobalDirectory = Join-Path $env:USERPROFILE '.codex'
+    $interactiveGlobalDirectory = $null
+    if (-not $cli.NonInteractive) {
+        if ($null -eq $cli.GlobalAgents) {
+            $initialTarget = [IO.Path]::GetFullPath($targetInput)
+            $initialStatePath = Join-Path $initialTarget 'install-state.json'
+            $initialRaw = if ((Test-InstallerDirectoryPathSafe -Path $initialTarget) -and
+                (Test-Path -LiteralPath $initialStatePath -PathType Leaf) -and
+                (((Get-Item -LiteralPath $initialStatePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)) {
+                [IO.File]::ReadAllText($initialStatePath)
+            } else { '' }
+            $initialSettings = Resolve-InstallerSettings -Raw $initialRaw -InstallDir $initialTarget
+            $choice = Read-InstallerChoice -Prompt 'Install Global AGENTS.md? (y/n)' -Default $(if ($initialSettings.GlobalAgents) { 'y' } else { 'n' })
+            if ($choice -notin @('y', 'n')) { throw 'invalid Global AGENTS selection' }
+            $cli.GlobalAgents = $choice -eq 'y'
+        }
+        if ($cli.GlobalAgents -and $null -eq $cli.GlobalAgentsInstallDir) {
+            $choice = Read-InstallerChoice -Prompt "Global AGENTS directory: 1) default ($defaultGlobalDirectory), 2) custom" -Default '1'
+            switch ($choice) {
+                '1' { $interactiveGlobalDirectory = $defaultGlobalDirectory }
+                '2' {
+                    $interactiveGlobalDirectory = Read-InstallerChoice -Prompt 'Custom Global AGENTS directory' -Default ''
+                    if ([string]::IsNullOrWhiteSpace($interactiveGlobalDirectory)) { throw 'Global AGENTS directory cannot be empty' }
+                }
+                default { throw 'invalid Global AGENTS directory choice' }
+            }
+        }
+    }
     if ($null -eq $cli.WorkInstallDir -and -not $cli.NonInteractive) {
-        $choice = Read-InstallerChoice -Prompt 'Work directory: 1) default, 2) custom' -Default '1'
+        $choice = Read-InstallerChoice -Prompt "Work directory: 1) default ($defaultTarget), 2) custom" -Default '1'
         switch ($choice) {
             '1' { $targetInput = $defaultTarget }
             '2' {
@@ -182,32 +210,18 @@ function Invoke-InstallerCore {
     }
     if (-not $cli.NonInteractive) {
         if ($null -eq $cli.Skills) {
+            Write-Output "Available Skills: $(@(Get-InstallerAvailableSkills -SourceWork $sourceWork) -join ',')"
             $selection = Read-InstallerChoice -Prompt 'Skills (general, all, or comma-separated IDs)' -Default ($skills -join ',')
             if (-not (Test-InstallerSkillSelection -Value $selection -SourceWork $sourceWork)) { throw 'invalid interactive Skill selection' }
             $skills = @(Get-InstallerExpandedSkills -Selection $selection)
-        }
-        if ($null -eq $cli.GlobalAgents) {
-            $choice = Read-InstallerChoice -Prompt 'Install Global AGENTS.md? (y/n)' -Default $(if ($globalEnabled) { 'y' } else { 'n' })
-            if ($choice -notin @('y', 'n')) { throw 'invalid Global AGENTS selection' }
-            $globalEnabled = $choice -eq 'y'
         }
     }
     $globalDirectoryInput = if ($null -ne $cli.GlobalAgentsInstallDir) {
         $cli.GlobalAgentsInstallDir
     } elseif ($globalEnabled -and $null -ne $settings.GlobalAgentsDir) {
         $settings.GlobalAgentsDir
-    } else { Join-Path $env:USERPROFILE '.codex' }
-    if ($globalEnabled -and $null -eq $cli.GlobalAgentsInstallDir -and -not $cli.NonInteractive) {
-        $choice = Read-InstallerChoice -Prompt 'Global AGENTS directory: 1) current/default, 2) custom' -Default '1'
-        switch ($choice) {
-            '1' { }
-            '2' {
-                $globalDirectoryInput = Read-InstallerChoice -Prompt 'Custom Global AGENTS directory' -Default ''
-                if ([string]::IsNullOrWhiteSpace($globalDirectoryInput)) { throw 'Global AGENTS directory cannot be empty' }
-            }
-            default { throw 'invalid Global AGENTS directory choice' }
-        }
-    }
+    } else { $defaultGlobalDirectory }
+    if ($null -ne $interactiveGlobalDirectory) { $globalDirectoryInput = $interactiveGlobalDirectory }
     $globalDirectory = $globalDirectoryInput
     if ($globalEnabled) {
         try { $globalDirectory = [IO.Path]::GetFullPath($globalDirectoryInput) }
@@ -246,8 +260,7 @@ function Invoke-InstallerCore {
     $globalTarget = Join-Path $globalDirectory 'AGENTS.md'
     $plan = Get-InstallerGlobalAgentsPlan -Source $globalSource -Target $globalTarget -Enabled $globalEnabled -NonInteractive $cli.NonInteractive -Confirmed $false
     if ($plan.Action -eq 'confirm') {
-        Write-Output "Global AGENTS.md differs (current SHA-256 $($plan.TargetSha256), new $($plan.SourceSha256)):"
-        $plan.Diff | Write-Output
+        Write-Output "Global AGENTS.md differs (current SHA-256 $($plan.TargetSha256), new $($plan.SourceSha256))."
         $replace = (Read-InstallerChoice -Prompt 'Replace Global AGENTS.md? (y/n)' -Default 'n') -eq 'y'
         $plan = Get-InstallerGlobalAgentsPlan -Source $globalSource -Target $globalTarget -Enabled $globalEnabled -NonInteractive $false -Confirmed $replace
         if ($plan.Action -eq 'confirm') { $plan.Action = 'skip' }

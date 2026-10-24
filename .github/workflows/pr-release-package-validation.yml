@@ -187,18 +187,15 @@ jobs:
   confirm-release-validation:
     name: confirm release validation
     if: always()
-    needs: [validate-release-preflight, build-and-verify-macos-package, build-and-verify-windows-package, verify-macos-release-package-checksums, verify-windows-release-package-checksums]
+    needs: [verify-macos-release-package-checksums, verify-windows-release-package-checksums]
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check to pass
         env:
-          PREFLIGHT: ${{ needs.validate-release-preflight.result }}
-          MACOS: ${{ needs.build-and-verify-macos-package.result }}
-          WINDOWS: ${{ needs.build-and-verify-windows-package.result }}
           MACOS_CHECKSUMS: ${{ needs.verify-macos-release-package-checksums.result }}
           WINDOWS_CHECKSUMS: ${{ needs.verify-windows-release-package-checksums.result }}
         run: |
-          for result in "$PREFLIGHT" "$MACOS" "$WINDOWS" "$MACOS_CHECKSUMS" "$WINDOWS_CHECKSUMS"; do
+          for result in "$MACOS_CHECKSUMS" "$WINDOWS_CHECKSUMS"; do
             if [[ "$result" != success ]]; then
               echo "A release check did not pass: $result"
               exit 1

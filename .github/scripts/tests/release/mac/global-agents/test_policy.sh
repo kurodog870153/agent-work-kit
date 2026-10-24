@@ -17,7 +17,7 @@ installer_global_agents_plan "$source_file" "$target" 1 1 0
 [[ "$installer_global_agents_action" == unchanged ]]
 printf 'old\n' > "$target"
 installer_global_agents_plan "$source_file" "$target" 1 0 0
-[[ "$installer_global_agents_action" == confirm && "$installer_global_agents_diff" == *'-old'* && "$installer_global_agents_diff" == *'+new'* ]]
+[[ "$installer_global_agents_action" == confirm ]]
 installer_global_agents_plan "$source_file" "$target" 1 0 1
 [[ "$installer_global_agents_action" == replace ]]
 if installer_global_agents_plan "$source_file" "$target" 1 1 1; then exit 1; fi
