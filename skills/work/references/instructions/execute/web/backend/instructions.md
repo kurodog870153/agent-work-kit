@@ -1,18 +1,18 @@
 ---
-name: Web 後端任務執行
-description: 執行 Web 後端 TASK 已固定的安全、相容性、韌性、資料與外部操作驗證時使用；純前端工作不適用。
+name: Web backend task execution
+description: Use for TASK-fixed backend security, compatibility, resilience, data and external-operation validation; not applicable to frontend-only work.
 metadata:
-  work-tags:
+  tags:
     - backend
     - server-side
 ---
 
-# Web 後端任務執行指令
+# Web backend task execution
 
-指令邊界：本層只執行後端 TASK 的既定安全、相容性、韌性、資料與外部操作驗證，不重新制定技術契約。
+Instruction boundary: This layer only executes the backend TASK's fixed security, compatibility, resilience, data and external-operation validation; it does not redefine the technical contract.
 
-1. [強制] 執行前確認 TASK 已依實際觸發列入安全、API 相容性、韌性及外部操作 reference；現況顯示適用但 TASK 未列時以規格缺陷停止。
-2. [強制] 依 TASK 與既有工具驗證成功、無效輸入、拒絕、錯誤、一致性、相容性、資源上限與最小營運訊號，只記錄驗收所需證據。
-3. [強制] 外部操作執行前重新確認環境、目標、授權與冪等條件仍成立；部分成功或結果不確定時依 execution records 結案，不得猜測或未授權重送。
-4. [強制] 實際框架、服務、設定或消費者證據與 TASK 不同時停止；Execute 不得升級依賴、加入工具、改變架構或放寬安全控制。
-5. [強制] 執行 Red 前須確認前序最小骨架與目標測試已存在，且命令能通過編譯、載入與初始化到達指定測試；只有 TASK 固定的目標失敗成立時記為 Red 通過，其他失敗依通用錯誤指令處理。
+1. [Required] Before execution, confirm that the TASK includes security, API compatibility, resilience and external-operation references for their actual triggers. Stop for a specification defect when current evidence makes one applicable but the TASK omits it.
+2. [Required] Use the TASK and existing tools to validate success, invalid input, rejection, errors, consistency, compatibility, resource limits and minimum operational signals. Record only evidence needed for acceptance.
+3. [Required] Before an external operation, reconfirm environment, target, authorization and idempotency conditions. Close partial or uncertain results through execution records; do not guess or resubmit without authorization.
+4. [Required] Stop when actual framework, service, configuration or consumer evidence differs from the TASK. Execute must not upgrade dependencies, add tools, change architecture or loosen security controls.
+5. [Required] Before Red, confirm the preceding minimal skeleton and target test exist and that the command can compile, load and initialize far enough to reach the specified test. Count Red as passed only when the TASK-fixed target failure occurs; handle other failures under the general error rules.

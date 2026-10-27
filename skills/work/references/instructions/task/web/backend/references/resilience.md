@@ -1,19 +1,18 @@
 ---
-name: Web 後端韌性參考指令
-description: 規劃遠端呼叫、並行或共享資源的失敗與容量邊界時使用；無此類流程的工作不適用。
-reference-name: task.web.backend.resilience
+name: Web backend resilience guidance
+description: Use when planning failure and capacity boundaries for remote calls, concurrency or shared resources; not applicable without such flows.
 metadata:
-  work-tags:
+  tags:
     - resilience
 ---
 
-# Web 後端韌性參考指令
+# Web backend resilience guidance
 
-1. [強制] 遠端呼叫、背景工作、批次、並行或共享資源流程須固定失敗邊界、最大等待時間、取消／中斷結果、資源上限及部分成功語意；不得使用無限逾時或無界佇列／集合／執行緒成長。
-2. [強制] 逾時須依端到端預算分配至連線、讀寫、取得資源與整體操作；例外值須有環境與負載證據，不得複製任意常數。
-3. [強制] 重試只適用於已確認的暫時性失敗，且操作具冪等性、冪等鍵或安全去重；TASK 須固定最大次數、退避、抖動、總時間、可重試錯誤與停止條件。
-4. [強制] 不得重試驗證錯誤、權限錯誤、確定性業務錯誤或結果不確定且可能已生效的非冪等操作；補償依外部操作 reference 另行授權。
-5. [強制] 連線池、執行緒池、批次、頁面、佇列、訊息、快取與記憶體使用須有可觀察上限及超限結果；背壓、拒絕或降級行為須符合已確認業務成果。
-6. [強制] liveness 只反映程序是否需重新啟動，readiness 反映是否可接收新流量，degraded 反映仍可提供的受限能力；三者不得互相替代或因非必要下游失敗造成錯誤重啟。
-7. [強制] 每個韌性機制只規劃診斷所需的最小日誌、指標或追蹤訊號，至少能區分正常、逾時、重試耗盡、拒絕、降級與恢復，且不得洩漏敏感資料。
-8. [強制] Circuit breaker、bulkhead、排程器或新韌性元件只在專案已存在且適用，或已另行核准時使用；VAL 須直接覆蓋觸發、上限、恢復與不可重試結果。
+1. [Required] Fix failure boundaries, maximum waits, cancellation/interruption outcomes, resource limits and partial-success semantics for remote calls, background work, batches, concurrency or shared resources. Do not use infinite timeouts or unbounded queue, collection or thread growth.
+2. [Required] Allocate timeouts from an end-to-end budget across connection, read/write, resource acquisition and the whole operation. Exceptional values need environment and load evidence; do not copy arbitrary constants.
+3. [Required] Retry only confirmed transient failures when the operation has idempotency, an idempotency key or safe deduplication. The TASK must fix maximum attempts, backoff, jitter, total time, retryable errors and stop conditions.
+4. [Required] Do not retry validation errors, permission errors, deterministic business errors or non-idempotent operations whose outcome is uncertain but may have taken effect. Compensation requires separate authorization under the external-operations Reference.
+5. [Required] Connection/thread pools, batches, pages, queues, messages, caches and memory use need observable limits and over-limit outcomes. Backpressure, rejection or degradation must match confirmed business outcomes.
+6. [Required] Liveness indicates only whether the process needs a restart; readiness indicates whether it can receive new traffic; degraded status indicates limited capability still available. Do not substitute one for another or restart incorrectly for an unnecessary downstream failure.
+7. [Required] Plan only the minimum logs, metrics or traces needed to diagnose each resilience mechanism. Distinguish at least normal operation, timeout, retry exhaustion, rejection, degradation and recovery without leaking sensitive data.
+8. [Required] Use a circuit breaker, bulkhead, scheduler or new resilience component only if it already exists and applies or has separate approval. VAL must directly cover triggering, limits, recovery and nonretryable results.

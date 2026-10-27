@@ -1,19 +1,18 @@
 ---
-name: Web 後端安全參考指令
-description: 規劃 Web 後端信任邊界、授權與敏感資料處理時使用；不涉及後端安全契約的工作不適用。
-reference-name: task.web.backend.security
+name: Web backend security guidance
+description: Use when planning backend trust boundaries, authorization and sensitive-data handling; not applicable without a backend security contract.
 metadata:
-  work-tags:
+  tags:
     - backend-security
 ---
 
-# Web 後端安全參考指令
+# Web backend security guidance
 
-1. [強制] 以信任邊界而非檔案類型觸發安全規劃；TASK 須列出不可信來源、受保護資源、身分來源、允許主體、拒絕結果及稽核需求。
-2. [預設] 新增的非公開端點、操作或資料預設拒絕存取，只有 TASK 明列的主體與條件可放行；公開能力須由使用者明確確認。
-3. [強制] 物件層授權須在可信任且涵蓋完整業務操作的後端責任層執行，並以目前主體及目標物件關係判斷；不得只依 UI 隱藏、路由存在或客戶端提供的擁有者欄位授權。
-4. [強制] Request、反序列化與更新模型採欄位允許清單；不得將未經授權的輸入直接綁定持久化或權限欄位，輸出亦只暴露已核准欄位。
-5. [強制] 輸入驗證須同時固定語法與語意允許範圍，包含長度、數量、深度、大小、分頁、排序、檔案、正規表示式或其他資源消耗上限；動態欄位、路徑、查詢片段與排序只能來自後端允許清單。
-6. [強制] 涉及跨站請求、跨來源、重新導向、檔案、模板、序列化、密碼學或機密時，須依實際框架與威脅固定防護及直接驗證；不得自製密碼演算法或停用既有安全控制以通過測試。
-7. [強制] 認證、授權、拒絕、敏感操作與安全失敗須具有最小必要稽核證據，但不得記錄密碼、權杖、私鑰、完整機密或不必要個資。
-8. [強制] 只使用專案既有安全框架與工具；任何新工具、依賴或外部掃描都須另行確認。影響安全判斷的既有設定與測試證據須展示給使用者確認。
+1. [Required] Trigger security planning by trust boundary, not file type. The TASK must list untrusted sources, protected resources, identity sources, allowed principals, denial outcomes and audit needs.
+2. [Default] Deny access by default to new nonpublic endpoints, operations or data. Allow only principals and conditions listed in the TASK; the user must explicitly confirm public capabilities.
+3. [Required] Enforce object-level authorization in a trusted backend responsibility layer covering the complete business operation, using the current principal's relationship to the target object. UI hiding, route existence or a client-supplied owner field is insufficient.
+4. [Required] Use field allowlists for requests, deserialization and update models. Do not bind unauthorized input directly to persistence or permission fields; expose only approved output fields.
+5. [Required] Fix both syntactic and semantic input allowlists, including limits for length, count, depth, size, pagination, sorting, files, regular expressions and other resource use. Dynamic fields, paths, query fragments and sorts must come from backend allowlists.
+6. [Required] For cross-site requests, cross-origin access, redirects, files, templates, serialization, cryptography or secrets, fix protections and direct validation from the actual framework and threat. Do not invent cryptographic algorithms or disable existing security controls to pass tests.
+7. [Required] Authentication, authorization, denial, sensitive operations and security failures need minimum necessary audit evidence, but must not log passwords, tokens, private keys, full secrets or unnecessary personal data.
+8. [Required] Use only existing project security frameworks and tools. Confirm any new tool, dependency or external scan separately. Show the user existing configuration and test evidence that affects a security decision.

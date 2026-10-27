@@ -1,25 +1,25 @@
-# 指令維護參考指令
+# Instruction maintenance guidance
 
-## 1. Metadata、分類與唯一來源
+## 1. Metadata, classification and ownership
 
-1. [強制] `skills/work/references/instructions/` 內每個 `instructions.md` 與 `references/*.md` 必須以 YAML frontmatter 開頭；節點只包含非空字串 `name`、`description` 與只含 `work-tags` 的 `metadata`，reference 另須有 `reference-name`；`work-tags` 必須是非空、唯一、小寫 kebab-case 字串陣列。
-2. [強制] `description` 須以最短充分文字說明該檔案何時使用及何時不適用；`work-tags` 只保存具辨識力的技術或能力標籤，不重複 hierarchy path。
-3. [強制] instruction catalog 探索只暴露 frontmatter 正規化摘要，不得載入或輸出正文；缺漏、未知欄位、無效 UTF-8、無效 YAML 或無效 tag 均不得進入 catalog。
-4. [強制] 所有規範性編號項目及其巢狀項目都須在正文開頭標示 `[強制]`、`[預設]` 或 `[建議]`；範例、程式碼、模板與純 metadata 不套用強度標籤。
-5. [強制] `[強制]` 表示無例外即停止，`[預設]` 表示證據不足時採用且可經確認偏離，`[建議]` 表示不阻擋但須說明未採用影響。
-6. [強制] Task、Execute 節點正文開頭須以 `指令邊界：` 說明唯一責任；新增指令依架構規範判定歸屬，不得以目前檔案位置作為理由。
+1. [Required] Every `instructions.md` and `references/*.md` under `skills/work/references/instructions/` must begin with YAML frontmatter containing only nonempty string `name` and `description`, and `metadata` containing only `tags`. Tags must be a nonempty array of unique lowercase kebab-case strings.
+2. [Required] The `description` must state when the file applies and does not apply in the shortest sufficient wording. Tags identify distinctive technologies or capabilities and must not repeat the hierarchy path.
+3. [Required] Instruction catalog discovery exposes only normalized frontmatter summaries; it must not load or return body text. Sources with missing or unknown fields, invalid UTF-8, invalid YAML or invalid tags must not enter the catalog.
+4. [Required] Every normative numbered item and nested item must start with `[Required]`, `[Default]` or `[Recommended]`. Examples, code, templates and metadata do not need strength markers.
+5. [Required] `[Required]` requires stopping unless satisfied; `[Default]` applies when evidence is insufficient and may be departed from with confirmation; `[Recommended]` does not block but requires explaining the effect of not following it.
+6. [Required] Task and Execute node bodies must begin with `Instruction boundary:` to state their unique responsibility. Place new rules according to the architecture, not merely the current file location.
 
-## 2. Reference 與重複檢查
+## 2. References and duplicate review
 
-1. [強制] Reference 最多一層，須在 YAML `reference-name` 宣告全專案唯一且與所在模式、節點路徑及檔名一致的階層限定識別碼；父 `instructions.md` 只保留觸發條件、名稱與相對路徑，不建立中央 manifest。
-2. [強制] 完全重複檢查須涵蓋所有指令來源，正規化空白、換行、強度標籤與清單編號後比較規範正文，排除 metadata、範例、程式碼及模板；發現相同正文即阻擋完成。
-3. [強制] 語意相似只產生包含兩個來源與相似理由的警示，由使用者確認保留、合併或區分；不得用模型相似度自動刪除指令。
-4. [強制] 觸及指令時須唯讀核對其官方來源、專案現況與既有子層；可能過時或證據不足時提出證據並取得確認，不得順便更新未觸及指令。
-5. [強制] 指令或 reference 路由變更後須依共用 instruction-loading 重新評估觸發集合、拓撲、實際載入順序與指紋；已有正式 TASK 時，依 `task.general.task-records` 判定 TASK 升版或獨立 `TASK-INSTRUCTION-AUDIT-*`，不得只改 index 雜湊而省略影響證據與使用者確認。
+1. [Required] References are one level deep at most. Their identity comes from the actual mode, node and filename path. A parent `instructions.md` retains only the trigger condition and relative path; do not create a central manifest.
+2. [Required] Exact-duplicate review must cover all instruction sources. Compare normative bodies after normalizing whitespace, line endings, strength markers and list numbers; exclude metadata, examples, code and templates. Identical normative bodies block completion.
+3. [Required] Semantic similarity produces only a warning containing both sources and the reason for similarity. The user decides whether to retain, merge or distinguish them; model similarity must not delete instructions automatically.
+4. [Required] When touching an instruction, read its official source, current project state and existing child layers. If it may be outdated or lacks evidence, present the evidence and obtain confirmation; do not update untouched instructions incidentally.
+5. [Required] After changing an instruction or Reference route, use shared instruction-loading to re-evaluate triggers, topology, actual load order and fingerprints. For an existing formal TASK, use `task.general.task-records` to determine a TASK revision or separate `TASK-INSTRUCTION-AUDIT-*`; do not change only the index hash without impact evidence and user confirmation.
 
-## 3. 寫法與體積
+## 3. Wording and size
 
-1. [強制] 指令優先採「觸發條件、要求、例外、驗證」的最短充分表述；只有能消除實際歧義時才保留最小範例。
-2. [強制] 指令描述能力、輸入與可觀察結果，不固定作業系統、Shell、命令或工具；正式 TASK 可依實際環境固定本次操作。
-3. [強制] `instructions.md` 只保存跨版本穩定原則；版本與當次技術結論由 TASK 依官方來源記錄，不在 instructions 維護 changelog 或版本矩陣。
-4. [建議] 每次指令維護回報全體字元量與受影響載入鏈字元量；字元目標用於改善判斷，不作犧牲必要語意的硬性門檻。
+1. [Required] Prefer the shortest sufficient wording for trigger, requirement, exception and validation. Keep a minimal example only when it resolves a real ambiguity.
+2. [Required] Describe capabilities, inputs and observable results without fixing an operating system, shell, command or tool. A formal TASK may fix the current operation from actual environment evidence.
+3. [Required] Keep only principles stable across versions in `instructions.md`. The TASK records version and current technical conclusions from official sources; do not maintain a changelog or version matrix in instructions.
+4. [Recommended] Report the total character count and the affected loading-chain character count for each instruction maintenance change. Use character targets to improve judgment, not as a hard limit that sacrifices necessary meaning.

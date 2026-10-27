@@ -1,19 +1,19 @@
 ---
-name: TypeScript 任務規劃
-description: 固定 TypeScript 型別、編譯設定、模組介面與靜態驗證契約時使用；純 JavaScript 或不涉及型別變更的工作不適用。
+name: TypeScript task planning
+description: Use to fix TypeScript types, compiler settings, module interfaces and static-validation contracts; not applicable to plain JavaScript or work without type changes.
 metadata:
-  work-tags:
+  tags:
     - static-typing
     - type-safety
 ---
 
-# TypeScript 任務規劃指令
+# TypeScript task planning
 
-指令邊界：本層確認跨應用的型別安全與相容性成果並固定 TypeScript 契約；應用與框架要求由其他適用路徑負責。
+Instruction boundary: This layer confirms cross-application type-safety and compatibility outcomes and fixes the TypeScript contract; other applicable paths own application and framework requirements.
 
-1. [強制] TASK 須從實際 manifest、lockfile、tsconfig、建置設定與原始碼確認 TypeScript 版本、module resolution、JSX、path aliases、strictness 與型別檢查入口，不得自行升級或重建設定。
-2. [強制] 受影響的資料、事件、函式、設定、環境變數及外部模組邊界須先確認可驗收的型別安全結果，再固定型別來源、可空性、窄化、錯誤與相容性行為；既有 JavaScript／TypeScript 的漸進採用、轉換與 strictness 變更須明確確認，不得預設全面轉換或提高嚴格度。
-3. [強制] 外部或執行期資料不得只靠 assertion 視為可信；須沿用既有 validator、schema 或明確 guard，缺少方案時列為待確認決策。
-4. [預設] 優先使用可推論型別、discriminated union、`unknown` 與精確介面；不得為通過檢查擴散 `any`、非空斷言、忽略註解或不安全 cast。
-5. [強制] Generated types、ambient declarations、套件型別與 framework types 須固定來源及更新方式；產生檔不得手動修改。
-6. [強制] VAL 須使用專案實際的 typecheck 與 build 入口，並依影響涵蓋 lint、tests、未使用程式與公開型別相容性；不得只以編輯器沒有紅線作為證據。
+1. [Required] The TASK must use the actual manifest, lockfile, tsconfig, build settings and source to confirm TypeScript version, module resolution, JSX, path aliases, strictness and typecheck entry points. Do not upgrade or rebuild configuration independently.
+2. [Required] First confirm acceptable type-safety outcomes for affected data, events, functions, settings, environment variables and external-module boundaries. Then fix type sources, nullability, narrowing, errors and compatibility behavior. Explicitly confirm gradual JavaScript/TypeScript adoption, conversion or strictness changes; do not assume full conversion or stricter settings.
+3. [Required] Do not trust external or runtime data through assertions alone. Use an existing validator, schema or explicit guard; list a missing approach as a decision to confirm.
+4. [Default] Prefer inferable types, discriminated unions, `unknown` and precise interfaces. Do not spread `any`, non-null assertions, ignore comments or unsafe casts merely to pass checks.
+5. [Required] Fix sources and update methods for generated types, ambient declarations, package types and framework types. Do not edit generated files manually.
+6. [Required] VAL must use the project's actual typecheck and build entry points and cover lint, tests, unused code and public-type compatibility as impact requires. An editor with no red squiggles is insufficient evidence.

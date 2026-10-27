@@ -1,14 +1,14 @@
 ---
-name: Java Spring Boot 任務執行
-description: 執行已固定的 Spring Boot 或 Spring MVC 契約時使用；非 Spring 工作不適用。
+name: Java Spring Boot task execution
+description: Use when executing a fixed Spring Boot or Spring MVC contract; not applicable to non-Spring work.
 metadata:
-  work-tags:
+  tags:
     - spring
     - spring-boot
 ---
 
-# Java Spring Boot 任務執行指令
+# Java Spring Boot task execution
 
-指令邊界：本層只執行 TASK 已固定的 Spring Boot／Spring MVC 契約，不新增框架決策。
+Instruction boundary: This layer only executes the TASK-fixed Spring Boot/Spring MVC contract; it makes no new framework decisions.
 
-1. [強制] 執行前核對實際 Spring Boot、Spring MVC 與受影響入口符合 TASK；不一致時記錄證據並以規格缺陷停止。
+1. [Required] Before execution, verify that the actual Spring Boot, Spring MVC and affected entry points match the TASK. Record evidence and stop for a specification defect if they do not.

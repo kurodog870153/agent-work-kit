@@ -28,8 +28,8 @@ installer_recognize_legacy_work() {
     grep -q '^  display_name: "Work"$' "$target/agents/openai.yaml" || return 1
     grep -q '^# Work Instruction Loading Bootstrap$' "$target/references/instruction-loading.md" || return 1
     grep -q '^# Invocation contract$' "$target/references/instruction-loading/invocation.md" || return 1
-    grep -q '^# 任務規劃指令$' "$target/references/instructions/task/general/instructions.md" || return 1
-    grep -q '^# 任務執行指令$' "$target/references/instructions/execute/general/instructions.md" || return 1
+    grep -Eq '^# (任務規劃指令|Task planning)$' "$target/references/instructions/task/general/instructions.md" || return 1
+    grep -Eq '^# (任務執行指令|Task execution)$' "$target/references/instructions/execute/general/instructions.md" || return 1
 }
 
 installer_inspect_target() {

@@ -1,49 +1,57 @@
 ---
-name: Web 後端任務規劃
-description: 固定 Web 後端架構、入口、資料、安全性、韌性、外部操作與驗證契約時使用；純前端工作不適用。
+name: Web backend task planning
+description: Use to fix backend architecture, entry points, data, security, resilience, external operations and validation contracts; not applicable to frontend-only work.
 metadata:
-  work-tags:
+  tags:
     - backend
     - server-side
 ---
 
-# Web 後端任務規劃指令
+# Web backend task planning
 
-指令邊界：本層確認後端業務成果、資料責任與可觀察失敗，再依專案證據固定共通技術契約；Java、JPA、MyBatis 等技術專屬指令由更接近的 Task 層負責，Execute 只執行已確定內容。
+Instruction boundary: This layer confirms backend business outcomes, data responsibilities and observable failures, then fixes common technical contracts from project evidence. Closer Task layers own Java, JPA, MyBatis and other technology-specific rules; Execute only performs settled work.
 
-## 1. Reference 路由
+## 1. Reference routing
 
-1. [強制] TASK 新增或修改信任邊界、身分、權限、敏感資料或不可信輸入時，載入 `task.web.backend.security`（`references/security.md`）。
-2. [強制] TASK 新增、修改或移除既有消費者可見的 API、事件、資料或錯誤契約時，載入 `task.web.backend.api-compatibility`（`references/api-compatibility.md`）。
-3. [強制] TASK 涉及遠端呼叫、逾時、重試、佇列、排程、批次、並行、資源池、健康狀態或降級時，載入 `task.web.backend.resilience`（`references/resilience.md`）。
-4. [強制] 同一觸發可能載入多個 reference；正式 TASK 的 `instruction_selection.references` 須記錄實際適用名稱，不得複製 reference 正文。
+1. [Required] Load the Web backend References below when their TASK conditions apply; one TASK may match several rows.
+2. [Required] Derive selected Reference logical names from their actual paths; do not load unselected Reference bodies.
+3. [Required] Re-evaluate the actually applicable Reference set and fingerprint when conditions change.
+4. [Required] One trigger may load several References. The formal TASK's `instruction_selection.references` records applicable names without copying Reference bodies.
 
-## 2. 專案證據與架構
+## 2. Project evidence and architecture
 
-1. [強制] TASK 核准前須唯讀確認目標模組、既有架構、公開邊界、框架與實際版本、資料責任、錯誤處理、驗證入口及受影響消費者；影響決策的證據須由使用者確認。
-2. [強制] 架構沿用專案既有責任邊界，不預設 Controller／Service／Persistence Service／Repository 四層；新增層級、跨層存取或架構遷移須有已確認原因、範圍與驗證。
-3. [強制] 版本結論須記錄於 TASK 並以官方來源或專案鎖定資料支持；instructions 不保存版本矩陣，Execute 不得自行升級、降級或補依賴。
-4. [強制] 只使用專案既有且適用的建置、測試、靜態分析與安全工具；新增依賴、服務、外掛或工具須成為已確認 TASK 內容。
-5. [強制] 核准前須逐項確認預計建立、修改或移動的路徑，以及步驟引用的類別、方法、設定與測試實際存在或由本 TASK 在使用前建立；須以目標模組相鄰同類實作確認套件／目錄、命名、分層及測試位置，並核對引用符號的位置、簽章、可見性與責任。符合既有結構的新路徑可列入 TASK，錯誤或衝突的路徑、符號與責任假設不得核准或留給 Execute 修正。
+1. [Required] Before TASK approval, read-only check the target module, existing architecture, public boundaries, actual framework/version, data responsibilities, error handling, validation entry points and affected consumers. The user must confirm evidence that affects decisions.
+2. [Required] Follow existing project responsibility boundaries; do not assume a four-layer Controller/Service/Persistence Service/Repository architecture. A new layer, cross-layer access or architecture migration needs a confirmed reason, scope and validation.
+3. [Required] Record version conclusions in the TASK with official sources or project-locked data. Instructions do not hold a version matrix; Execute must not upgrade, downgrade or add dependencies independently.
+4. [Required] Use only existing applicable project build, test, static-analysis and security tools. A new dependency, service, plugin or tool must be confirmed TASK content.
+5. [Required] Before approval, check every path to create, modify or move and whether classes, methods, settings and tests cited by steps already exist or will be created by this TASK before use. Use adjacent comparable implementation in the target module to confirm package/directory, naming, layering and test placement. Check each referenced symbol's location, signature, visibility and responsibility. A new path consistent with existing structure may enter the TASK; incorrect or conflicting path, symbol and responsibility assumptions must not be approved or left for Execute to fix.
 
-## 3. 後端契約
+## 3. Backend contract
 
-1. [強制] 每個入口須先確認業務成果、資料生命週期、完成後狀態、信任邊界與消費者的輸入／輸出語意，再依專案證據固定輸入、輸出、錯誤、授權、交易或一致性邊界、冪等語意、資源上限及可觀察結果；不適用項目省略，不得填入空泛占位符。schema、資料庫欄位與 HTTP 技術欄位不得由成果限制直接推定。
-2. [強制] 例外與錯誤回應須固定分類、對外資訊、內部原因保存及敏感資訊遮蔽；不得把堆疊、SQL、機密或內部識別直接暴露給消費者。
-3. [強制] 涉及資料變更或外部操作時，先確認原子性、可接受的部分成功、不確定結果及可觀察的補救成果，再套用 `task.general.external-operations`；既有資料或外部整合須確認允許與禁止的相容性及 migration 結果。資料庫特定或需實際外部環境的驗證須主動提出證據、風險與副作用並取得使用者授權。
-4. [強制] TASK 須固定完成成果所需的最小日誌、指標或追蹤訊號及其敏感資料處理；不得為套用指令引入新的可觀察性服務。
-5. [強制] VAL 須依受影響邊界涵蓋成功、無效輸入、權限、失敗、一致性、相容性與資源限制；無法驗證的環境特有行為須列為剩餘風險。
-6. [強制] 涉及 Web 綁定、驗證或錯誤回應時，須追蹤實際 `請求 → 綁定／驗證 → 例外型別 → handler → HTTP 狀態與內容`；契約改變時將必要 handler 與測試納入 TASK，不得依名稱相似推測結果。
-7. [強制] 前項須核對 Controller 參數與驗證註解、advice／handler、例外繼承與匹配條件，以及直接覆蓋該路徑的既有測試；HTTP 狀態、錯誤碼及回應結構須與實際處理路徑一致。需求要改變行為時，須列入必要修改檔案並規劃能區分前後行為的 Red 與 Green VAL；無法唯讀確認 handler 選擇或回應時維持草案。
+1. [Required] For each entry point, first confirm business outcomes, data lifecycle, post-completion state, trust boundaries and consumer input/output semantics. Then use project evidence to fix inputs, outputs, errors, authorization, transaction or consistency boundaries, idempotency, resource limits and observable results. Omit inapplicable items; do not insert vague placeholders. Do not infer schema, database columns or HTTP technical fields directly from outcome constraints.
+2. [Required] Fix exception and error-response categories, external information, retention of internal causes and masking of sensitive data. Do not expose stack traces, SQL, secrets or internal identifiers directly to consumers.
+3. [Required] For data changes or external operations, first confirm atomicity, acceptable partial success, uncertain outcomes and observable remediation results; then apply `task.general.external-operations`. Confirm allowed and prohibited compatibility and migration outcomes for existing data or integrations. Proactively present evidence, risks and side effects and obtain user authorization for database-specific or real external-environment validation.
+4. [Required] The TASK must fix the minimum logs, metrics or traces needed to observe the outcome and how they handle sensitive data. Do not introduce a new observability service merely to apply instructions.
+5. [Required] VAL must cover success, invalid input, permission, failure, consistency, compatibility and resource limits at affected boundaries. List environment-specific behavior that cannot be verified as remaining risk.
+6. [Required] For Web binding, validation or error responses, trace the actual `request → binding/validation → exception type → handler → HTTP status and body` path. When the contract changes, include necessary handlers and tests in the TASK; do not infer results from similar names.
+7. [Required] Check Controller parameters and validation annotations, advice/handlers, exception inheritance and matching conditions, and existing tests directly covering that path. HTTP status, error code and response shape must match actual handling. If the requirement changes behavior, list necessary files and plan Red and Green VAL that distinguish old and new behavior. Keep the TASK as a draft if handler selection or response cannot be confirmed read-only.
 
-## 4. Red／Green 與外部驗證
+## 4. Red/Green and external validation
 
-1. [預設] 可自動化行為變更採 Red／Green；Red 與 Green 使用獨立 VAL 且可共用 CMD，Green 後是否 Refactor 依適用的技術指令判定。首個需要該測試的 TASK 須同時包含測試與到達測試所需的最小可編譯骨架，測試只能來自目前基線、明確相依的前序 TASK 或目前 TASK，不得由後序 TASK 回補。
-2. [強制] Red 的通過條件須到達指定測試並因目標行為尚未實作而出現唯一預期失敗；正式碼／測試碼編譯、框架啟動、fixture、setup 或無關測試失敗都不是有效 Red。
-3. [強制] TASK 完成時全部適用驗證必須通過，不得排除、停用、替換或延後必要測試；Green 後是否 Refactor 依適用的技術指令判定。
-4. [強制] 關聯式資料庫、Redis、訊息系統及外部 API 等連線驗證只有經 TASK 或使用者明確授權才是完成條件；未授權時使用既有不連線驗證並列出尚未確認的外部行為與風險，不得把 mock 或建置成功宣稱為外部證據。
-5. [強制] Red 須固定目標測試類、專案相對路徑、所屬模組與來源；目標測試引用的類別、介面、方法、錯誤碼及設定須由基線、前序 TASK，或本 TASK 在測試前建立的不含目標行為之最小可編譯骨架提供。
-6. [強制] 本 TASK 新增目標測試時，步驟依序建立全部最小可編譯骨架、建立測試、再執行 Red CMD；測試不存在或不可編譯時執行的基線命令不得記為 Red。
-7. [強制] Red CMD 到達目標測試前會編譯、載入或初始化的正式碼、測試碼、產生碼、設定與資源均屬前置閉包；須依實際模組、reactor、project 與測試範圍追蹤新增、移除、重新命名或簽章／契約變更的全部受影響引用，並在 Red 前更新或提供相容骨架。
-8. [強制] Red 通過條件須明列到達目標測試前必須成功的階段及預期失敗的測試、斷言或行為；編譯、框架啟動、fixture／setup 或無關測試失敗不得視為 Red。任一來源、前置、檔案操作或順序不能確認時維持草案。
-9. [強制] 可重現的相關測試放入實作 TASK；需要特定本機檔案的完整回歸另建具明確前置條件的驗證 TASK。只列適用測試，高影響測試省略且原因不明顯時須說明原因。
+1. [Default] Use Red/Green for automatable behavior changes. Red and Green have separate VAL and may share CMD; applicable technical instructions decide whether to Refactor after Green. The first TASK needing a test must include that test and the minimum compilable skeleton needed to reach it. Tests may come only from the current baseline, explicitly dependent earlier TASKs or the current TASK, never be backfilled by a later TASK.
+2. [Required] Red passes only when the specified test is reached and fails in the one expected way because the target behavior is not implemented. Production/test compilation, framework startup, fixture, setup or unrelated test failures are not valid Red.
+3. [Required] All applicable validation must pass when the TASK completes. Do not exclude, disable, replace or postpone required tests. Applicable technical instructions decide whether to Refactor after Green.
+4. [Required] Connected validation against relational databases, Redis, messaging systems or external APIs is a completion condition only when expressly authorized by the TASK or user. Without authorization, use existing offline validation and list unconfirmed external behavior and risks. Do not call a mock or successful build external evidence.
+5. [Required] Red must fix the target test class, project-relative path, module and source. Classes, interfaces, methods, error codes and settings referenced by the target test must come from the baseline, an earlier TASK or a minimum compilable skeleton created by this TASK before the test and lacking target behavior.
+6. [Required] When this TASK adds the target test, its steps create all minimum compilable scaffolding, then the test, then run Red CMD. A baseline command run before the test exists or compiles cannot count as Red.
+7. [Required] Production code, test code, generated code, settings and resources compiled, loaded or initialized before Red CMD reaches the target test form the prerequisite closure. Trace all affected references from additions, removals, renames or signature/contract changes across the actual module, reactor, project and test scope; update them or provide compatible scaffolding before Red.
+8. [Required] Red's passing condition must list stages that succeed before reaching the target test and the expected failing test, assertion or behavior. Compilation, framework startup, fixture/setup or unrelated test failures are not Red. Keep the TASK as a draft if any source, prerequisite, file operation or order cannot be confirmed.
+9. [Required] Put reproducible relevant tests in the implementation TASK. Create a separate validation TASK with explicit prerequisites for full regression that needs particular local files. List only applicable tests, and explain any high-impact test omission whose reason is not obvious.
+
+## References
+
+| Reference | Load condition |
+| --- | --- |
+| `references/security.md` | The TASK adds or changes trust boundaries, identity, permissions, sensitive data or untrusted input. |
+| `references/api-compatibility.md` | The TASK adds, changes or removes a consumer-visible API, event, data or error contract. |
+| `references/resilience.md` | The TASK involves remote calls, timeouts, retries, queues, scheduling, batches, concurrency, resource pools, health or degradation. |

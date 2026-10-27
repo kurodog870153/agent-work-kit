@@ -32,8 +32,8 @@ function Test-InstallerLegacyWorkIdentity {
             'agents/openai.yaml' = '(?m)^  display_name: "Work"\r?$'
             'references/instruction-loading.md' = '(?m)^# Work Instruction Loading Bootstrap\r?$'
             'references/instruction-loading/invocation.md' = '(?m)^# Invocation contract\r?$'
-            'references/instructions/task/general/instructions.md' = '(?m)^# 任務規劃指令\r?$'
-            'references/instructions/execute/general/instructions.md' = '(?m)^# 任務執行指令\r?$'
+            'references/instructions/task/general/instructions.md' = '(?m)^# (任務規劃指令|Task planning)\r?$'
+            'references/instructions/execute/general/instructions.md' = '(?m)^# (任務執行指令|Task execution)\r?$'
         }
         foreach ($relative in $markers.Keys) {
             $content = Get-Content -LiteralPath (Join-Path $Target $relative) -Raw -ErrorAction Stop

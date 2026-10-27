@@ -11,5 +11,5 @@ if [[ ! -x "$script_directory/bin/work" ]] || ! "$script_directory/bin/work" --h
     printf 'Error: packaged Work binary failed its startup check.\n' >&2
     exit 1
 fi
-source "$script_directory/installer/runtime/install.sh"
+source "$script_directory/installer/install/install-core.sh"
 installer_run package "$script_directory" "$@"

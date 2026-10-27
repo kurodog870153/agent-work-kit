@@ -1,16 +1,13 @@
 [workspace]
 members = [
-    "crates/work-model",
-    "crates/work-operations",
-    "crates/work-feature",
-    "crates/work-flow",
-    "crates/work-infrastructure",
-    "crates/work-cli",
+    "crates/skill/*",
+    "crates/tooling/*",
+    "crates/work/*",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "1.0.0"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.99.1"
 

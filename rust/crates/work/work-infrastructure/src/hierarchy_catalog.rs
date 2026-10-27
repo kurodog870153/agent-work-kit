@@ -1,0 +1,570 @@
+//! Instruction entrypoint catalog used by hierarchy selection.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use serde_json::{Value, json};
+use work_feature::error::{ExitCode, WorkError};
+use work_feature::hierarchy::HierarchyCatalogRepository;
+use work_feature::instruction::InstructionCatalogRepository;
+use work_operations::hierarchy::CrossModeCatalog;
+
+#[derive(Debug, Clone)]
+pub struct LocalHierarchyCatalog {
+    pub skill_root: PathBuf,
+}
+
+fn error(code: ExitCode, reason: &str, message: &str, details: Value) -> WorkError {
+    WorkError::new(code, reason, message, details)
+}
+
+impl LocalHierarchyCatalog {
+    fn scan_mode_metadata(&self, mode: &str) -> Result<BTreeMap<String, Value>, WorkError> {
+        let skill_root = self.skill_root.canonicalize().map_err(|_| {
+            error(
+                ExitCode::IoFailure,
+                "skill_root_missing",
+                "The Work skill root does not exist or is not a directory.",
+                json!({"path": self.skill_root}),
+            )
+        })?;
+        if !skill_root.is_dir() {
+            return Err(error(
+                ExitCode::IoFailure,
+                "skill_root_missing",
+                "The Work skill root does not exist or is not a directory.",
+                json!({"path": self.skill_root}),
+            ));
+        }
+        let mode_dir = self.skill_root.join("references/instructions").join(mode);
+        let resolved_mode = mode_dir.canonicalize().map_err(|_| {
+            error(
+                ExitCode::IoFailure,
+                "instruction_root_missing",
+                "The instruction mode directory does not exist or is not a directory.",
+                json!({"path": mode_dir}),
+            )
+        })?;
+        if !resolved_mode.starts_with(&skill_root) {
+            return Err(error(
+                ExitCode::ArtifactIntegrity,
+                "instruction_root_escapes_skill_root",
+                "The instruction mode directory resolves outside the Work skill root.",
+                json!({"mode": mode, "path": mode_dir}),
+            ));
+        }
+        let mut metadata = BTreeMap::new();
+        for (hierarchy_path, path) in
+            skill_api::hierarchy::scan_entrypoints(&mode_dir, &resolved_mode, "general")
+                .map_err(|failure| scan_error(failure, mode))?
+        {
+            metadata.insert(hierarchy_path, read_metadata(&path)?);
+        }
+        Ok(metadata)
+    }
+}
+
+fn scan_error(failure: skill_api::hierarchy::HierarchyScanError, mode: &str) -> WorkError {
+    use skill_api::hierarchy::HierarchyScanError;
+    match failure {
+        HierarchyScanError::Unreadable(path) => error(
+            ExitCode::IoFailure,
+            "instruction_entrypoint_unreadable",
+            "An instruction entrypoint cannot be resolved.",
+            json!({"path": path}),
+        ),
+        HierarchyScanError::Escaped(path) => error(
+            ExitCode::ArtifactIntegrity,
+            "instruction_path_escapes_skill_root",
+            "An instruction entrypoint resolves outside its instruction directory.",
+            json!({"mode": mode, "path": path}),
+        ),
+        HierarchyScanError::InvalidPath(path) => error(
+            ExitCode::Contract,
+            "invalid_instruction_hierarchy_path",
+            "An instruction hierarchy path is invalid.",
+            json!({"mode": mode, "path": path}),
+        ),
+        HierarchyScanError::NestedRoot(path) => error(
+            ExitCode::Contract,
+            "invalid_general_instruction_path",
+            "The general instruction entrypoint must be a root hierarchy path.",
+            json!({"mode": mode, "path": path}),
+        ),
+    }
+}
+
+fn read_metadata(path: &Path) -> Result<Value, WorkError> {
+    use skill_api::hierarchy::MetadataReadError;
+    #[cfg(test)]
+    let metadata = if crate::fixture_support::historical_instruction_tag_field(path) == "work-tags"
+    {
+        crate::fixture_support::read_historical_instruction_metadata(path)
+    } else {
+        skill_api::hierarchy::read_metadata(path, "tags")
+    };
+    #[cfg(not(test))]
+    let metadata = skill_api::hierarchy::read_metadata(path, "tags");
+    let metadata = metadata.map_err(|failure| match failure {
+        MetadataReadError::FileRead => error(
+            ExitCode::IoFailure,
+            "file_read_failed",
+            "The file could not be read.",
+            json!({"path": path}),
+        ),
+        MetadataReadError::InvalidUtf8(byte_offset) => error(
+            ExitCode::InputFormat,
+            "invalid_utf8",
+            "The input is not valid UTF-8.",
+            json!({"source": path, "byte_offset": byte_offset}),
+        ),
+        MetadataReadError::MissingFrontmatter => error(
+            ExitCode::InputFormat,
+            "instruction_frontmatter_missing",
+            "instructions.md must begin with YAML frontmatter.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::UnterminatedFrontmatter => error(
+            ExitCode::InputFormat,
+            "instruction_frontmatter_unterminated",
+            "instructions.md YAML frontmatter is not terminated.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidYaml => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_frontmatter",
+            "instructions.md frontmatter is not valid YAML.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidObject => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_frontmatter",
+            "instructions.md frontmatter must be a YAML object with string keys.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidFields => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_metadata_fields",
+            "Instruction frontmatter has missing or unknown fields.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidText(field) => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_metadata_value",
+            "Instruction name and description must be non-empty strings.",
+            json!({"source": path, "field": field}),
+        ),
+        MetadataReadError::InvalidMetadata => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_metadata",
+            "Instruction metadata must be a YAML object with string keys.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidMetadataFields => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_metadata_fields",
+            "Instruction metadata has missing or unknown fields.",
+            json!({"source": path}),
+        ),
+        MetadataReadError::InvalidTags => error(
+            ExitCode::InputFormat,
+            "invalid_instruction_work_tags",
+            "Instruction tags must be a non-empty array of unique lowercase kebab-case strings.",
+            json!({"source": path}),
+        ),
+    })?;
+    Ok(
+        json!({"name": metadata.name, "description": metadata.description,
+        "work_tags": metadata.tags}),
+    )
+}
+impl LocalHierarchyCatalog {
+    pub fn catalog(&self, mode: &str) -> Result<Value, WorkError> {
+        work_feature::instruction::catalog(self, mode)
+    }
+}
+
+impl InstructionCatalogRepository for LocalHierarchyCatalog {
+    fn scan_mode_metadata(&self, mode: &str) -> Result<BTreeMap<String, Value>, WorkError> {
+        LocalHierarchyCatalog::scan_mode_metadata(self, mode)
+    }
+}
+
+impl HierarchyCatalogRepository for LocalHierarchyCatalog {
+    fn cross_mode_catalog(&self) -> Result<CrossModeCatalog, WorkError> {
+        work_feature::instruction::cross_mode_catalog(self)
+    }
+
+    fn mode_paths(&self, mode: &str) -> Result<Vec<String>, WorkError> {
+        Ok(work_feature::instruction::mode_catalog(self, mode)?.paths)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use work_feature::hierarchy::{build_selection, validate_selection, validate_task_paths};
+    use work_feature::instruction::resolve_hierarchy;
+
+    #[test]
+    fn temporary_catalog_orders_paths_and_exposes_metadata_without_body() {
+        let root = std::env::temp_dir().join(format!(
+            "work-catalog-t25-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let write = |mode: &str, path: &str, name: &str| {
+            let entry = root
+                .join("references/instructions")
+                .join(mode)
+                .join(path)
+                .join("instructions.md");
+            fs::create_dir_all(entry.parent().unwrap()).unwrap();
+            fs::write(
+                entry,
+                format!("---\nname: {name}\ndescription: {name} instructions.\nmetadata:\n  tags:\n    - test-tag\n---\n\n# Private instruction body\n"),
+            )
+            .unwrap();
+        };
+        for mode in ["task", "execute"] {
+            for path in ["general", "web", "web/frontend"] {
+                write(mode, path, path);
+            }
+        }
+        write("execute", "web/frontend/component", "component");
+        write("task", "web/frontend/css", "css");
+        write("execute", "web/frontend/css", "css");
+        for path in [
+            "web/backend/java/mybatis",
+            "web/backend/java",
+            "web/backend/java/jpa",
+            "web/backend",
+        ] {
+            write("task", path, path);
+        }
+        let repository = LocalHierarchyCatalog { skill_root: root };
+        let task = repository.catalog("task").unwrap();
+        assert_eq!(
+            task["paths"],
+            json!([
+                "general",
+                "web",
+                "web/backend",
+                "web/backend/java",
+                "web/backend/java/jpa",
+                "web/backend/java/mybatis",
+                "web/frontend",
+                "web/frontend/css"
+            ])
+        );
+        assert_eq!(task["children"]["general"], json!(["web"]));
+        assert_eq!(
+            task["children"]["web/backend/java"],
+            json!(["jpa", "mybatis"])
+        );
+        assert_eq!(task["children"]["web/backend/java/jpa"], json!([]));
+        assert_eq!(
+            task["metadata"]["web/backend/java/jpa"],
+            json!({"name":"web/backend/java/jpa","description":"web/backend/java/jpa instructions.","work_tags":["test-tag"]})
+        );
+        let plan = repository.catalog("execute").unwrap();
+        assert_eq!(plan["metadata"]["general"]["name"], "general");
+        assert!(!plan.to_string().contains("Private instruction body"));
+        assert!(work_operations::protocol::valid_sha256(
+            plan["catalog_sha256"].as_str().unwrap()
+        ));
+
+        let all = repository.catalog("all").unwrap();
+        assert_eq!(all["mode"], "all");
+        assert_eq!(
+            all["paths"],
+            json!([
+                "general",
+                "web",
+                "web/backend",
+                "web/backend/java",
+                "web/backend/java/jpa",
+                "web/backend/java/mybatis",
+                "web/frontend",
+                "web/frontend/component",
+                "web/frontend/css"
+            ])
+        );
+        assert_eq!(
+            all["metadata"]["web/frontend/component"]["mode_support"],
+            json!(["execute"])
+        );
+        assert_eq!(
+            all["metadata"]["web/frontend/css"]["modes"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            vec!["execute", "task"]
+        );
+        assert!(work_operations::protocol::valid_sha256(
+            all["catalog_sha256"].as_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn temporary_catalog_rejects_bad_entries_and_ignores_nonentrypoint_directories() {
+        let root = std::env::temp_dir().join(format!(
+            "work-catalog-errors-t25-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let entry = |mode: &str, path: &str| {
+            root.join("references/instructions")
+                .join(mode)
+                .join(path)
+                .join("instructions.md")
+        };
+        let write = |mode: &str, path: &str, body: &str| {
+            let path = entry(mode, path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+        };
+        let good = "---\nname: General\ndescription: General instructions.\nmetadata:\n  tags:\n    - test-tag\n---\n\nBody.\n";
+        let repository = LocalHierarchyCatalog {
+            skill_root: root.clone(),
+        };
+        assert_eq!(
+            repository.catalog("build").unwrap_err().reason_code,
+            "invalid_instruction_mode"
+        );
+        write("execute", "general", "# general\n");
+        assert_eq!(
+            repository.catalog("execute").unwrap_err().reason_code,
+            "instruction_frontmatter_missing"
+        );
+        write(
+            "execute",
+            "general",
+            &good.replace("    - test-tag", "    - duplicate\n    - duplicate"),
+        );
+        assert_eq!(
+            repository.catalog("execute").unwrap_err().reason_code,
+            "invalid_instruction_work_tags"
+        );
+        write(
+            "execute",
+            "general",
+            &good.replace("---\n\nBody.", "  extra: rejected\n---\n\nBody."),
+        );
+        assert_eq!(
+            repository.catalog("execute").unwrap_err().reason_code,
+            "invalid_instruction_metadata_fields"
+        );
+        write("execute", "general", good);
+        let notes = root.join("references/instructions/execute/general/references/notes.md");
+        fs::create_dir_all(notes.parent().unwrap()).unwrap();
+        fs::write(notes, "notes\n").unwrap();
+        let plan = repository.catalog("execute").unwrap();
+        assert_eq!(plan["paths"], json!(["general"]));
+        assert_eq!(plan["children"], json!({"general": []}));
+
+        let missing_root = root.join("missing-general");
+        let missing_entry =
+            missing_root.join("references/instructions/execute/web/instructions.md");
+        fs::create_dir_all(missing_entry.parent().unwrap()).unwrap();
+        fs::write(missing_entry, good).unwrap();
+        assert_eq!(
+            LocalHierarchyCatalog {
+                skill_root: missing_root
+            }
+            .catalog("execute")
+            .unwrap_err()
+            .reason_code,
+            "general_instruction_not_unique"
+        );
+        write("task", "general", good);
+        write("task", "web/backend", good);
+        let ancestor = repository.catalog("task").unwrap_err();
+        assert_eq!(ancestor.reason_code, "instruction_ancestor_missing");
+        assert_eq!(ancestor.details["missing_ancestor"], "web");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn catalog_entrypoint_symlink_cannot_escape_skill_root() {
+        use std::os::unix::fs::symlink;
+
+        let parent = std::env::temp_dir().join(format!(
+            "work-catalog-symlink-t25-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let root = parent.join("work");
+        let general = root.join("references/instructions/execute/general/instructions.md");
+        fs::create_dir_all(general.parent().unwrap()).unwrap();
+        fs::write(&general, "---\nname: General\ndescription: General instructions.\nmetadata:\n  tags:\n    - test-tag\n---\n").unwrap();
+        let outside = parent.join("outside.md");
+        fs::write(&outside, "outside\n").unwrap();
+        let escaped = root.join("references/instructions/execute/escaped/instructions.md");
+        fs::create_dir_all(escaped.parent().unwrap()).unwrap();
+        symlink(outside, escaped).unwrap();
+        assert_eq!(
+            (LocalHierarchyCatalog { skill_root: root })
+                .catalog("execute")
+                .unwrap_err()
+                .reason_code,
+            "instruction_path_escapes_skill_root"
+        );
+    }
+
+    #[test]
+    fn hierarchy_resolution_uses_catalog_paths_and_reports_immediate_choices() {
+        let root = std::env::temp_dir().join(format!(
+            "work-hierarchy-catalog-t25-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let write = |mode: &str, hierarchy: &str| {
+            let path = root
+                .join("references/instructions")
+                .join(mode)
+                .join(hierarchy)
+                .join("instructions.md");
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "---\nname: Test\ndescription: Test instructions.\nmetadata:\n  tags:\n    - test-tag\n---\n\nBody.\n").unwrap();
+        };
+        for mode in ["task", "execute"] {
+            for path in ["general", "web", "web/frontend", "web/frontend/component"] {
+                write(mode, path);
+            }
+        }
+        for mode in ["task", "execute"] {
+            for path in [
+                "web/backend",
+                "web/backend/java",
+                "web/backend/java/jpa",
+                "web/backend/java/mybatis",
+                "web/frontend/component/astro",
+            ] {
+                write(mode, path);
+            }
+        }
+        let repository = LocalHierarchyCatalog { skill_root: root };
+        let selected = resolve_hierarchy(
+            &repository,
+            "task",
+            &[
+                "web/backend/java/jpa".into(),
+                "web/backend/java/mybatis".into(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            selected.selected_paths,
+            ["web/backend/java/jpa", "web/backend/java/mybatis"]
+        );
+        assert_eq!(
+            selected.resolved_paths,
+            [
+                "general",
+                "web",
+                "web/backend",
+                "web/backend/java",
+                "web/backend/java/jpa",
+                "web/backend/java/mybatis"
+            ]
+        );
+        let general = resolve_hierarchy(&repository, "execute", &[]).unwrap();
+        assert!(general.selected_paths.is_empty());
+        assert_eq!(general.resolved_paths, ["general"]);
+        assert_eq!(general.required_paths, ["general"]);
+
+        assert_eq!(
+            resolve_hierarchy(&repository, "execute", &["general".into()])
+                .unwrap_err()
+                .reason_code,
+            "invalid_hierarchy_path"
+        );
+        assert_eq!(
+            resolve_hierarchy(&repository, "task", &["web".into(), "web/backend".into()])
+                .unwrap_err()
+                .reason_code,
+            "redundant_hierarchy_path"
+        );
+        let missing = resolve_hierarchy(
+            &repository,
+            "execute",
+            &["web/backend/java/hibernate".into()],
+        )
+        .unwrap_err();
+        assert_eq!(missing.reason_code, "instruction_hierarchy_path_missing");
+        assert_eq!(
+            missing.details,
+            json!({"mode":"execute","path":"web/backend/java/hibernate","parent":"web/backend/java","valid_choices":["jpa","mybatis"]})
+        );
+    }
+
+    #[test]
+    fn installed_catalog_and_selection_use_current_sources() {
+        let repository = LocalHierarchyCatalog {
+            skill_root: PathBuf::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../../skills/work"
+            )),
+        };
+        let catalog = repository.cross_mode_catalog().unwrap();
+        let task_catalog = repository.catalog("task").unwrap();
+        assert!(work_operations::protocol::valid_sha256(
+            task_catalog["catalog_sha256"].as_str().unwrap()
+        ));
+        assert_eq!(
+            repository.catalog("all").unwrap()["catalog_sha256"],
+            catalog.catalog_sha256
+        );
+        assert_ne!(catalog.catalog_sha256, task_catalog["catalog_sha256"]);
+        let general = build_selection(
+            &repository,
+            &json!({"decision": "general_only", "selections": []}),
+        )
+        .unwrap();
+        assert!(work_operations::protocol::valid_sha256(
+            general["selection_sha256"].as_str().unwrap()
+        ));
+        let selected = build_selection(&repository, &json!({"decision": "instruction_paths", "selections": [{"path": "programming-language/java/persistence", "recommendation_reason": "Uses Java."}]})).unwrap();
+        assert_ne!(selected["selection_sha256"], general["selection_sha256"]);
+        assert_eq!(
+            validate_selection(&repository, &selected).unwrap()["status"],
+            "valid"
+        );
+        validate_task_paths(
+            &repository,
+            &["programming-language/java/persistence/jpa".into()],
+            &selected,
+            "TASK-001",
+        )
+        .unwrap();
+        let frontend = build_selection(
+            &repository,
+            &json!({"decision":"instruction_paths","selections":[
+                {"path":"web/frontend/astro","recommendation_reason":"Uses Astro."},
+                {"path":"web/frontend/css/tailwind","recommendation_reason":"Uses Tailwind."}]}),
+        )
+        .unwrap();
+        assert_eq!(
+            frontend["selected_paths"],
+            json!(["web/frontend/astro", "web/frontend/css/tailwind"])
+        );
+        for entry in frontend["entries"].as_array().unwrap() {
+            assert_eq!(entry["mode_support"], json!(["task", "execute"]));
+        }
+    }
+}

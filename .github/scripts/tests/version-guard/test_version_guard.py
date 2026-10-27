@@ -82,6 +82,64 @@ class VersionGuardTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 guard.validate_workspace(root, baseline)
 
+    def test_tooling_inherits_workspace_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rust = root / "rust"
+            tooling = rust / "crates/tooling/tooling-cli"
+            tooling.mkdir(parents=True)
+            (root / "VERSION").write_text("2.0.0\n", encoding="utf-8")
+            (rust / "Cargo.toml").write_text(
+                '[workspace]\nmembers = ["crates/tooling/tooling-cli"]\n'
+                '[workspace.package]\nversion = "2.0.0"\n', encoding="utf-8"
+            )
+            manifest = '[package]\nname = "tooling-cli"\nversion.workspace = true\n'
+            (tooling / "Cargo.toml").write_text(manifest, encoding="utf-8")
+            (rust / "Cargo.lock").write_text(
+                '[[package]]\nname = "tooling-cli"\nversion = "2.0.0"\n', encoding="utf-8"
+            )
+            self.assertEqual(guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text())), "2.0.0")
+            (tooling / "Cargo.toml").write_text(manifest.replace("version.workspace = true", 'version = "2.0.0"'), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must inherit workspace"):
+                guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text()))
+            (tooling / "Cargo.toml").write_text(manifest, encoding="utf-8")
+            (rust / "Cargo.lock").write_text(
+                '[[package]]\nname = "tooling-cli"\nversion = "1.0.0"\n', encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "Cargo.lock workspace versions"):
+                guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text()))
+
+    def test_glob_members_validate_every_package_and_reject_empty_pattern(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rust = root / "rust"
+            (root / "VERSION").write_text("2.0.0\n", encoding="utf-8")
+            for name in ("skill-api", "skill-model"):
+                crate = rust / "crates/skill" / name
+                crate.mkdir(parents=True)
+                (crate / "Cargo.toml").write_text(
+                    f'[package]\nname = "{name}"\nversion.workspace = true\n', encoding="utf-8"
+                )
+            manifest_path = rust / "Cargo.toml"
+            manifest_path.write_text(
+                '[workspace]\nmembers = ["crates/skill/*"]\n'
+                '[workspace.package]\nversion = "2.0.0"\n', encoding="utf-8"
+            )
+            (rust / "Cargo.lock").write_text(
+                '[[package]]\nname = "skill-api"\nversion = "2.0.0"\n'
+                '[[package]]\nname = "skill-model"\nversion = "2.0.0"\n', encoding="utf-8"
+            )
+            manifest = guard.tomllib.loads(manifest_path.read_text())
+            self.assertEqual(guard.validate_lock(root, manifest), "2.0.0")
+            (rust / "crates/skill/skill-model/Cargo.toml").write_text(
+                '[package]\nname = "skill-model"\nversion = "2.0.0"\n', encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "must inherit workspace"):
+                guard.validate_lock(root, manifest)
+            manifest["workspace"]["members"] = ["crates/missing/*"]
+            with self.assertRaisesRegex(ValueError, "matches no directories"):
+                guard.validate_lock(root, manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 """Validate the project version before a pull request can merge."""
 
 import argparse
+import glob
 import re
 import subprocess
 import sys
@@ -77,19 +78,25 @@ def validate_lock(root, manifest):
 
     members = manifest["workspace"]["members"]
     names = set()
+    expected_versions = {}
     for member in members:
-        package = tomllib.loads((rust / member / "Cargo.toml").read_text(encoding="utf-8"))["package"]
-        if package.get("version") != {"workspace": True}:
-            raise ValueError(f"{member} must inherit workspace.package.version")
-        name = package["name"]
-        if name in names:
-            raise ValueError(f"duplicate workspace package: {name}")
-        names.add(name)
+        paths = sorted(Path(path) for path in glob.glob(str(rust / member)))
+        if not paths:
+            raise ValueError(f"workspace member pattern matches no directories: {member}")
+        for path in paths:
+            package = tomllib.loads((path / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+            if package.get("version") != {"workspace": True}:
+                raise ValueError(f"{path.relative_to(rust)} must inherit workspace.package.version")
+            name = package["name"]
+            if name in names:
+                raise ValueError(f"duplicate workspace package: {name}")
+            names.add(name)
+            expected_versions[name] = cargo_version
 
     lock = tomllib.loads((rust / "Cargo.lock").read_text(encoding="utf-8"))
     locked = {package["name"]: package["version"] for package in lock["package"] if package["name"] in names}
-    if set(locked) != names or any(value != cargo_version for value in locked.values()):
-        raise ValueError(f"Cargo.lock workspace versions do not all match {cargo_version}")
+    if set(locked) != names or any(value != expected_versions[name] for name, value in locked.items()):
+        raise ValueError("Cargo.lock workspace versions do not match their package versions")
     return version
 
 

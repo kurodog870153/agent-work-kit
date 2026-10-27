@@ -1,6 +1,8 @@
 {
   "version": null,
-  "skills": null,
-  "work_dir": null,
-  "global_agents_dir": null
+  "work_version": null,
+  "tooling_version": null,
+  "skill_install_dir": null,
+  "global_agent_dir": null,
+  "status": null
 }

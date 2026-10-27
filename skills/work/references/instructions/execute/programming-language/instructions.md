@@ -1,13 +1,13 @@
 ---
-name: 程式語言任務執行
-description: 執行已固定的特定程式語言契約時使用；未涉及程式語言實作的工作不適用。
+name: Programming language task execution
+description: Use when executing a fixed language-specific contract; not applicable to work without programming-language implementation.
 metadata:
-  work-tags:
+  tags:
     - language-contract
 ---
 
-# 程式語言任務執行指令
+# Programming language task execution
 
-指令邊界：本層只核對正式語言選擇；語言特有操作由適用子節點負責。
+Instruction boundary: This layer only checks the formal language selection; applicable child nodes own language-specific operations.
 
-1. [強制] 執行前核對 TASK 選定的程式語言與目標來源、設定及工具鏈一致；不得自行切換語言或套用未選取的語言規則。
+1. [Required] Before execution, verify that the TASK's selected programming language matches the target sources, configuration and toolchain. Do not switch languages or apply unselected language rules.

@@ -23,7 +23,7 @@ jobs:
       - name: Verify checkout preserves repository line endings
         working-directory: .
         run: |
-          for path in README.md skills/work/SKILL.md rust/crates/work-infrastructure/fixtures/cases/discussion/assembly/valid/project/outputs/work/sources/example/SRC-001/source.txt; do
+          for path in README.md skills/work/SKILL.md skills/tooling/SKILL.md rust/crates/work/work-infrastructure/fixtures/cases/discussion/assembly/valid/project/outputs/work/sources/example/SRC-001/source.txt; do
             entry="$(git ls-files --eol -- "$path")"
             [[ "$entry" =~ ^i/lf[[:space:]]+w/lf[[:space:]] ]] || { echo "Checkout changed line endings: $entry"; exit 1; }
           done
@@ -94,27 +94,23 @@ jobs:
       - name: Enforce Rust test results
         if: always()
         run: python3 ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml
-      - name: Build Work release binary
-        run: cargo build --release --locked -p work-cli
-      - name: Smoke test Rust binary
-        run: target/release/work --help
+      - name: Build Work and Tooling release binaries
+        run: |
+          cargo build --release --locked -p work-cli
+          cargo build --release --locked -p tooling-cli
+      - name: Smoke test Rust binaries
+        run: |
+          target/release/work --help
+          target/release/tooling --help
 
   validate-and-build-rust-windows:
-    name: validate and build rust (Windows ${{ matrix.label }})
+    name: validate and build rust (Windows)
     runs-on: windows-latest
     permissions:
       contents: read
       actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: MSVC
-            target: x86_64-pc-windows-msvc
-          - label: GNU
-            target: x86_64-pc-windows-gnu
     env:
-      WORK_RUST_TARGET: ${{ matrix.target }}
+      WORK_RUST_TARGET: x86_64-pc-windows-msvc
     defaults:
       run:
         working-directory: rust
@@ -137,7 +133,8 @@ jobs:
           $paths = @(
             'README.md',
             'skills/work/SKILL.md',
-            'rust/crates/work-infrastructure/fixtures/cases/discussion/assembly/valid/project/outputs/work/sources/example/SRC-001/source.txt'
+            'skills/tooling/SKILL.md',
+            'rust/crates/work/work-infrastructure/fixtures/cases/discussion/assembly/valid/project/outputs/work/sources/example/SRC-001/source.txt'
           )
           foreach ($path in $paths) {
             $entry = git ls-files --eol -- $path
@@ -165,18 +162,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup component add clippy rustfmt --toolchain $env:RUSTUP_TOOLCHAIN
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($env:WORK_RUST_TARGET -eq 'x86_64-pc-windows-gnu') {
-            $gcc = (Get-Command gcc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-            $machine = & $gcc -dumpmachine
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            if ($machine.Trim() -ne 'x86_64-w64-mingw32') {
-              throw "Expected a Windows x86_64 MinGW linker, found ${machine}: $gcc"
-            }
-            "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$gcc" | Out-File -FilePath $env:GITHUB_ENV -Append
-            Split-Path -Parent $gcc | Out-File -FilePath $env:GITHUB_PATH -Append
-            & $gcc --version
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest@0.9.148
@@ -217,7 +202,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: rust-perf-${{ matrix.target }}
+          name: rust-perf-x86_64-pc-windows-msvc
           path: |
             rust/.ci-perf/
             rust/target/nextest/ci/junit.xml
@@ -233,7 +218,15 @@ jobs:
       - name: Enforce Rust test results
         if: always()
         run: python ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
-      - name: Build Work release binary
-        run: cargo build --release --locked -p work-cli
-      - name: Smoke test Rust binary
-        run: '& ".\target\release\work.exe" --help'
+      - name: Build Work and Tooling release binaries
+        run: |
+          cargo build --release --locked -p work-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --release --locked -p tooling-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke test Rust binaries
+        run: |
+          & ".\target\release\work.exe" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ".\target\release\tooling.exe" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

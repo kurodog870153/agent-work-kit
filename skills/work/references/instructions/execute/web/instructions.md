@@ -1,16 +1,16 @@
 ---
-name: Web 任務執行
-description: 執行並驗證 TASK 已固定的 Web 契約、消費者結果與相容性要求時使用；非 Web 工作不適用。
+name: Web task execution
+description: Use to execute and validate TASK-fixed Web contracts, consumer outcomes and compatibility requirements; not applicable to non-Web work.
 metadata:
-  work-tags:
+  tags:
     - web
 ---
 
-# Web 任務執行指令
+# Web task execution
 
-指令邊界：本層只執行並驗證 TASK 已固定的 Web 契約，不新增路由、輸入、回應、授權或相容性決策。
+Instruction boundary: This layer only executes and validates the TASK-fixed Web contract; it makes no new routing, input, response, authorization or compatibility decisions.
 
-1. [強制] 執行前核對 TASK 已完整固定受影響入口、消費者、輸入、成功／錯誤輸出與 VAL；需要由 Execute 推論時以規格缺陷停止。
-2. [強制] 只依 TASK 操作實際入口與既有驗證能力，記錄狀態、契約及消費者可觀察結果；內部方法成功不得取代邊界 VAL。
-3. [強制] 實際 Web 契約與 TASK 不同時，不得自行更新文件或接受新行為，須記錄最小差異並停止交回 Task。
-4. [強制] 嚴格執行 TASK 已固定的相容性、安全性、效能、可存取性與部署項目；不得啟動或部署未列於 CMD 的服務，或執行未列於 OP 的外部狀態操作。
+1. [Required] Before execution, verify that the TASK fully fixes affected entry points, consumers, inputs, success/error outputs and VAL. Stop for a specification defect if Execute would have to infer them.
+2. [Required] Operate the actual entry points and existing validation capabilities only as specified by the TASK. Record status, contract and consumer-observable outcomes; an internal method's success cannot replace boundary VAL.
+3. [Required] If the actual Web contract differs from the TASK, do not update documentation or accept new behavior independently. Record the smallest difference and return to Task.
+4. [Required] Execute only the TASK-fixed compatibility, security, performance, accessibility and deployment items. Do not start or deploy a service absent from CMD or perform an external-state operation absent from OP.

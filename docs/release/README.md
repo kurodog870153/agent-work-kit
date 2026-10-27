@@ -1,6 +1,6 @@
 # Work Release 安裝
 
-本 ZIP 包含對應平台的預編譯 Work binary、完整 Work Skill、Global `AGENTS.md` 與安裝器。
+本 ZIP 包含對應平台的預編譯 Work binary、完整 Work 與 Tooling Skill、Global `AGENTS.md` 與安裝器。安裝器將 Work 與 Tooling 安裝在同一 Skill 父目錄。
 
 ## 1. 下載
 
@@ -75,25 +75,25 @@ echo "SHA-256 驗證通過：$zip"
 
 ### 3.2 預覽安裝動作
 
-以下範例選取 `general` 與 `typescript`，只列出預計動作，不修改正式安裝目標。
+以下範例只列出預計動作，不修改正式安裝目標。Work 與 Tooling 均完整安裝。
 
 Windows PowerShell：
 
 ```powershell
-.\install-work-from-package.bat --skills general,typescript --dry-run
+.\install-work-from-package.bat --dry-run
 ```
 
 macOS Terminal：
 
 ```sh
-./install-work-from-package.command --skills general,typescript --dry-run
+./install-work-from-package.command --dry-run
 ```
 
 macOS 若顯示「權限不足」：
 
 1. 先依上一節確認 ZIP 與 `SHA256SUMS.txt` 來自預期的 Release，且雜湊相符。
 2. 在解壓後的根目錄執行 `chmod +x install-work-from-package.command`，再重試上方命令。
-3. 若不想更改權限，可直接執行 `bash install-work-from-package.command --skills general,typescript --dry-run`。
+3. 若不想更改權限，可直接執行 `bash install-work-from-package.command --dry-run`。
 
 ### 3.3 執行安裝
 
@@ -102,42 +102,40 @@ macOS 若顯示「權限不足」：
 Windows PowerShell：
 
 ```powershell
-.\install-work-from-package.bat --skills general,typescript
+.\install-work-from-package.bat
 ```
 
 macOS Terminal：
 
 ```sh
-./install-work-from-package.command --skills general,typescript
+./install-work-from-package.command
 ```
 
-若只需要預設選項，省略 `--skills general,typescript` 即可。首次安裝預設選取 `general` Skill，並啟用 Global `AGENTS.md`；已有有效安裝狀態時，沿用原本的 Skill 與 Global `AGENTS.md` 設定。安裝器會先驗證包內 manifest、平台及預編譯 binary，再修改正式目標。
+安裝器每次安裝完整 Work 與 Tooling。首次安裝預設啟用 Global `AGENTS.md`；已有有效安裝狀態時，沿用原本的 Global `AGENTS.md` 設定。安裝器會先驗證包內 manifest、平台及預編譯 binary，再修改正式目標。
 
 ### 3.4 可用參數
 
 其他參數接在入口檔名後面，多個參數以空白分隔：
 
 1. `--help` 或 `-h`：顯示用法，不安裝。
-2. `--list-skills`：列出此 ZIP 可安裝的 Skill ID，不安裝。
-3. `--skills <general|all|id[,id...]>`：選取 `general`、`all`，或以逗號分隔的 Skill ID；可先用 `--list-skills` 查詢 ID。
-4. `--global-agents`／`--no-global-agents`：啟用／停用 Global `AGENTS.md` 安裝；兩者不可同時使用。
-5. `--work-install-dir <path>`：指定最終 Work 目錄；路徑含空白時須加引號。
-6. `--global-agents-install-dir <path>`：指定 Global `AGENTS.md` 所在目錄；路徑含空白時須加引號。
-7. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
-8. `--dry-run`：列出預計動作，不修改正式安裝目標。
-9. `--verbose`：顯示較詳細的診斷資訊。舊 `--install-dir` 不再接受。
+2. `--global-agent`／`--no-global-agent`：啟用／停用 Global `AGENTS.md` 安裝；兩者不可同時使用。
+3. `--skills-install-dir <path>`：指定 Work 與 Tooling 的共同父目錄；路徑含空白時須加引號。
+4. `--global-agent-install-dir <path>`：指定 Global `AGENTS.md` 所在目錄；路徑含空白時須加引號。
+5. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
+6. `--dry-run`：列出預計動作，不修改正式安裝目標。
+7. `--verbose`：顯示較詳細的診斷資訊。舊 `--install-dir`、`--work-install-dir`、`--skills` 與 `--list-skills` 不再接受。
 
 ### 3.5 安裝時的確認
 
 安裝器會依目標目錄的狀態處理：
 
-1. Work 目錄不存在或為空時，視為首次安裝；沒有 `install-state.json` 是正常情況。
-2. Work 目錄已有內容，但 `install-state.json` 缺少、損毀或不符合目前規格時，視為首次更新。安裝器會先檢查目錄結構及內容；檢查通過後，仍須在互動模式明確確認接管。檢查未通過或未確認時，不修改原目錄。
+1. Work 與 Tooling 目錄不存在或為空時，視為首次安裝；沒有父層 `install-state.json` 是正常情況。
+2. Work 或 Tooling 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。舊版子目錄狀態檔不作為更新依據。
 3. 已選擇安裝 Global `AGENTS.md`，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
-4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到首次更新接管或 Global `AGENTS.md` 差異等必須確認的情況，會拒絕安裝並保留原目標。
+4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到 Global `AGENTS.md` 差異等必須確認的情況，會拒絕安裝並保留原目標。
 
 ### 3.6 安全警告與錯誤處理
 
 這些 binary 未經 Apple 或 Microsoft 平台簽章，作業系統可能顯示安全警告。確認下載來源、Checksum 與 Attestation 後，再依平台提供的正常操作方式允許執行。
 
-若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。首次更新因未知內容或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效父層狀態或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。

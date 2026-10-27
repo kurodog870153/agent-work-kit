@@ -56,7 +56,7 @@ def make_crash_package(archive_path, root, platform):
 
 
 def exercise_public_crash(entry, target, home, environment, platform, version):
-    options = ["--non-interactive", "--no-global-agents", "--skills", "general", "--work-install-dir", str(target)]
+    options = ["--non-interactive", "--no-global-agent", "--skills-install-dir", str(target.parent)]
     command = (["cmd.exe", "/D", "/C", str(entry)] if platform == "windows-x64-msvc"
                else ["/bin/bash", str(entry)]) + options
     def invoke(crash=False):
@@ -67,21 +67,24 @@ def exercise_public_crash(entry, target, home, environment, platform, version):
     initial = invoke()
     if initial.returncode:
         raise AssertionError(f"public entry initial install failed: {initial.stdout!r}, {initial.stderr!r}")
+    binary = target / "scripts" / ("work.exe" if platform == "windows-x64-msvc" else "work")
+    prior_binary = binary.read_bytes()
     interrupted = invoke(crash=True)
     transactions = list(target.parent.glob(".work-install.*"))
     if interrupted.returncode == 0 or len(transactions) != 1 or not (transactions[0] / "previous").is_dir():
         raise AssertionError(f"public entry did not interrupt during Work switch: {interrupted.returncode}, {transactions!r}")
     previous = transactions[0] / "previous"
-    prior_state = json.loads((previous / "install-state.json").read_text(encoding="utf-8"))
-    if prior_state["version"] != version:
-        raise AssertionError("public entry interruption lost the previous Work state")
+    pending_state = json.loads((target.parent / "install-state.json").read_text(encoding="utf-8"))
+    if (pending_state["version"] != version or pending_state["status"] != "installing" or
+            (previous / "scripts" / binary.name).read_bytes() != prior_binary):
+        raise AssertionError("public entry interruption lost the previous Work installation")
     restarted = invoke()
     if restarted.returncode:
         raise AssertionError(f"public entry recovery failed: {restarted.stdout!r}, {restarted.stderr!r}")
-    state = json.loads((target / "install-state.json").read_text(encoding="utf-8"))
-    if state["version"] != version or list(target.parent.glob(".work-install.*")):
+    state = json.loads((target.parent / "install-state.json").read_text(encoding="utf-8"))
+    if (state["version"] != version or state["status"] != "installed" or
+            list(target.parent.glob(".work-install.*"))):
         raise AssertionError("public entry recovery retained an incomplete transaction")
-    binary = target / "scripts" / ("work.exe" if platform == "windows-x64-msvc" else "work")
     subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
 
 
@@ -130,8 +133,8 @@ def main():
             else:
                 entry = downloaders["install-work-from-github-release.command"]
                 command = ["/bin/bash", str(entry)]
-            command += ["--non-interactive", "--global-agents", "--skills", "general",
-                        "--work-install-dir", str(target), "--global-agents-install-dir", str(global_dir)]
+            command += ["--non-interactive", "--global-agent", "--skills-install-dir", str(target.parent),
+                        "--global-agent-install-dir", str(global_dir)]
             entry_command = command[:4] if args.platform == "windows-x64-msvc" else command[:2]
             help_result = subprocess.run(entry_command + ["--help"], cwd=home, env=environment,
                                          stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
@@ -146,30 +149,36 @@ def main():
                                     capture_output=True, timeout=180)
             if result.returncode:
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
-            state = json.loads((target / "install-state.json").read_text(encoding="utf-8"))
-            if (state["version"] != info["version"] or state["skills"] != ["general"] or
-                    Path(state["work_dir"]) != target or
-                    Path(state["global_agents_dir"]) != global_dir):
+            state_path = target.parent / "install-state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            if (state != {"version": info["version"], "work_version": info["work_version"],
+                          "tooling_version": info["tooling_version"], "skill_install_dir": str(target.parent),
+                          "global_agent_dir": str(global_dir), "status": "installed"} or
+                    (target / "install-state.json").exists()):
                 raise AssertionError(f"Downloader installed the wrong state: {state!r}")
+            tooling = target.parent / "tooling"
+            if ((tooling / "install-state.json").exists() or
+                    not (tooling / "scripts" / ("tooling.exe" if sys.platform == "win32" else "tooling")).is_file()):
+                raise AssertionError("Downloader installed the wrong Tooling entry")
+            if (tooling / "references/instructions/interfaces/repl").exists():
+                raise AssertionError("Downloader installed the removed REPL interface")
             if (global_dir / "AGENTS.md").read_bytes() != (Path(__file__).resolve().parents[3] / "AGENTS.md").read_bytes():
                 raise AssertionError("Downloader did not install Global AGENTS at the requested path")
-            before_state = (target / "install-state.json").read_bytes()
+            before_state = state_path.read_bytes()
             before_agents = (global_dir / "AGENTS.md").read_bytes()
-            for options, expected in ((["--list-skills"], 0), (["--non-interactive", "--dry-run",
-                                      "--work-install-dir", str(target), "--global-agents-install-dir", str(global_dir)], 0),
-                                      (["--unknown"], 2), (["--skills"], 2),
+            for options, expected in ((["--non-interactive", "--dry-run",
+                                      "--skills-install-dir", str(target.parent), "--global-agent-install-dir", str(global_dir)], 0),
+                                      (["--unknown"], 2), (["--skills"], 2), (["--list-skills"], 2),
                                       (["--install-dir", "old/work"], 2),
-                                      (["--global-agents", "--no-global-agents"], 2),
+                                      (["--global-agent", "--no-global-agent"], 2),
                                       (["--verbose", "--verbose"], 2)):
                 check = subprocess.run(entry_command + options, cwd=home, env=environment,
                                        stdin=subprocess.DEVNULL, capture_output=True, timeout=180)
                 if check.returncode != expected:
                     raise AssertionError(f"Downloader CLI status for {options!r}: {check.returncode}")
-                if options == ["--list-skills"] and b"general" not in check.stdout:
-                    raise AssertionError("Downloader omitted Package Skill output")
                 if "--dry-run" in options and b"Dry run:" not in check.stdout:
                     raise AssertionError("Downloader omitted Package dry-run summary")
-                if ((target / "install-state.json").read_bytes() != before_state or
+                if (state_path.read_bytes() != before_state or
                         (global_dir / "AGENTS.md").read_bytes() != before_agents):
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
             binary = target / "scripts" / ("work.exe" if sys.platform == "win32" else "work")

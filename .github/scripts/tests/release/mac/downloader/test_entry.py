@@ -70,14 +70,14 @@ class DownloaderTests(unittest.TestCase):
 
     def test_success_forwarding_and_downstream_status(self):
         self.package()
-        work = str(self.root / "中文 path & symbols/work")
+        skills = str(self.root / "中文 path & symbols")
         global_dir = str(self.root / "全域 path & symbols")
-        result = self.run_downloader("--skills", "java,spring-boot", "--work-install-dir", work,
-                                     "--global-agents-install-dir", global_dir)
+        result = self.run_downloader("--skills-install-dir", skills,
+                                     "--global-agent-install-dir", global_dir)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            ["--skills", "java,spring-boot", "--work-install-dir", work,
-             "--global-agents-install-dir", global_dir],
+            ["--skills-install-dir", skills,
+             "--global-agent-install-dir", global_dir],
             (self.root / "argv.txt").read_text(encoding="utf-8").splitlines(),
         )
         env = {**self.environment, "WORK_RELEASE_TEST_EXIT": "17"}

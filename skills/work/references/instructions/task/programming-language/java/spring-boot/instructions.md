@@ -1,25 +1,25 @@
 ---
-name: Java Spring Boot 任務規劃
-description: 固定 Spring Boot 或 Spring MVC 專屬契約時使用；未使用該框架的 Java 工作不適用。
+name: Java Spring Boot task planning
+description: Use to fix Spring Boot or Spring MVC-specific contracts; not applicable to Java work without that framework.
 metadata:
-  work-tags:
+  tags:
     - spring
     - spring-boot
 ---
 
-# Java Spring Boot 任務規劃指令
+# Java Spring Boot task planning
 
-指令邊界：本層只固定 Spring Boot 與 Spring MVC 專屬契約，沿用 Java 共通規則。
+Instruction boundary: This layer only fixes Spring Boot and Spring MVC-specific contracts and inherits common Java rules.
 
-## 1. Spring Web 契約
+## 1. Spring Web contract
 
-1. [預設] Spring MVC `@RequestParam` 多值參數使用 `Collection<T>`；需要順序或索引時使用 `List<T>`，需要唯一性時使用 `Set<T>`，不得以 `Iterable<T>` 取代框架已確認的綁定契約。Request Body／Response 等序列化邊界須依實際框架版本與往返證據決定。
-2. [強制] TASK 須確認實際 Spring Boot、Spring MVC 與相關模組版本及受影響入口；未使用 Spring MVC 時不套用 Web 綁定規則。
+1. [Default] Use `Collection<T>` for multi-value Spring MVC `@RequestParam` arguments, `List<T>` when order or indexing matters, and `Set<T>` when uniqueness matters. Do not replace a confirmed framework binding contract with `Iterable<T>`. Determine serialization boundaries such as Request Body/Response from the actual framework version and round-trip evidence.
+2. [Required] The TASK must confirm actual Spring Boot, Spring MVC and related module versions and affected entry points. Do not apply Web binding rules when Spring MVC is not used.
 
-## 2. 已確認四層架構
+## 2. Confirmed four-layer architecture
 
-1. [強制] 只有專案已採用四層架構，或使用者明確核准架構調整時，才套用 `Controller → 業務 Service → Persistence Service → 資料庫存取層`；無法確認既有架構時先提出方案並逐項確認，未觸及程式不得主動重構。
-2. [強制] Controller 只處理傳輸協定、輸入驗證、目前使用者資訊、請求／回應轉換及呼叫業務 Service，不得包含業務規則或直接呼叫其他層；目前使用者資訊依既有風格取得，預設只傳用例所需使用者 ID，業務確實需要時才傳既有使用者物件。業務 Service 不得存取 Controller、HTTP Session 或安全框架上下文。
-3. [強制] 業務 Service 負責業務規則、用例流程、跨 Persistence Service 協調及交易邊界，不得直接查詢或持久化資料；Persistence Service 只封裝資料操作並呼叫資料庫存取層，不得包含業務規則、用例流程或交易邊界；資料庫存取層只執行查詢與持久化，不得包含資料操作編排或業務邏輯。
-4. [預設] 四層架構的命名優先沿用專案；沒有明確慣例時，Controller 使用 `Controller`，業務 Service 使用 `Service`，但專案的 `Service` 已代表資料操作層時改用 `BusinessService`，Persistence Service 使用 `PersistenceService`，JPA 使用 `Repository`，MyBatis／MyBatis-Plus 使用 `Mapper`，介面不加 `I`，實作使用 `Impl`。所有預設須先納入方案並取得確認；其他架構不得套用。
-5. [預設] 套件與目錄優先沿用專案；四層架構且沒有明確慣例時，方案使用 `controller/<功能>`、`service/business/<功能>`、`service/persistence/<功能>`，以及 JPA 的 `repository/<功能>` 或 MyBatis／MyBatis-Plus 的 `mapper/<功能>`，並在核准前確認；其他架構依既有結構固定。
+1. [Required] Apply `Controller → Business Service → Persistence Service → Database Access Layer` only when the project already uses four layers or the user expressly approves an architecture change. If the existing architecture is uncertain, propose and confirm each part first. Do not refactor untouched code proactively.
+2. [Required] Controllers handle only transport, input validation, current-user information, request/response conversion and calls to Business Services. They must not contain business rules or directly call other layers. Obtain current-user information according to existing style; by default pass only the user ID needed by the use case, and pass an existing user object only when business behavior actually needs it. Business Services must not access Controllers, HTTP Session or security-framework context.
+3. [Required] Business Services own business rules, use-case flow, coordination across Persistence Services and transaction boundaries, but must not query or persist data directly. Persistence Services encapsulate data operations and call the Database Access Layer, but must not own business rules, use-case flow or transaction boundaries. The Database Access Layer only queries and persists data; it must not orchestrate data operations or contain business logic.
+4. [Default] Follow project naming for four layers. Without a clear convention, name Controllers `Controller` and Business Services `Service`, but use `BusinessService` if the project's `Service` already names the data-operation layer. Name Persistence Services `PersistenceService`, JPA access `Repository`, and MyBatis/MyBatis-Plus access `Mapper`; do not prefix interfaces with `I`, and suffix implementations with `Impl`. Include and confirm every default in the proposal. Do not apply these defaults to other architectures.
+5. [Default] Follow project package and directory conventions. With four layers and no clear convention, propose `controller/<feature>`, `service/business/<feature>`, `service/persistence/<feature>`, and `repository/<feature>` for JPA or `mapper/<feature>` for MyBatis/MyBatis-Plus, then confirm before approval. Fix other architectures from their existing structure.

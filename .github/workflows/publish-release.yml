@@ -102,12 +102,14 @@ jobs:
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
         working-directory: rust
-        run: cargo build --release --locked -p work-cli
+        run: |
+          cargo build --release --locked -p work-cli
+          cargo build --release --locked -p tooling-cli
       - name: Package and verify final macOS ZIP
         env:
           COMMIT: ${{ github.sha }}
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           python3 .github/scripts/release/release_package_integrity.py verify-zip "dist/work-v${TAG#v}-macos-arm64.zip"
           (cd dist && shasum -a 256 "work-v${TAG#v}-macos-arm64.zip" > SHA256SUMS.txt)
           python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v${TAG#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
@@ -153,14 +155,18 @@ jobs:
         run: rustup toolchain install $env:RUSTUP_TOOLCHAIN
       - name: Build native release binary
         working-directory: rust
-        run: cargo build --release --locked -p work-cli
+        run: |
+          cargo build --release --locked -p work-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --release --locked -p tooling-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package and verify final Windows ZIP
         env:
           COMMIT: ${{ github.sha }}
         run: |
           $version = $env:TAG.Substring(1)
           $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "dist/work-v${version}-windows-x64-msvc.zip"
           python -B .github/scripts/release/release_package_integrity.py verify-zip $zip

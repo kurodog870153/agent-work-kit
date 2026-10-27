@@ -1,21 +1,20 @@
 ---
-name: 外部操作參考指令
-description: 規劃會影響工作區外狀態的操作時使用；純本機修改不適用。
-reference-name: task.general.external-operations
+name: External operation guidance
+description: Use when planning operations that affect state outside the workspace; not applicable to local-only changes.
 metadata:
-  work-tags:
+  tags:
     - external-operations
 ---
 
-# 外部操作參考指令
+# External operation guidance
 
-1. [強制] 外部操作適用於會改變遠端服務、資料、部署、訊息、帳號、權限或其他本機工作區外狀態的行為；純唯讀查詢仍須記錄來源與可能的時效性。
-2. [強制] TASK 須以既有 `輸入`、`決策`、`風險`、`步驟`、`OP-*` 與 `VAL-*` 欄位完整固定目標、前置條件、副作用、授權邊界、成功證據及失敗結果，不新增平行格式。
-3. [強制] 只有操作具有網路、權限、費用、不可逆、部分成功、重複提交或結果不確定風險時，才加入對應風險與處置；不得以空泛風險清單取代實際判定。
-4. [預設] 外部操作失敗後不自動重試；只有已確認為暫時性錯誤、操作具冪等性或有可靠冪等鍵、重試次數與停止條件均已固定時才能重試。
-5. [強制] 補償是獨立外部操作，必須另列 OP、風險、授權與驗證；不得把刪除、回復或反向寫入視為原操作的隱含步驟。
-6. [強制] TASK 須明確區分成功、失敗、部分成功與結果不確定；無法確認遠端最終狀態時不得宣稱成功，也不得以重送猜測狀態。
-7. [強制] 機密值不得寫入 TASK、命令、紀錄或回覆；確需機密時只記安全取得方式與由使用者執行的邊界。
-8. [強制] 每個適用 OP 與整體操作都須使用同一結果 schema：`整體結果` 只接受「完整成功」、「部分成功」、「失敗」或「結果不確定」，並分別列出 `已生效`、`未生效` 與 `未知`；沒有內容的分類省略。OP 成功只表示其已確認生效，OP 失敗須列入未生效，無法確認者列入未知，整體結果不得與各 OP 明細矛盾。
-9. [強制] 外部操作失敗使 TASK 受阻；只有 TASK 已固定且目前符合安全重試條件時，才能在同一 Attempt 依核准上限重試，否則須結案並重新取得後續授權。
-10. [強制] 本機 CMD／VAL 與檔案復原證據不等同 External OP 授權、遠端成功證據或跨系統原子性。External OP 須獨立處理副作用、未知結果與補償；正式執行入口沒有可信效果邊界時維持 Unknown 拒絕，不以命令或驗收標籤取得能力。
+1. [Required] External operations change remote services, data, deployments, messages, accounts, permissions or other state outside the local workspace. Even a read-only query must record its source and possible staleness.
+2. [Required] Use the existing Input, Decision, Risk, Step, `OP-*` and `VAL-*` fields to fix target, prerequisites, side effects, authorization boundary, success evidence and failure outcomes completely. Do not create a parallel format.
+3. [Required] Add corresponding risks and handling only when the operation involves network access, permissions, cost, irreversibility, partial success, duplicate submission or uncertain outcome. Do not substitute a generic risk list for an actual decision.
+4. [Default] Do not automatically retry a failed external operation. Retry only when the error is confirmed transient, the operation is idempotent or has a reliable idempotency key, and attempt limit and stop conditions are fixed.
+5. [Required] Compensation is a separate external operation with its own OP, risk, authorization and validation. Deletion, restoration or reverse writes are not implicit steps of the original operation.
+6. [Required] The TASK must distinguish success, failure, partial success and uncertain result. Do not claim success without confirming final remote state or resend to guess the state.
+7. [Required] Do not write secret values into TASKs, commands, records or replies. When a secret is necessary, record only its secure acquisition method and the boundary for user execution.
+8. [Required] Use one result schema for each applicable OP and the overall operation: `Overall result` accepts only `Complete success`, `Partial success`, `Failure` or `Uncertain result`; list `Effective`, `Not effective` and `Unknown` separately, omitting empty categories. OP success means confirmed effect, OP failure belongs under Not effective, and unconfirmed outcomes belong under Unknown. The overall result must agree with OP details.
+9. [Required] A failed external operation blocks the TASK. Retry within the same Attempt up to an approved limit only when the TASK fixed safe retry conditions and they currently hold; otherwise close it and obtain new authorization for continuation.
+10. [Required] Local CMD/VAL and file-recovery evidence do not grant External OP authorization, prove remote success or provide cross-system atomicity. Handle External OP side effects, unknown outcomes and compensation separately. When the formal execution entry point lacks a trustworthy effect boundary, retain Unknown rejection; command or validation labels do not grant capability.

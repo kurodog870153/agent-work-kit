@@ -1,62 +1,70 @@
 ---
-name: 任務執行
-description: 依正式 TASK 執行前置檢查、授權操作、驗證、紀錄、狀態與恢復時使用；需求或技術決策不適用。
+name: Task execution
+description: Use for preflight, authorized operations, validation, records, state and recovery of a formal TASK; not for requirement or technical decisions.
 metadata:
-  work-tags:
+  tags:
     - task-execution
 ---
 
-# 任務執行指令
+# Task execution
 
-指令邊界：Execute 只控制已核准 TASK 的前置檢查、Attempt 授權、執行、紀錄、狀態、鎖與恢復；可依使用者決策處理不改變需求、驗收、交付、安全與外部副作用邊界的執行偏差，但不得自行建立規格決策、補完正式 TASK 或重複 Task instructions。
+Instruction boundary: Execute controls only preflight, Attempt authorization, execution, records, state, locks and recovery for approved TASKs. It may handle execution deviations under user decisions when the requirement, acceptance, deliverable, safety and external side-effect boundaries remain unchanged. It must not make specification decisions, complete a formal TASK specification or repeat Task instructions.
 
-## 1. 載入與 Reference 路由
+## 1. Loading and Reference routing
 
-1. [強制] 只執行正式且已核准的 `TASK-*`；外部技能只依目標 TASK 的 `skill_id` 從已驗證 Formal TASK collection 的 `skill_selection` 選取一個，`null` 表示 base-only。不得探索、推薦、加入、替換、組合或呼叫其他技能。
-2. [強制] 建立、更新或解讀 index、Attempt、狀態、指紋與結果時，載入 `execute.general.execution-records`（`references/execution-records.md`）。
-3. [強制] 發現既有鎖、進行中紀錄、中斷、部分寫入、承接或 Correction 時，載入 `execute.general.execution-recovery`（`references/execution-recovery.md`）。
-4. [強制] Execute reference 只在需要其正文時載入模型；`EXECUTE-INSTRUCTIONS-SHA-256` 須由工具涵蓋目前觸發且實際適用的 reference，並在 reference 動態加入或移除時重算，即使正文不需載入模型也不得省略其位元組。
-5. [強制] 正常執行只載入 TASK collection 基準、formal index、目標 TASK item、其必要相依資料與引用的 DECISION、execution index、適用最新 Attempt、承接鏈與 Correction；只有完整 collection 驗證、稽核、衝突或使用者要求時才載入所有 item 或完整歷史。
+1. [Required] Execute only formal, approved `TASK-*` items. Select one External Skill solely from the validated formal TASK collection's `skill_selection` by the target TASK's `skill_id`; `null` means base-only. Do not explore, recommend, add, replace, combine or invoke other Skills.
+2. [Required] Load the Execution records Reference below when creating, updating or interpreting an index, Attempt, state, fingerprint or result.
+3. [Required] Load the Execution recovery Reference below when finding an existing lock, in-progress record, interruption, partial write, continuation or Correction.
 
-## 2. 唯讀前置檢查
+4. [Required] Load an Execute Reference body into the model only when needed. The tool must include every currently triggered and applicable Reference in `EXECUTE-INSTRUCTIONS-SHA-256` and recompute it when References are added or removed dynamically, even if their bodies need not enter model context.
+5. [Required] Normal execution loads only the TASK collection baseline, formal index, target TASK item, required dependencies and referenced DECISIONs, Execution index, applicable latest Attempt, continuation chain and Corrections. Load every item or full history only for complete collection validation, audit, conflict or a user request.
 
-1. [強制] 建立 Attempt 前須確認 TASK-SPEC；collection、formal index 與目標 item SHA；Task-owned `hierarchy_selection_sha256` 與 `skill_selection_sha256`，固定 Source path／raw bytes／SHA 與 `task_source` binding；execution index 與目標 TASK 的 hierarchy、`skill_id`、技能 snapshot／bundle、Execute mode、Work instruction fingerprints、TASK 狀態、相依、必要輸入、檔案現況、工作區差異、路徑邊界與既有鎖均符合正式 TASK。
-2. [強制] TASK 的目標、需求、驗收、交付成果、安全邊界、外部副作用、版本、Swagger 或其他適用契約有缺漏、矛盾、占位符或需由 Execute 推論時，視為規格缺陷並停止，不得自行補足。只有不改變上述語意邊界的必要命令、驗證、略過不適用紀錄或實作方式調整，才可依第 4 節分類為執行偏差。
-3. [強制] 目標 TASK 的 instruction sources 或內容與 index 該 TASK 的 `TASK-INSTRUCTIONS-SHA-256` 不同時，不得修改成果或未授權寫入紀錄；先唯讀回報預期值、觀察值、來源差異與影響，再取得使用者明確授權，才可只建立「已停止／指令已變更」Attempt、更新 index 為受阻並交回 Task 稽核。未授權時維持原狀。
-4. [強制] 既有差異只有在路徑與內容都可由核准 TASK、有效 Attempt／Correction 或本次已知前序成果逐項解釋時才能繼續；可能屬於使用者或無法判定時停止。
-5. [強制] 每次讀寫前須重新套用共用 instruction-loading 的完整需求成品路徑安全檢查；無法確認時不得取得鎖或寫入紀錄。
-6. [強制] TASK 狀態只有待執行或待重新執行可建立新 Attempt；進行中只能續接 index 指向的唯一 Attempt，受阻須先確認阻礙解除，已完成或已取消不得執行。
-7. [強制] 除有效續接／承接外，建立路徑已存在、修改路徑不存在、移動來源或目的不符、相依未完成、必要輸入不存在或命令入口不可用時，前置檢查失敗並停止，不得改變操作類型。
-8. [強制] 一般前置檢查失敗只在對話回報，不建立 Attempt 或修改 index；只有第 3 項的指令已變更依 execution records 建立停止紀錄。
-9. [強制] 工作區實作差異檢查只排除目前 execution 目錄，不得排除整個 `outputs/work/`；已核准 CMD 正常產生且不屬交付成果的暫存輸出不視為實作差異。
-10. [強制] 續接中的 Attempt 所記 `EXECUTE-INSTRUCTIONS-SHA-256` 與目前適用值不同時，先唯讀列出來源差異、已執行內容及可能影響並取得授權；授權後依原鎖所存雜湊將舊 Attempt 結案為「已停止／指令已變更」、同步 index 並解除舊鎖，再確認影響。只有仍符合目前 TASK 與新 Execute instructions 的證據可在另行授權的新 Attempt 承接；不得在舊 Attempt 直接換用新指令或覆寫其雜湊。
-11. [強制] 新 Attempt 的 TASK／index 身分、狀態、直接相依、Task instruction fingerprints、既有 lock、Execute instruction fingerprints、input 來源就緒及目標 TASK 的 create／modify／move 即時狀態須先通過 Work CLI 的唯讀 `execute preflight`；`user_provided`／`external` input 只在已有使用者或適用外部證據確認時以 `--confirmed-input <TASK-ID>/<INPUT-ID>` 傳入，不得傳入機密值。非零退出碼立即停止。
-12. [強制] preflight 通過後須以相同參數執行唯讀 `execute worktree`；`target_task`、`completed_dependency`、`unrelated` 只表示路徑交集，不證明變更所有權。`review_status: required` 時須依第 4、9 項逐筆核對，任何無法解釋項目都停止。
+## 2. Read-only preflight
 
-## 3. 授權與開始
+1. [Required] Before creating an Attempt, confirm TASK-SPEC; collection, formal index and target item SHAs; Task-owned `hierarchy_selection_sha256` and `skill_selection_sha256`; fixed Source path, raw bytes and SHA with `task_source` binding; and that the Execution index and target TASK's hierarchy, `skill_id`, Skill snapshot and bundle, Execute mode, Work instruction fingerprints, state, dependencies, required inputs, current files, worktree differences, path boundaries and existing locks match the formal TASK.
+2. [Required] Treat missing, contradictory, placeholder or inferred TASK goals, requirements, acceptance, deliverables, safety boundaries, external side effects, versions, Swagger or other applicable contracts as specification defects and stop. Only necessary command, validation, inapplicable-record skip or implementation adjustments that preserve these semantic boundaries may be classified as execution deviations under Section 4.
+3. [Required] If the target TASK's instruction sources or content differ from its indexed `TASK-INSTRUCTIONS-SHA-256`, do not modify deliverables or write unauthorized records. First report expected and observed values, source differences and impact read-only. Only with explicit user authorization may you create a stopped/instructions-changed Attempt, mark the index blocked and return to Task audit. Otherwise leave state unchanged.
+4. [Required] Continue past existing differences only when each path and its content can be explained by the approved TASK, a valid Attempt or Correction, or known earlier output of this run. Stop if a difference may belong to the user or cannot be classified.
+5. [Required] Reapply the complete shared instruction-loading path-safety checks for requirement artifacts before every read or write. Do not acquire a lock or write a record if safety cannot be confirmed.
+6. [Required] Only a pending or pending_retry TASK can start a new Attempt. For in_progress, resume only the unique Attempt referenced by the index. Confirm the blocker is resolved before proceeding from blocked; never execute completed or cancelled TASKs.
+7. [Required] Apart from valid resumption or continuation, stop on a preflight failure when a create path exists, a modify path does not, a move source or destination mismatches, a dependency is incomplete, a required input is absent or a command entry point is unavailable. Do not change the operation type.
+8. [Required] Report ordinary preflight failures only in the conversation; do not create an Attempt or change the index. Only the instruction change in Item 3 creates a stopped record under Execution records.
+9. [Required] Exclude only the current Execution directory from worktree implementation-difference checks, never all of `outputs/work/`. Temporary output normally produced by an approved CMD and not a deliverable is not an implementation difference.
+10. [Required] When an in-progress Attempt's recorded `EXECUTE-INSTRUCTIONS-SHA-256` differs from the currently applicable value, list source differences, executed work and possible impact read-only, then obtain authorization. Close the old Attempt as stopped/instructions-changed under the original hash stored in its lock, synchronize the index and release the old lock; then confirm impact. Only evidence still valid for the current TASK and new Execute instructions may be carried into a separately authorized new Attempt. Never replace instructions or overwrite the hash in the old Attempt.
+11. [Required] Before a new Attempt, pass the Work CLI's read-only `execute preflight` for TASK and index identity, state, direct dependencies, Task instruction fingerprints, existing lock, Execute instruction fingerprints, input readiness and the target TASK's live create, modify and move state. Pass a `user_provided` or `external` input as `--confirmed-input <TASK-ID>/<INPUT-ID>` only with existing user or applicable external evidence, never a secret value. Stop immediately on nonzero exit.
+12. [Required] After preflight passes, run read-only `execute worktree` with the same parameters. `target_task`, `completed_dependency` and `unrelated` indicate only path intersection, not change ownership. For `review_status: required`, review each item under Items 4 and 9; stop on anything unexplained.
 
-1. [強制] Attempt 授權摘要須列出 TASK、目標、檔案、步驟、CMD、OP、VAL、外部操作、預期副作用、風險、驗證、正常結案條件，以及將建立 Attempt、更新 index 與記錄結果；授權綁定完整摘要與目前工作區快照。摘要內的 record 預約、執行、結果記錄、例行驗證及正常結案不逐項重問。
-2. [強制] 原授權可涵蓋目標、模組、修改類型、風險、驗證及 Task 集合內明示允許的補檔、測試調整、已知重試與同根因修正；明示精確檔案限制仍有效。新增目標／副作用／外部操作、影響其他 Task 安排、未確認工作區漂移、未知結果或 recovery 必須取得決策；宿主另行要求的權限不可省略。
-3. [強制] 授權後先取得指向下一個 Attempt 的單一寫入者協作鎖，再建立 Attempt 並同步 index 為進行中；任一步驟失敗時保留鎖，依 recovery reference 處理。
-4. [強制] 鎖定、Attempt、成果寫入與 index 更新須維持可判定順序；不得依賴作業系統特定的原子鎖語意或自動過期時間。
+## 3. Authorization and start
 
-## 4. 執行與局部修正
+1. [Required] The Attempt authorization summary lists the TASK, goal, files, steps, CMDs, OPs, VALs, external operations, expected side effects, risks, validation, normal close conditions, and creation of the Attempt, index update and result recording. Authorization binds the complete summary and current worktree snapshot. Do not ask again for each record reservation, execution, result, routine validation or normal close within that summary.
+2. [Required] Original authorization may cover the goal, modules, change types, risks, validation and explicitly allowed added files, test adjustments, known retries and same-cause fixes in the Task collection. Explicit exact-file limits remain binding. Obtain a decision for new goals, side effects or external operations, changes to other Task schedules, unconfirmed worktree drift, unknown results or recovery. Do not bypass separate Host permission requirements.
+3. [Required] After authorization, first acquire a single-writer coordination lock pointing to the next Attempt, then create the Attempt and synchronize the index to in_progress. On failure at any step, retain the lock and follow the recovery Reference.
+4. [Required] Keep lock, Attempt, deliverable write and index update in a determinable order. Do not rely on operating-system-specific atomic-lock semantics or automatic expiration.
 
-1. [強制] 依 Attempt 原授權及正式記錄的 scope 調整執行 CMD／OP／VAL 與完整變更。必要補檔及同根因修正須在授權目標、模組、修改類型、風險與驗收不變，且不影響其他 Task 安排時，先讀取全部相關內容、記錄理由及精確版本、重驗相依／衝突，再沿既有 execution deviation 表達完整 action／files／impact；符合明示 scope 調整者沿用原授權。明示精確檔案限制、撤銷及宿主限制仍具約束力；超出邊界或語意改變才取得新決策或回到 Task／Revise。
-2. [強制] 執行偏差使用既有 semantic prepare→preview→deviation-record，來源、身分、版本及具體影響均由正式契約核對，不自行添加 Attempt 欄位或建立平行授權流程。已授權的補檔、測試與重試可連續執行，不將每次 record／Task 切換當成新核准點。
-3. [強制] 每個 CMD、OP 與 VAL 完成後立即依實際順序記錄最小結果；已授權且結果確定的記錄不另行詢問，不得保存機密、完整外部回應或與驗收無關的大量輸出。
-4. [強制] 除命令修正須依第 1、2 項處理外，錯誤原因已確定且修正與重驗完全位於已授權檔案、操作、副作用與驗證範圍內時，須在同一 Attempt 自行修正並以原 ID 加序號重驗。
-5. [強制] 原因不確定、規格缺陷、超出 scope 的檔案／能力／外部操作、與使用者修改衝突、權限或安全問題時停止。使用者在兩次變更間的新內容須經明確基準確認；未確認漂移及未知失敗不得追認為可撤銷。
-6. [強制] 每批不可分割修改後、下一個副作用前，須檢查限定差異，確認沒有非預期刪除、截斷、重排、編碼、換行或無關變更。
-7. [預設] 外部操作失敗不自動重試；只有 TASK 與 Attempt 授權已固定可重試條件且目前錯誤符合時才能依核准上限重試，結果不確定時先查證而非重送。
-8. [強制] 修改既有文字檔須保留未變內容及 TASK 固定的編碼、BOM 與換行；新檔寫入前須確定同類慣例或由 TASK 固定格式，寫入後立即嚴格解碼並核對非 ASCII 內容。
+## 4. Execution and local corrections
 
-## 5. 結案
+1. [Required] Perform CMD, OP, VAL and complete changes under the Attempt's original authorization and formally recorded scope adjustments. For necessary added files or same-cause fixes that preserve authorized goal, modules, change types, risks and acceptance without affecting other Task schedules, first read all related content, record the reason and exact versions, recheck dependencies and conflicts, then express complete action, files and impact through the existing execution deviation. Reuse original authorization for an explicitly permitted scope adjustment. Exact-file, reversal and Host limits remain binding; obtain a new decision or return to Task/Revise only when crossing a boundary or changing semantics.
+2. [Required] Execution deviations use the existing semantic prepare → preview → deviation-record flow. The formal contract checks source, identity, versions and concrete impact. Do not add Attempt fields or a parallel authorization flow. Continue authorized added files, tests and retries without treating each record or Task transition as another approval point.
+3. [Required] Immediately record the minimal actual result of each completed CMD, OP and VAL in execution order. Do not reask for an authorized record with a known result. Do not store secrets, complete external responses or large output unrelated to acceptance.
+4. [Required] Apart from command corrections governed by Items 1 and 2, when the cause is known and both correction and revalidation fit wholly within authorized files, operations, side effects and validation, fix it in the same Attempt and rerun validation under the original ID with a sequence suffix.
+5. [Required] Stop for an unknown cause, specification defect, out-of-scope file, capability or external operation, conflict with user changes, permission issue or safety issue. Confirm an explicit baseline for user content added between changes; do not retroactively treat unconfirmed drift or unknown failures as reversible.
+6. [Required] After each indivisible change set and before the next side effect, inspect the limited diff for unintended deletion, truncation, reordering, encoding, newline or unrelated changes.
+7. [Default] Do not retry a failed external operation automatically. Retry only when the TASK and Attempt authorization fixed retry conditions and the current error meets them, within the approved limit. Investigate an uncertain result before resending.
+8. [Required] When modifying existing text, preserve unchanged content and the TASK-fixed encoding, BOM and newlines. Before writing a new file, establish the same-type project convention or TASK-fixed format; immediately strict-decode the result and check non-ASCII content.
 
-1. [強制] 完成、停止或受阻時，先完成 Attempt 最終紀錄，再以一次 index 更新同步最新 Attempt、TASK 與整體狀態並解除鎖；index 同步失敗時保留鎖並進入恢復流程。
-2. [強制] 回報須列出實際修改檔案、CMD／OP／VAL 結果、主驗收與 TASK 驗收的工具推導狀態及實際 evidence、Attempt 與 TASK 狀態、部分成功或不確定結果、未解決事項及剩餘風險。
-3. [強制] 已關閉 Attempt 不得修改；需要更正紀錄時使用獨立 Correction，不得改寫歷史或偽造未執行證據。
-4. [強制] 結案時須彙整已接受的執行偏差，讓使用者一次決定全部回寫、選擇性回寫或只保留執行證據；回寫使用共用正式文件修訂程序，不得修改已關閉 Attempt。規格缺陷則依影響判定為`task_only` 或 `task_and_execution`；交接須列出實際需求編號、TASK／Execution 路徑與固定 Source 身分、目標 TASK、Attempt／前置檢查資訊、已確認做法、受影響 ID 與驗證要求，不得保留占位符或由後續流程推測。
-5. [強制] Attempt 已停止／受阻或前置檢查發現規格缺陷後，須詢問使用者後續方向並每次只確認一項；使用者明確不再處理時停止追問。同一對話已確認的規格修改回傳父 agent，由私人 artifact editor 接手，原 Execute 不改規格也不自行解除鎖；跨對話規格缺陷只交接 `$work task -- <完整需求>`，已確認正式修訂依 `$work revise` 處理；不需修改規格時只列理由、解除條件與下次 Execute 授權，不產生規格交接指令。
-6. [強制] 規格交接使用 `execute_to_task`，須包含固定 marker、需求編號、實際路徑、TASK spec、目標 TASK、`skill_id`、`execute_skill_selection_sha256`、TASK 與 instructions SHA、Attempt／前置資訊、已確認做法、修改要求、保留範圍、受影響 ID 與驗證要求；不得保存 target hierarchy。
-7. [強制] 交接置於單一 JSON 程式碼區塊且只存在於對話；Execute 不得修改 Source／TASK 或建立規格鎖，完成對應 Task／Revise 流程或已授權私人 artifact editor 交易並重新通過 Execute 檢查前，不得建立新 Attempt，交接本身也不授權任何寫入。
+## 5. Closing
+
+1. [Required] On completion, stop or block, finish the Attempt's final record first, then synchronize latest Attempt, TASK and overall states in one index update and release the lock. If index synchronization fails, retain the lock and enter recovery.
+2. [Required] Report actual changed files, CMD/OP/VAL results, tool-derived primary and TASK acceptance states with actual evidence, Attempt and TASK states, partial successes or uncertain outcomes, unresolved items and remaining risks.
+3. [Required] Never modify a closed Attempt. Use a separate Correction to correct records; do not rewrite history or fabricate evidence for work not run.
+4. [Required] At close, collect accepted execution deviations and let the user decide once whether to write back all, selected ones or none beyond execution evidence. Write back through the shared formal-document revision process without changing the closed Attempt. Classify specification defects as `task_only` or `task_and_execution` by impact. The handoff must include the actual requirement ID, TASK and Execution paths, fixed Source identity, target TASK, Attempt and preflight information, confirmed approach, affected IDs and validation requirements, without placeholders or later inference.
+5. [Required] After an Attempt stops or blocks, or preflight finds a specification defect, ask the user for the next direction one decision at a time; stop asking when the user explicitly declines further work. Return specification changes confirmed in the same conversation to the parent agent for the private artifact editor; the original Execute neither edits the spec nor releases the lock itself. Across conversations, hand off specification defects only with `$work task -- <complete requirement>`, and handle confirmed formal revisions through `$work revise`. When no specification change is needed, state only the reason, release conditions and next Execute authorization; do not produce a specification handoff command.
+6. [Required] A specification handoff uses `execute_to_task` and includes the fixed marker, requirement ID, actual paths, TASK spec, target TASK, `skill_id`, `execute_skill_selection_sha256`, TASK and instruction SHAs, Attempt or preflight information, confirmed approach, requested changes, preservation scope, affected IDs and validation requirements. Do not store target hierarchy.
+7. [Required] Put the handoff in one JSON code block in the conversation only. Execute must not modify Source or TASK or create a specification lock. Do not create another Attempt until the corresponding Task/Revise flow or authorized private artifact-editor transaction is complete and Execute checks pass again. The handoff itself authorizes no write.
+
+## References
+
+| Reference | Load condition |
+| --- | --- |
+| `references/execution-records.md` | Creating, updating or interpreting an index, Attempt, state, fingerprint or result. |
+| `references/execution-recovery.md` | Finding an existing lock, in-progress record, interruption, partial write, continuation or Correction. |

@@ -1,14 +1,14 @@
 ---
-name: 程式語言任務規劃
-description: 固定特定程式語言的實作與驗證契約時使用；未涉及程式語言實作的工作不適用。
+name: Programming language task planning
+description: Use to fix language-specific implementation and validation contracts; not applicable to work without programming-language implementation.
 metadata:
-  work-tags:
+  tags:
     - language-contract
 ---
 
-# 程式語言任務規劃指令
+# Programming language task planning
 
-指令邊界：本層確認影響成果的語言平台限制、語言選擇與專案證據；具體語言契約由適用子節點負責。
+Instruction boundary: This layer confirms language-platform constraints, language selection and project evidence that affect outcomes; applicable child nodes own specific language contracts.
 
-1. [強制] TASK 須依目標專案的實際來源、設定及工具鏈選擇適用的程式語言子路徑；不得從應用類型或框架名稱推定語言。
-2. [強制] 已確認且影響成果的語言或框架限制須對應 TASK 驗收；不得將其他語言的限制套用於本工作，未確認的限制依 General 規則釐清。
+1. [Required] Select the applicable programming-language child path from the target project's actual sources, configuration and toolchain. Do not infer a language from application type or framework name.
+2. [Required] Map confirmed language or framework constraints that affect outcomes to TASK acceptance. Do not apply another language's constraints; clarify unconfirmed constraints under General rules.

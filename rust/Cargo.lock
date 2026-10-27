@@ -453,6 +453,54 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "skill-api"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "skill-feature",
+ "skill-infrastructure",
+ "skill-model",
+ "skill-operations",
+]
+
+[[package]]
+name = "skill-feature"
+version = "2.0.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "skill-infrastructure"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "skill-model",
+ "skill-operations",
+]
+
+[[package]]
+name = "skill-model"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "skill-operations"
+version = "2.0.0"
+dependencies = [
+ "serde_json",
+ "sha2",
+ "skill-model",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -485,6 +533,52 @@ name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "tooling-cli"
+version = "2.0.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "tooling-flow",
+]
+
+[[package]]
+name = "tooling-feature"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "skill-api",
+ "tooling-infrastructure",
+ "tooling-model",
+ "tooling-operations",
+]
+
+[[package]]
+name = "tooling-flow"
+version = "2.0.0"
+dependencies = [
+ "serde",
+ "skill-api",
+ "tooling-feature",
+ "tooling-infrastructure",
+ "tooling-model",
+ "tooling-operations",
+]
+
+[[package]]
+name = "tooling-infrastructure"
+version = "2.0.0"
+
+[[package]]
+name = "tooling-model"
+version = "2.0.0"
+
+[[package]]
+name = "tooling-operations"
+version = "2.0.0"
 
 [[package]]
 name = "typenum"
@@ -628,7 +722,7 @@ dependencies = [
 
 [[package]]
 name = "work-cli"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "clap",
  "serde",
@@ -640,17 +734,18 @@ dependencies = [
 
 [[package]]
 name = "work-feature"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "skill-api",
  "work-model",
  "work-operations",
 ]
 
 [[package]]
 name = "work-flow"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "serde_json",
  "work-feature",
@@ -659,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "work-infrastructure"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "fs4",
@@ -667,6 +762,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "skill-api",
  "work-feature",
  "work-model",
  "work-operations",
@@ -674,15 +770,16 @@ dependencies = [
 
 [[package]]
 name = "work-model"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "skill-api",
 ]
 
 [[package]]
 name = "work-operations"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "base64",
  "caseless",
@@ -690,6 +787,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "skill-api",
  "unicode-normalization",
  "work-model",
 ]

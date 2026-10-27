@@ -1,19 +1,19 @@
 ---
-name: Web 任務規劃
-description: 固定 Web 可交付契約、消費者結果、相容性影響與驗證邊界時使用；非 Web 工作不適用。
+name: Web task planning
+description: Use to fix Web deliverable contracts, consumer outcomes, compatibility impact and validation boundaries; not applicable to non-Web work.
 metadata:
-  work-tags:
+  tags:
     - web
 ---
 
-# Web 任務規劃指令
+# Web task planning
 
-指令邊界：本層確認跨前後端的使用者與消費者成果，再固定 Web 可交付契約；後端、安全、API 相容性及技術實作由更接近的 Task 層負責。
+Instruction boundary: This layer confirms user and consumer outcomes across frontend and backend, then fixes the Web deliverable contract. Closer Task layers own backend, security, API compatibility and technical implementation details.
 
-1. [強制] TASK 須先確認使用者、消費者、主要互動及可觀察成果，再依專案證據固定入口、輸入、成功輸出、錯誤輸出、身分邊界與相容性結果；非公開能力須確認可存取者、不可存取者及失敗結果，既有消費者須確認允許的遷移結果，不得無證據認定無影響。沒有適用項目時不得建立空白契約清單。
-2. [強制] 使用者可控制的路徑、查詢、標頭、Cookie、Body、檔案或訊息都須固定語意、格式、必要性、邊界與無效輸入結果。
-3. [強制] 涉及 HTTP 時須固定方法、路徑、媒體型別、狀態碼、快取或冪等語意及受影響消費者；框架註解與自動文件要求由適用技術層補足。
-4. [強制] VAL 須直接驗收已固定的 Web 契約與消費者結果；不得只以內部方法通過取代邊界行為證據。
-5. [強制] 跨層 TASK 須涵蓋實際受影響的介面、API、資料流、驗證、安全性、測試與部署項目；先確認介面契約，再依明確相依順序拆分。
-6. [強制] 適用的相容性影響、效能、可存取性成果、風險、測試及靜態檢查須明列；測試與靜態檢查須具有 CMD 及客觀通過條件。
-7. [強制] 未確認且會影響成果、範圍、檔案、步驟、驗證或部署操作的跨層需求不得納入正式 TASK。
+1. [Required] The TASK must first confirm users, consumers, main interactions and observable outcomes, then use project evidence to fix entry points, inputs, success and error outputs, identity boundaries and compatibility outcomes. For nonpublic capabilities, confirm who can and cannot access them and the failure result. For existing consumers, confirm allowed migration outcomes; do not assume no impact without evidence. Do not create an empty contract list when nothing applies.
+2. [Required] Fix semantics, format, necessity, boundaries and invalid-input outcomes for every user-controlled path, query, header, Cookie, Body, file or message.
+3. [Required] For HTTP, fix method, path, media type, status codes, cache or idempotency semantics and affected consumers. Applicable technical layers add framework annotation and generated-documentation requirements.
+4. [Required] VAL must directly accept the fixed Web contract and consumer outcomes; internal-method success alone cannot replace boundary-behavior evidence.
+5. [Required] A cross-layer TASK must cover actually affected UI, API, data flow, validation, security, testing and deployment items. Confirm the interface contract before splitting work in explicit dependency order.
+6. [Required] List applicable compatibility impact, performance, accessibility outcomes, risks, tests and static checks. Tests and static checks need CMD and objective passing conditions.
+7. [Required] Do not include unconfirmed cross-layer requirements in a formal TASK when they affect outcomes, scope, files, steps, validation or deployment operations.
