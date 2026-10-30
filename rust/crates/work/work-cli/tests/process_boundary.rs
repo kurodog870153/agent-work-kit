@@ -2879,184 +2879,67 @@ fn handoff_build_output_validates_across_installed_processes() {
     }
     assert!(!project.join("outputs/work/plans").exists());
 }
-#[test]
-fn task_delegation_uses_fixed_source_without_plan_and_rejects_legacy_context() {
-    fn copy_tree(source: &Path, target: &Path) {
-        fs::create_dir_all(target).unwrap();
-        for entry in fs::read_dir(source).unwrap() {
-            let entry = entry.unwrap();
-            let destination = target.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &destination);
-            } else {
-                fs::copy(entry.path(), destination).unwrap();
-            }
-        }
-    }
-    let repo = PathBuf::from(project_root());
-    let base = std::env::temp_dir().join(format!(
-        "work-task-delegation-{}-{}",
+fn assert_retired_delegation_role(role: &str) {
+    let root = std::env::temp_dir().join(format!(
+        "work-retired-delegation-{role}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
     ));
-    for role in ["task-coordinator", "task-skill"] {
-        let fixture = repo.join(if role == "task-skill" {
-            "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/task-skill/project"
-        } else {
-            "rust/crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project"
-        });
-        let project = base.join(role);
-        copy_tree(
-            &fixture.join("outputs/work/sources"),
-            &project.join("outputs/work/sources"),
-        );
-        let mut index: Value = serde_json::from_slice(
-            &fs::read(fixture.join("outputs/work/tasks/example/index.json")).unwrap(),
-        )
-        .unwrap();
-        if role == "task-skill" {
-            copy_tree(
-                &fixture.join("outputs/work/tasks"),
-                &project.join("outputs/work/tasks"),
-            );
-            copy_tree(&fixture.join("skills"), &project.join("skills"));
-            work_infrastructure::fixture_support::rebind_current_fixture_collection(
-                &project,
-                installed_executable().parent().unwrap().parent().unwrap(),
-                "outputs/work/tasks/example/index.json",
-            )
-            .unwrap();
-            index = serde_json::from_slice(
-                &fs::read(project.join("outputs/work/tasks/example/index.json")).unwrap(),
-            )
-            .unwrap();
-        } else {
-            index["hierarchy_selection"] = work_flow::hierarchy::selection_build(
-                &work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog {
-                    skill_root: installed_executable()
-                        .parent()
-                        .unwrap()
-                        .parent()
-                        .unwrap()
-                        .to_path_buf(),
-                },
-                &json!({"decision":"general_only","selections":[]}),
-            )
-            .unwrap();
-        }
-        let mut request = json!({"schema":"work-delegation-build-request","role":role,"request":"Preserve the confirmed requirement.","repository_evidence":["Reviewed src.txt."],"saved_discussion":["Preserve the interface."]});
-        if role == "task-coordinator" {
-            request["planning_source"] = json!({"snapshot":index["source"]["manifest"],"artifacts":index["artifacts"],"hierarchy_selection":index["hierarchy_selection"],"skill_selection":index["skill_selection"],"acceptance_criteria":index["acceptance_criteria"]});
-        } else {
-            request["task_path"] = json!("outputs/work/tasks/example/index.json");
-            request["task_id"] = json!("TASK-001");
-        }
-        let input = project.join("request.json");
-        let envelope_file = project.join("envelope.json");
-        let source_dir = project.join("outputs/work/sources/example/SRC-001");
-        let original_source = ["manifest.json", "manifest.json.done", "source.txt"]
-            .map(|name| (name, fs::read(source_dir.join(name)).unwrap()));
-        let skill_root = format!(
-            "repo:delegation-fixture={}",
-            project.join("skills").display()
-        );
-        let build = |value: &Value| {
-            fs::write(&input, serde_json::to_vec(value).unwrap()).unwrap();
-            let mut command = Command::new(installed_executable());
-            command.args([
-                "--project-root",
-                project.to_str().unwrap(),
-                "--verbose",
-                "delegation",
-                "build",
-                "--input-file",
-                input.to_str().unwrap(),
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("request.json");
+    let original = serde_json::to_vec(&json!({
+        "schema": "work-delegation-build-request",
+        "role": role,
+        "request": "Legacy private delegation."
+    }))
+    .unwrap();
+    fs::write(&input, &original).unwrap();
+    for command in ["build", "validate"] {
+        let mut args = vec![
+            "--project-root".to_owned(),
+            root.to_string_lossy().into_owned(),
+            "--verbose".to_owned(),
+            "delegation".to_owned(),
+            command.to_owned(),
+            "--input-file".to_owned(),
+            input.to_string_lossy().into_owned(),
+        ];
+        if command == "validate" {
+            args.extend([
+                "--role".to_owned(),
+                role.to_owned(),
+                "--sender".to_owned(),
+                if role == "task-skill" {
+                    "task-coordinator"
+                } else {
+                    "parent"
+                }
+                .to_owned(),
             ]);
-            if role == "task-skill" {
-                command.args(["--skill-root", &skill_root]);
-            }
-            let output = command.output().unwrap();
-            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-            (output.status.code(), response)
-        };
-        let (code, response) = build(&request);
-        assert_eq!(code, Some(0), "{role}: {response}");
-        let envelope = &response["data"];
-        assert!(envelope["context"].get("source_plan").is_none());
-        assert_eq!(
-            envelope["context"]["task_source"]["source"],
-            index["source"]
-        );
-        assert_eq!(
-            envelope["context"]["repository_evidence"],
-            request["repository_evidence"]
-        );
-        assert_eq!(
-            envelope["context"]["saved_discussion"],
-            request["saved_discussion"]
-        );
-        assert_eq!(
-            envelope["context"]["task_source"]["source_bytes"],
-            json!(original_source[2].1)
-        );
-        fs::write(&envelope_file, serde_json::to_vec(envelope).unwrap()).unwrap();
-        let sender = if role == "task-skill" {
-            "task-coordinator"
-        } else {
-            "parent"
-        };
-        let validate = |value: &Value| {
-            fs::write(&envelope_file, serde_json::to_vec(value).unwrap()).unwrap();
-            let output = Command::new(installed_executable())
-                .args([
-                    "--project-root",
-                    project.to_str().unwrap(),
-                    "--verbose",
-                    "delegation",
-                    "validate",
-                    "--input-file",
-                    envelope_file.to_str().unwrap(),
-                    "--role",
-                    role,
-                    "--sender",
-                    sender,
-                ])
-                .output()
-                .unwrap();
-            (
-                output.status.code(),
-                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
-            )
-        };
-        let (code, validated) = validate(envelope);
-        assert_eq!(code, Some(0), "{role}: {validated}");
-        assert_eq!(validated["data"]["grants_authorization"], false);
-        let mut legacy = request.clone();
-        legacy["source_plan_path"] = json!("missing-plan.json");
-        assert_eq!(build(&legacy).0, Some(ExitCode::Contract as i32));
-        let mut mixed = envelope.clone();
-        mixed["context"]["source_plan"] = json!({});
-        assert_eq!(validate(&mixed).0, Some(ExitCode::Contract as i32));
-        let mut drifted = envelope.clone();
-        drifted["context"]["task_source"]["source_bytes"][0] = json!(0);
-        assert_eq!(validate(&drifted).0, Some(ExitCode::Contract as i32));
-        let mut changed = original_source[2].1.clone();
-        changed[0] ^= 1;
-        fs::write(source_dir.join("source.txt"), changed).unwrap();
-        assert_eq!(build(&request).0, Some(ExitCode::ArtifactIntegrity as i32));
-        fs::write(source_dir.join("source.txt"), &original_source[2].1).unwrap();
-        for (name, raw) in original_source {
-            assert_eq!(fs::read(source_dir.join(name)).unwrap(), raw);
         }
-        assert!(!project.join("outputs/work/plans").exists());
-        assert!(!project.join("outputs/work/executions").exists());
-        if role == "task-coordinator" {
-            assert!(!project.join("outputs/work/tasks").exists());
-        }
+        let output = Command::new(installed_executable())
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(ExitCode::Contract as i32),
+            "{args:?}"
+        );
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["reason_code"], "delegation_command_retired");
     }
+    assert_eq!(fs::read(&input).unwrap(), original);
+    assert!(!root.join("outputs").exists());
+}
+
+#[test]
+fn retired_task_delegation_roles_reject_without_writing_artifacts() {
+    assert_retired_delegation_role("task-coordinator");
+    assert_retired_delegation_role("task-skill");
 }
 
 #[test]
@@ -4038,246 +3921,13 @@ fn installed_spec_recover_checks_all_approved_evidence_before_writes() {
 }
 
 #[test]
-fn installed_artifact_editor_uses_fixed_source_and_task_only_requests() {
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../work-infrastructure/fixtures/cases/specification/update/item-goal/project");
-    let root = std::env::temp_dir().join(format!(
-        "work-artifact-editor-task-cli-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    for relative in [
-        "outputs/work/tasks/example/index.json",
-        "outputs/work/tasks/example/tasks/TASK-001.json",
-        "outputs/work/executions/example/index.json",
-    ] {
-        let target = root.join(relative);
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy(fixture.join(relative), target).unwrap();
-    }
-    work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
-    rebind_current_diagnostics_fixture(&root);
-    fs::write(root.join("src.txt"), b"source\n").unwrap();
-    let source = root.join("outputs/work/sources/example/SRC-001/source.txt");
-    let original = fs::read(&source).unwrap();
-    let invoke = |arguments: &[&str], status: i32| {
-        let output = Command::new(installed_executable())
-            .args(["--project-root", root.to_str().unwrap(), "--verbose"])
-            .args(arguments)
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(status),
-            "{arguments:?}: {output:?}"
-        );
-        assert!(output.stderr.is_empty());
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()
-    };
-    let input = root.join("editor.json");
-    let request = json!({"schema":"work-delegation-build-request","role":"artifact-editor","mode":"execute","request":"Revise confirmed artifact.","task_path":"outputs/work/tasks/example/index.json","confirmed_request":{"schema":"work-spec-prepare-request","requirement_id":"example","reason":"Reviewed","edits":[{"target":{"artifact":"task_item","task_id":"TASK-001"},"field":"goal","after":"Reviewed goal"}]},"decisions":["Confirmed revision"],"affected_task_ids":["TASK-001"],"continuation_point":"Return to Execute"});
-    let build = |value: &Value, status| {
-        fs::write(&input, serde_json::to_vec(value).unwrap()).unwrap();
-        invoke(
-            &[
-                "delegation",
-                "build",
-                "--input-file",
-                input.to_str().unwrap(),
-            ],
-            status,
-        )
-    };
-    let envelope = build(&request, 0)["data"].clone();
-    assert_eq!(
-        envelope["context"]["task_source"]["source_bytes"],
-        json!(original)
-    );
-    assert!(envelope["context"]["artifacts"].get("plan").is_none());
-    fs::write(&input, serde_json::to_vec(&envelope).unwrap()).unwrap();
-    let validation = invoke(
-        &[
-            "delegation",
-            "validate",
-            "--input-file",
-            input.to_str().unwrap(),
-            "--role",
-            "artifact-editor",
-            "--sender",
-            "parent",
-        ],
-        0,
-    );
-    assert_eq!(validation["data"]["source_validation"], "checked");
-    assert_eq!(validation["data"]["grants_authorization"], false);
-    for kind in ["origin", "candidate", "scope", "legacy"] {
-        let mut wrong = request.clone();
-        match kind {
-            "origin" => wrong["mode"] = json!("plan"),
-            "candidate" => {
-                wrong["confirmed_request"]["edits"][0]["target"]["artifact"] = json!("plan")
-            }
-            "scope" => wrong["affected_task_ids"] = json!(["TASK-999"]),
-            _ => wrong["source_plan_path"] = json!("outputs/work/plans/example.json"),
-        }
-        assert_eq!(
-            build(&wrong, ExitCode::Contract as i32)["reason_code"],
-            "delegation_boundary_mismatch"
-        );
-    }
-    let mut task_origin = request.clone();
-    task_origin["mode"] = json!("task");
-    assert_eq!(build(&task_origin, 0)["data"]["mode"], "task");
-    fs::write(&source, b"unexpected Source drift").unwrap();
-    fs::write(&input, serde_json::to_vec(&envelope).unwrap()).unwrap();
-    let rejected = invoke(
-        &[
-            "delegation",
-            "validate",
-            "--input-file",
-            input.to_str().unwrap(),
-            "--role",
-            "artifact-editor",
-            "--sender",
-            "parent",
-        ],
-        5,
-    );
-    assert_ne!(rejected["status"], "success");
-    assert!(!root.join("outputs/work/plans").exists());
+fn retired_artifact_editor_rejects_without_writing_artifacts() {
+    assert_retired_delegation_role("artifact-editor");
 }
 
 #[test]
-fn installed_execute_delegation_requires_formal_task_without_plan() {
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../work-infrastructure/fixtures/shared/task-diagnostics-project");
-    let root = std::env::temp_dir().join(format!(
-        "work-execute-delegation-task-cli-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    for relative in [
-        "outputs/work/tasks/example/index.json",
-        "outputs/work/tasks/example/tasks/TASK-001.json",
-        "outputs/work/executions/example/index.json",
-    ] {
-        let target = root.join(relative);
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy(fixture.join(relative), target).unwrap();
-    }
-    work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
-    rebind_current_diagnostics_fixture(&root);
-    let source = root.join("outputs/work/sources/example/SRC-001/source.txt");
-    let original = fs::read(&source).unwrap();
-    let execution = root.join("outputs/work/executions/example/index.json");
-    let original_execution = fs::read(&execution).unwrap();
-    let invoke = |arguments: &[&str], status: i32| {
-        let output = Command::new(installed_executable())
-            .args(["--project-root", root.to_str().unwrap(), "--verbose"])
-            .args(arguments)
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(status),
-            "{arguments:?}: {output:?}"
-        );
-        assert!(output.stderr.is_empty());
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()
-    };
-    let input = root.join("delegation.json");
-    let request = json!({"schema":"work-delegation-build-request","role":"execute","request":"Execute selected TASK.","task_path":"outputs/work/tasks/example/index.json","task_id":"TASK-001"});
-    let build = |value: &Value, status| {
-        fs::write(&input, serde_json::to_vec(value).unwrap()).unwrap();
-        invoke(
-            &[
-                "delegation",
-                "build",
-                "--input-file",
-                input.to_str().unwrap(),
-            ],
-            status,
-        )
-    };
-    let envelope = build(&request, 0)["data"].clone();
-    assert_eq!(
-        envelope["context"]["task_source"]["source_bytes"],
-        json!(original)
-    );
-    assert_eq!(envelope["context"]["task_boundary"]["id"], "TASK-001");
-    assert_eq!(
-        envelope["context"]["execution_index"],
-        serde_json::from_slice::<Value>(&original_execution).unwrap()
-    );
-    for kind in ["legacy", "unknown", "plan_role", "plan_mode"] {
-        let mut wrong = request.clone();
-        match kind {
-            "legacy" => wrong["source_plan_path"] = json!("missing.json"),
-            "unknown" => wrong["task_id"] = json!("TASK-999"),
-            "plan_role" => wrong["role"] = json!("plan"),
-            _ => wrong["mode"] = json!("plan"),
-        };
-        assert_eq!(
-            build(&wrong, 4)["reason_code"],
-            "delegation_boundary_mismatch"
-        );
-    }
-    let validate = |value: &Value, role: &str, status| {
-        fs::write(&input, serde_json::to_vec(value).unwrap()).unwrap();
-        invoke(
-            &[
-                "delegation",
-                "validate",
-                "--input-file",
-                input.to_str().unwrap(),
-                "--role",
-                role,
-                "--sender",
-                "parent",
-            ],
-            status,
-        )
-    };
-    let verified = validate(&envelope, "execute", 0);
-    assert_eq!(verified["data"]["source_validation"], "checked");
-    assert_eq!(verified["data"]["grants_authorization"], false);
-    assert_eq!(
-        validate(&envelope, "plan", 2)["reason_code"],
-        "cli_usage_error"
-    );
-    for field in [
-        "task_boundary",
-        "target_task",
-        "task_source",
-        "execution_index_sha256",
-    ] {
-        let mut wrong = envelope.clone();
-        wrong["context"][field] = Value::Null;
-        assert_eq!(
-            validate(&wrong, "execute", 4)["reason_code"],
-            "delegation_boundary_mismatch"
-        );
-    }
-    let mut changed_source = original.clone();
-    changed_source[0] ^= 1;
-    fs::write(&source, changed_source).unwrap();
-    assert_eq!(
-        validate(&envelope, "execute", 5)["reason_code"],
-        "source_hash_mismatch"
-    );
-    assert_eq!(fs::read(&execution).unwrap(), original_execution);
-    assert!(!root.join("outputs/work/plans").exists());
-    assert!(
-        !root
-            .join("outputs/work/executions/example/attempts")
-            .exists()
-    );
+fn retired_execute_delegation_rejects_without_writing_artifacts() {
+    assert_retired_delegation_role("execute");
 }
 
 #[test]

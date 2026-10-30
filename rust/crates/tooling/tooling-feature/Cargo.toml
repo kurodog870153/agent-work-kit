@@ -6,8 +6,5 @@ rust-version.workspace = true
 
 [dependencies]
 skill-api = { path = "../../skill/skill-api" }
-tooling-model = { path = "../tooling-model" }
-tooling-operations = { path = "../tooling-operations" }
-tooling-infrastructure = { path = "../tooling-infrastructure" }
 serde.workspace = true
 serde_json.workspace = true

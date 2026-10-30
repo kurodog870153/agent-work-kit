@@ -59,6 +59,8 @@ pub enum PublicSchema {
     WorkCommandRunRequest,
     #[serde(rename = "work-command-started")]
     WorkCommandStarted,
+    #[serde(rename = "work-host-execution-report")]
+    WorkHostExecutionReport,
     #[serde(rename = "work-contract-catalog")]
     WorkContractCatalog,
     #[serde(rename = "work-contract-description")]
@@ -208,7 +210,7 @@ pub enum PublicSchema {
 }
 
 impl PublicSchema {
-    pub const ALL: [Self; 100] = [
+    pub const ALL: [Self; 101] = [
         Self::WorkFileTransactionRequest,
         Self::WorkFileTransactionPreview,
         Self::WorkFileRecoveryPreview,
@@ -236,6 +238,7 @@ impl PublicSchema {
         Self::WorkCommandResult,
         Self::WorkCommandRunRequest,
         Self::WorkCommandStarted,
+        Self::WorkHostExecutionReport,
         Self::WorkContractCatalog,
         Self::WorkContractDescription,
         Self::WorkContractScaffold,
@@ -341,6 +344,7 @@ impl PublicSchema {
             Self::WorkCommandResult => "work-command-result",
             Self::WorkCommandRunRequest => "work-command-run-request",
             Self::WorkCommandStarted => "work-command-started",
+            Self::WorkHostExecutionReport => "work-host-execution-report",
             Self::WorkContractCatalog => "work-contract-catalog",
             Self::WorkContractDescription => "work-contract-description",
             Self::WorkContractScaffold => "work-contract-scaffold",

@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use work_flow::delegation::{build as build_delegation, validate as validate_delegation};
 use work_flow::error::{ExitCode, WorkError};
 use work_flow::execution::{
     CommandProjectRequest, CommandProjectSources, ExecutionProjectTarget, attempt_render,
@@ -38,7 +37,6 @@ use work_flow::workflow::{
 use work_infrastructure::artifact_paths::LocalArtifactPaths;
 use work_infrastructure::clock_workspace::{LocalWorkspaceAllocator, local_date, local_timestamp};
 use work_infrastructure::codec::{canonical_json, decode_utf8, fingerprint, parse_json_contract};
-use work_infrastructure::delegation_storage::LocalDelegationStorage;
 use work_infrastructure::execution::storage::{AttemptStartRecoveryRequest, LocalExecutionStorage};
 use work_infrastructure::files::resolve_project_path;
 use work_infrastructure::handoff_storage::LocalHandoffStorage;
@@ -272,7 +270,7 @@ fn dispatch_with_operation_context(
     };
     if !matches!(
         command,
-        "source" | "task" | "execute" | "delegation" | "discussion" | "handoff"
+        "source" | "task" | "execute" | "discussion" | "handoff"
     ) {
         return dispatch(parsed, root, input, skill_root);
     }
@@ -1133,28 +1131,12 @@ fn dispatch_with_writer_family(
             let configs = skill_configs(&string_list(parsed, "skill_root"))?;
             crate::discussion::dispatch(root, skill_root, &configs, operation, request)
         }
-        ["delegation", "build" | "validate"] => {
-            let request = input_json(input)?;
-            let storage = LocalDelegationStorage {
-                project_root: root.to_path_buf(),
-                skill_root: skill_root.to_path_buf(),
-                skill_configs: skill_configs(&string_list(parsed, "skill_root"))?,
-            };
-            if parsed.path[1] == "build" {
-                let result = build_delegation(&storage, &request)?;
-                let _: work_model::delegation::DelegationBuildRequest =
-                    serde_json::from_value(request)
-                        .expect("built delegation request matches its model");
-                Ok(result)
-            } else {
-                validate_delegation(
-                    &storage,
-                    &request,
-                    argument(parsed, "role")?,
-                    argument(parsed, "sender")?,
-                )
-            }
-        }
+        ["delegation", "build" | "validate"] => Err(WorkError::new(
+            ExitCode::Contract,
+            "delegation_command_retired",
+            "Private delegation commands are retired; use formal Work records with Host-native delegation.",
+            json!({"command": parsed.path.join(" ")}),
+        )),
         ["handoff", command] => {
             let request = input_json(input)?;
             let paths = LocalArtifactPaths {
@@ -1926,12 +1908,9 @@ mod tests {
     }
 
     #[test]
-    fn delegation_cli_build_and_validate_keep_formal_context_read_only() {
-        let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
-        let fixture =
-            repo.join("crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project");
+    fn retired_delegation_cli_rejects_build_and_validate_without_writing() {
         let project = std::env::temp_dir().join(format!(
-            "work-delegation-current-{}-{}",
+            "work-retired-delegation-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1939,92 +1918,35 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(&project).unwrap();
-        for relative in [
-            "outputs/work/tasks/example/index.json",
-            "outputs/work/tasks/example/tasks/TASK-001.json",
-            "outputs/work/executions/example/index.json",
-        ] {
-            let target = project.join(relative);
-            fs::create_dir_all(target.parent().unwrap()).unwrap();
-            fs::copy(fixture.join(relative), target).unwrap();
-        }
-        work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &project).unwrap();
-        let skill_root = repo.join("../skills/work");
-        work_infrastructure::fixture_support::rebind_current_fixture_collection(
-            &project,
-            &skill_root,
-            "outputs/work/tasks/example/index.json",
-        )
-        .unwrap();
-        let source = project.join("outputs/work/sources/example/SRC-001/manifest.json");
-        let before = fs::read(&source).unwrap();
-        let input = std::env::temp_dir().join(format!(
-            "work-delegation-cli-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+        let input = project.join("input.json");
+        fs::write(&input, b"{}").unwrap();
+        let skill_root = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../skills/work"
         ));
-        let index: Value = serde_json::from_slice(
-            &fs::read(project.join("outputs/work/tasks/example/index.json")).unwrap(),
-        )
-        .unwrap();
-        let request = json!({"schema":"work-delegation-build-request","role":"task-coordinator","request":"Coordinate the confirmed TASK work.","planning_source":{"snapshot":index["source"]["manifest"],"artifacts":index["artifacts"],"hierarchy_selection":index["hierarchy_selection"],"skill_selection":index["skill_selection"],"acceptance_criteria":index["acceptance_criteria"]}});
-        fs::write(&input, serde_json::to_vec(&request).unwrap()).unwrap();
-        let base = [
-            "--project-root".to_owned(),
-            project.to_string_lossy().into_owned(),
-            "--verbose".to_owned(),
-        ];
-        let (exit, built) = run_with_skill_root(
-            &base
-                .iter()
-                .cloned()
-                .chain([
-                    "delegation".into(),
-                    "build".into(),
-                    "--input-file".into(),
-                    input.to_string_lossy().into_owned(),
-                ])
-                .collect::<Vec<_>>(),
-            &skill_root,
-        );
-        assert_eq!(exit, 0);
-        assert_eq!(built.data["sender"], "parent");
-        assert_eq!(built.data["marker"], "WORK_DELEGATION");
-        assert_eq!(
-            built.data["context"]["task_source"]["source"],
-            index["source"]
-        );
-        assert!(built.data.get("authorized").is_none());
-        fs::write(&input, serde_json::to_vec(&built.data).unwrap()).unwrap();
-        let validate = |role: &str| {
-            run_with_skill_root(
-                &base
-                    .iter()
-                    .cloned()
-                    .chain([
-                        "delegation".into(),
-                        "validate".into(),
-                        "--role".into(),
-                        role.into(),
-                        "--sender".into(),
-                        "parent".into(),
-                        "--input-file".into(),
-                        input.to_string_lossy().into_owned(),
-                    ])
-                    .collect::<Vec<_>>(),
-                &skill_root,
-            )
-        };
-        let (valid_exit, valid) = validate("task-coordinator");
-        assert_eq!(valid_exit, 0);
-        assert_eq!(valid.data["grants_authorization"], false);
-        let (wrong_exit, wrong) = validate("execute");
-        assert_ne!(wrong_exit, 0);
-        assert_eq!(wrong.reason_code, "delegation_boundary_mismatch");
-        assert_eq!(fs::read(source).unwrap(), before);
+        for command in ["build", "validate"] {
+            let mut args = vec![
+                "--project-root".to_owned(),
+                project.to_string_lossy().into_owned(),
+                "delegation".to_owned(),
+                command.to_owned(),
+                "--input-file".to_owned(),
+                input.to_string_lossy().into_owned(),
+            ];
+            if command == "validate" {
+                args.extend([
+                    "--role".to_owned(),
+                    "execute".to_owned(),
+                    "--sender".to_owned(),
+                    "parent".to_owned(),
+                ]);
+            }
+            let (exit, result) = run_with_skill_root(&args, &skill_root);
+            assert_eq!(exit, ExitCode::Contract as i32);
+            assert_eq!(result.reason_code, "delegation_command_retired");
+        }
+        assert_eq!(fs::read(&input).unwrap(), b"{}");
+        assert!(!project.join("outputs").exists());
     }
 
     #[test]

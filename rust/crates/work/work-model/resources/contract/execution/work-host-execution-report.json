@@ -1,0 +1,76 @@
+{
+  "description": {
+    "schema": "work-contract-description",
+    "id": "work-host-execution-report",
+    "kind": "semantic_request",
+    "caller_constructible": true,
+    "canonical_order": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "status", "exit_code", "output_complete"],
+    "required": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "status", "exit_code", "output_complete"],
+    "optional": [],
+    "example": {
+      "schema": "work-host-execution-report",
+      "task_id": "TASK-001",
+      "attempt_id": "ATTEMPT-001",
+      "record_id": "CMD-001",
+      "task_collection_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "authorization_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "file_version": "version-1",
+      "command_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "result_origin": "host_reported",
+      "result_reference": "host-command-1",
+      "status": "exited",
+      "exit_code": 0,
+      "output_complete": true
+    },
+    "fields": [
+      {"name": "schema", "type": "literal", "required": true, "reference": null, "constraints": {}},
+      {"name": "task_id", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "attempt_id", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "record_id", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "task_collection_sha256", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "authorization_sha256", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "file_version", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "command_sha256", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "result_origin", "type": "literal", "required": true, "reference": null, "constraints": {"value": "host_reported"}},
+      {"name": "result_reference", "type": "string", "required": true, "reference": null, "constraints": {}},
+      {"name": "status", "type": "string", "required": true, "reference": null, "constraints": {"values": ["exited", "rejected", "unknown", "partial"]}},
+      {"name": "exit_code", "type": "integer | null", "required": true, "reference": null, "constraints": {"exited": "required; other statuses: null"}},
+      {"name": "output_complete", "type": "boolean", "required": true, "reference": null, "constraints": {"exited": true}}
+    ]
+  },
+  "scaffold": {
+    "schema": "work-contract-scaffold",
+    "id": "work-host-execution-report",
+    "canonical_order": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "status", "exit_code", "output_complete"],
+    "example": {
+      "schema": "work-host-execution-report",
+      "task_id": "TASK-001",
+      "attempt_id": "ATTEMPT-001",
+      "record_id": "CMD-001",
+      "task_collection_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "authorization_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "file_version": "version-1",
+      "command_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "result_origin": "host_reported",
+      "result_reference": "host-command-1",
+      "status": "exited",
+      "exit_code": 0,
+      "output_complete": true
+    },
+    "scaffold": {
+      "schema": "work-host-execution-report",
+      "task_id": null,
+      "attempt_id": null,
+      "record_id": null,
+      "task_collection_sha256": null,
+      "authorization_sha256": null,
+      "file_version": null,
+      "command_sha256": null,
+      "result_origin": "host_reported",
+      "result_reference": null,
+      "status": null,
+      "exit_code": null,
+      "output_complete": null
+    }
+  }
+}

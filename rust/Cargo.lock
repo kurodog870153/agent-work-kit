@@ -551,9 +551,6 @@ dependencies = [
  "serde",
  "serde_json",
  "skill-api",
- "tooling-infrastructure",
- "tooling-model",
- "tooling-operations",
 ]
 
 [[package]]
@@ -564,8 +561,6 @@ dependencies = [
  "skill-api",
  "tooling-feature",
  "tooling-infrastructure",
- "tooling-model",
- "tooling-operations",
 ]
 
 [[package]]

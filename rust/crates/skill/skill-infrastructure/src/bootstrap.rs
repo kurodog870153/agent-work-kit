@@ -214,7 +214,9 @@ mod tests {
         ));
         let bootstrap = fs::read_to_string(root.join("instruction-loading.md")).unwrap();
         let routes = validate_modules(&bootstrap, &root.join("instruction-loading")).unwrap();
-        assert!(routes.iter().any(|(name, _)| name == "invocation.md"));
+        assert!(!routes.iter().any(|(name, _)| name == "invocation.md"));
+        assert!(!routes.iter().any(|(name, _)| name == "private-roles.md"));
+        assert!(!routes.iter().any(|(name, _)| name == "handoff.md"));
         assert!(
             routes
                 .iter()

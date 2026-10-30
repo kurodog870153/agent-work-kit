@@ -105,6 +105,11 @@ fn policy_commands_return_one_envelope_and_only_direct_metadata() {
     ]);
     assert_eq!(code, 0);
     assert_eq!(loaded["data"]["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(loaded["data"]["semantic_review"]["origin"], "host_reported");
+    assert_eq!(
+        loaded["data"]["semantic_review"]["claim"]["compatible"],
+        true
+    );
     assert_eq!(
         loaded["data"]["change"]["added_or_invalidated"]
             .as_array()
@@ -131,6 +136,27 @@ fn policy_commands_return_one_envelope_and_only_direct_metadata() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+    let mut source_only: Value = serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+    source_only
+        .as_object_mut()
+        .unwrap()
+        .remove("semantic_review");
+    fs::write(&request_path, serde_json::to_vec(&source_only).unwrap()).unwrap();
+    let (code, without_host_review) = invoke(&[
+        "policy",
+        "load",
+        "--skill-root",
+        root_arg,
+        "--input-file",
+        request_arg,
+    ]);
+    assert_eq!(code, 0);
+    assert!(without_host_review["data"]["semantic_review"]["claim"].is_null());
+    request(
+        &request_path,
+        json!(["capabilities/deep"]),
+        loaded["data"]["summary"].clone(),
     );
     node(
         &root.join("references/instructions/capabilities/deep"),

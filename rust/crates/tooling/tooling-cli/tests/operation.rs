@@ -15,37 +15,7 @@ fn fixture() -> (PathBuf, Value) {
     ));
     fs::create_dir(&root).unwrap();
     fs::write(root.join("source.rs"), "fn main() {}\n").unwrap();
-    let request = json!({
-        "policy_state":"valid",
-        "semantic_review":{
-            "policy_reviewed":true,
-            "policy_compatible":true,
-            "fitness_reviewed":true,
-            "tool_fit":true
-        },
-        "observed_tools":[{
-            "name":"analyzer",
-            "interfaces":["mcp"],
-            "capabilities":["code-analysis"],
-            "supported_operations":["find-references"],
-            "project_root":root,
-            "session":null
-        }],
-        "need":{
-            "operation":"find-references",
-            "interface":"mcp",
-            "capability":"code-analysis",
-            "project_root":root,
-            "target":root.join("source.rs"),
-            "session":null
-        },
-        "effects":[{"kind":"read"}],
-        "authorization":{
-            "writes":false,
-            "external_recipients":[],
-            "data_recipients":[]
-        }
-    });
+    let request = json!({"project_root":root,"target":root.join("source.rs")});
     (root, request)
 }
 
@@ -67,51 +37,35 @@ fn evaluate(root: &Path, request: &Value) -> (i32, Value) {
 }
 
 #[test]
-fn operation_evaluate_requires_host_observation_and_review() {
+fn operation_evaluate_only_validates_the_real_target_boundary() {
     let (root, mut request) = fixture();
     let source = fs::read(root.join("source.rs")).unwrap();
-    let (code, ready) = evaluate(&root, &request);
+    let (code, valid) = evaluate(&root, &request);
     assert_eq!(code, 0);
-    assert_eq!(ready["data"]["decision"], "continue");
-    assert_eq!(ready["reason_code"], "operation_ready");
+    assert_eq!(valid["reason_code"], "target_valid");
+    assert_eq!(valid["data"]["target_valid"], true);
+    assert_eq!(valid["data"]["authorization_verified"], false);
+    assert_eq!(valid["data"]["tool_fit_verified"], false);
+    assert_eq!(valid["data"]["outcome_verified"], false);
 
-    request["policy_state"] = json!("unknown");
-    let (_, drift) = evaluate(&root, &request);
-    assert_eq!(drift["data"]["decision"], "needs_inspection");
-    assert_eq!(drift["reason_code"], "policy_unverified");
-    request["policy_state"] = json!("valid");
-    request["semantic_review"]["policy_compatible"] = json!(false);
-    let (_, conflict) = evaluate(&root, &request);
-    assert_eq!(conflict["data"]["decision"], "stop");
-    assert_eq!(conflict["reason_code"], "policy_conflict");
-    request["semantic_review"]["policy_compatible"] = json!(true);
-    request["effects"] = json!([{"kind":"write"}]);
-    let (_, unauthorized) = evaluate(&root, &request);
-    assert_eq!(unauthorized["data"]["decision"], "stop");
-    assert_eq!(unauthorized["reason_code"], "effects_unauthorized");
-    request["effects"] = json!([{"kind":"unknown"}]);
-    let (_, unknown) = evaluate(&root, &request);
-    assert_eq!(unknown["data"]["decision"], "needs_inspection");
-    request["effects"] = json!([{"kind":"read"}]);
-    request["observed_tools"] = json!([]);
-    let (_, missing_tool) = evaluate(&root, &request);
-    assert_eq!(missing_tool["reason_code"], "tool_unobserved");
+    request["target"] = json!(root.join("missing.rs"));
+    let (code, invalid) = evaluate(&root, &request);
+    assert_eq!(code, 4);
+    assert_eq!(invalid["reason_code"], "target_boundary_invalid");
     assert_eq!(fs::read(root.join("source.rs")).unwrap(), source);
-    assert!(!root.join("install-state.json").exists());
 }
 
 #[test]
-fn operation_evaluate_blocks_unknown_outcome_and_invalid_input() {
+fn legacy_host_claims_cannot_become_a_cli_continue_decision() {
     let (root, mut request) = fixture();
-    request["outcome"] = json!("unknown");
-    let (_, uninspected) = evaluate(&root, &request);
-    assert_eq!(uninspected["data"]["decision"], "needs_inspection");
-    assert_eq!(uninspected["reason_code"], "effects_inspection_required");
-    request["reconciliation"] = json!({"effects_inspected":true,"unresolved_effects":true});
-    let (_, unresolved) = evaluate(&root, &request);
-    assert_eq!(unresolved["data"]["decision"], "stop");
-    assert_eq!(unresolved["reason_code"], "effects_unresolved");
-    request.as_object_mut().unwrap().remove("need");
+    request["policy_state"] = json!("valid");
+    request["authorization"] = json!({"writes":true});
+    let (code, retired) = evaluate(&root, &request);
+    assert_eq!(code, 4);
+    assert_eq!(retired["reason_code"], "operation_contract_retired");
+    request.as_object_mut().unwrap().remove("policy_state");
+    request.as_object_mut().unwrap().remove("authorization");
+    request.as_object_mut().unwrap().remove("target");
     let (code, missing) = evaluate(&root, &request);
     assert_eq!(code, 3);
     assert_eq!(missing["reason_code"], "invalid_request_json");

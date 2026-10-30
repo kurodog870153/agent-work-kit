@@ -6,6 +6,7 @@ pub mod command;
 pub mod correction;
 pub mod deviation;
 pub mod file_transaction;
+pub mod host_report;
 pub mod index;
 pub mod recovery;
 pub mod request;
@@ -13,7 +14,7 @@ pub mod response;
 
 #[cfg(test)]
 mod tests {
-    use super::{deviation, request, response};
+    use super::{deviation, host_report, request, response};
     use serde::de::DeserializeOwned;
     use serde_json::Value;
 
@@ -40,6 +41,7 @@ mod tests {
         example::<request::AttemptStartRequest>(&registry, "work-attempt-start-request");
         example::<request::CommandCorrectionRequest>(&registry, "work-command-correction-request");
         example::<request::CommandRunRequest>(&registry, "work-command-run-request");
+        example::<host_report::HostExecutionReport>(&registry, "work-host-execution-report");
         example::<request::CorrectionCreateRequest>(&registry, "work-correction-create-request");
         example::<request::DeviationSemanticRequest>(
             &registry,
