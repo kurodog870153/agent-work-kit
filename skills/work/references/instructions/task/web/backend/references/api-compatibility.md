@@ -1,18 +1,17 @@
 ---
-name: API 相容性參考指令
-description: 規劃 Web 後端 API 契約或消費者相容性時使用；不影響 API 的工作不適用。
-reference-name: task.web.backend.api-compatibility
+name: API compatibility guidance
+description: Use when planning backend API contracts or consumer compatibility; not applicable to work that does not affect an API.
 metadata:
-  work-tags:
+  tags:
     - api-compatibility
 ---
 
-# API 相容性參考指令
+# API compatibility guidance
 
-1. [強制] 相容性以受影響消費者能否維持已承諾結果為準，不以伺服器能編譯或單一路徑可回應作為相容證據。
-2. [強制] TASK 須列出可確認的直接與間接消費者鏈、契約來源、版本或部署關係；無法確認的外部消費者須採相容優先並列為風險，不得推定不存在。
-3. [強制] 結構矩陣須依實際影響固定路徑／主題、方法、媒體型別、參數、必要性、名稱、型別、格式、狀態碼、錯誤結構、欄位及 schema；未變項目可合併說明。
-4. [強制] 行為矩陣須依實際影響固定預設值、null／缺省、排序、分頁、唯一性、冪等、授權、快取、交易、錯誤與時序語意；結構相同不代表行為相容。
-5. [強制] 刪除、重新命名、縮小允許值、增加必填、改變型別或語意等破壞性變更，只有在使用者核准遷移契約後才能規劃；契約須固定消費者、過渡期、雙軌或版本邊界、完成條件與回復結果。
-6. [預設] 能以新增選用能力維持既有消費者時優先採相容擴充；不得為形式上的向後相容保留會產生錯誤或不安全結果的行為。
-7. [強制] VAL 須使用專案既有且適用的契約、整合或消費者測試覆蓋受影響矩陣；沒有自動化入口時，以人工可觀察判準確認並揭露剩餘消費者風險。
+1. [Required] Judge compatibility by whether affected consumers retain promised outcomes, not by server compilation or one responding path.
+2. [Required] The TASK must list identifiable direct and indirect consumer chains, contract sources and version or deployment relationships. Favor compatibility and list unknown external consumers as a risk; do not assume they do not exist.
+3. [Required] Fix affected paths/topics, methods, media types, parameters, requiredness, names, types, formats, status codes, error structures, fields and schemas in a structural matrix. Unchanged items may be summarized together.
+4. [Required] Fix affected defaults, null/absence behavior, sorting, pagination, uniqueness, idempotency, authorization, caching, transactions, errors and timing in a behavior matrix. Identical structure does not imply behavioral compatibility.
+5. [Required] Plan breaking changes such as removal, renaming, narrower allowed values, new required fields or changed types or semantics only after the user approves a migration contract. Fix consumers, transition period, dual-path or version boundary, completion condition and rollback outcome.
+6. [Default] Prefer compatible extension through optional capabilities when existing consumers can be preserved. Do not retain erroneous or unsafe behavior merely for nominal backward compatibility.
+7. [Required] VAL must use existing applicable contract, integration or consumer tests to cover the affected matrices. Without automation, use human-observable criteria and disclose remaining consumer risks.

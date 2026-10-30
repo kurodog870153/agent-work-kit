@@ -1,20 +1,19 @@
 ---
-name: 關聯式資料參考指令
-description: 規劃 Java 關聯式資料結構、查詢與交易時使用；不涉及關聯式資料的工作不適用。
-reference-name: task.programming-language.java.persistence.relational-data
+name: Relational data guidance
+description: Use when planning Java relational data structures, queries and transactions; not applicable to work without relational data.
 metadata:
-  work-tags:
+  tags:
     - relational-data
 ---
 
-# 關聯式資料參考指令
+# Relational data guidance
 
-1. [強制] TASK 須唯讀確認專案唯一 schema 真實來源、migration 機制、目標資料庫／dialect、連線與交易管理、命名慣例及受影響資料生命週期；來源衝突時不得自行選擇。
-2. [強制] 新增或修改 table、column、constraint、index、foreign key、sequence 或預設值時，須以唯一 schema 來源固定名稱、型別、null、長度、precision／scale、唯一性、參照行為與升降版結果。
-3. [預設] 資料庫 comment 只在專案既有 schema 慣例要求時加入；沒有慣例但說明能形成必要契約時，先提出方案與影響由使用者確認，不得自行把 comment 當成硬性標準。
-4. [強制] Migration 須固定既有資料轉換、部署順序、鎖定與停機風險、可重跑性、部分失敗及回復結果；具破壞性的回復或刪除只能提供由使用者執行的精確操作。
-5. [強制] SQL 值使用參數綁定；動態 identifier、排序、方向或 SQL 片段只能由後端允許清單產生，不得直接插入不可信輸入。
-6. [強制] 查詢須固定唯一性、null、找不到資料、穩定排序、分頁上限與高資料量邊界；索引只依實際查詢、選擇度、寫入成本及目標資料庫證據決定。
-7. [強制] 寫入須固定交易責任層、隔離需求、預期影響筆數、並行衝突、回滾與部分成功結果；全表更新／刪除預設禁止，確需使用時另行確認保護與驗證。
-8. [強制] 資料庫特定的 migration、DDL、鎖、原生 SQL、query plan 或往返行為應主動提出最小驗證方案；連線或改變資料前須揭露環境、副作用與風險並取得授權。
-9. [強制] 未實際連線目標資料庫時，VAL 只能聲明已完成的靜態、編譯或替代環境證據，並列出尚未確認的 dialect、鎖、效能與 migration 風險。
+1. [Required] The TASK must read-only confirm the project's single schema source of truth, migration mechanism, target database/dialect, connection and transaction management, naming conventions and affected data lifecycle. Do not choose between conflicting sources independently.
+2. [Required] When adding or changing a table, column, constraint, index, foreign key, sequence or default, fix names, types, nullability, length, precision/scale, uniqueness, referential behavior and upgrade/downgrade outcomes from the single schema source.
+3. [Default] Add database comments only when existing project schema conventions require them. If there is no convention but a comment could form a necessary contract, propose its impact for user confirmation; do not turn comments into a hard rule independently.
+4. [Required] A migration must fix existing-data conversion, deployment order, lock and downtime risks, rerun behavior, partial failure and recovery outcome. For destructive recovery or deletion, provide only exact steps for the user to execute.
+5. [Required] Bind SQL values as parameters. Generate dynamic identifiers, sorts, directions and SQL fragments only from backend allowlists; never interpolate untrusted input directly.
+6. [Required] Fix uniqueness, null, not-found behavior, stable ordering, pagination limits and large-data boundaries for queries. Decide indexes only from actual queries, selectivity, write cost and target-database evidence.
+7. [Required] Fix the transaction-owning layer, isolation needs, expected affected row count, concurrency conflicts, rollback and partial-success outcomes for writes. Full-table update/delete is prohibited by default; separately confirm protections and validation if necessary.
+8. [Required] Proactively propose minimum validation for database-specific migrations, DDL, locks, native SQL, query plans or round-trip behavior. Disclose environment, side effects and risks and obtain authorization before connecting or changing data.
+9. [Required] Without an actual connection to the target database, VAL may claim only completed static, compilation or alternative-environment evidence and must list unconfirmed dialect, locking, performance and migration risks.

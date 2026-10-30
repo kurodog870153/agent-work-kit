@@ -1,19 +1,19 @@
 ---
-name: Web 前端任務執行
-description: 執行並驗證 TASK 已固定的瀏覽器端介面、互動、可存取性與效能要求時使用；純後端或非視覺 Web 工作不適用。
+name: Web frontend task execution
+description: Use to execute and validate TASK-fixed browser UI, interaction, accessibility and performance requirements; not applicable to backend-only or nonvisual Web work.
 metadata:
-  work-tags:
+  tags:
     - browser-ui
     - client-rendering
 ---
 
-# Web 前端任務執行指令
+# Web frontend task execution
 
-指令邊界：本層只執行 TASK 已固定的瀏覽器端契約，不新增內容、互動、設計或技術決策。
+Instruction boundary: This layer only executes the TASK-fixed browser contract; it makes no new content, interaction, design or technology decisions.
 
-1. [強制] 執行前核對 TASK 已固定入口、檔案、狀態、互動、內容來源、資產、viewport、可存取性、效能與 VAL；需要推論時以規格缺陷停止。
-2. [強制] 只沿用實際 package manager、lockfile、設定與既有元件慣例，依正式 FILE、STEP、CMD、OP、VAL 修改及驗證。
-3. [強制] 不得以 placeholder、臨時文字、未授權資產或未列依賴補足缺漏需求；應記錄最小缺口並交回 Task。
-4. [強制] 驗證須涵蓋 TASK 指定的建置、靜態檢查、瀏覽器端狀態、鍵盤、焦點、響應式與人工條件，並如實記錄未執行或無法觀察的風險。
-5. [強制] 實際介面、內容、瀏覽器結果或專案能力與 TASK 不符時不得自行接受新行為或擴大修改，須停止並交回規格層。
-6. [強制] TASK 使用 TypeScript 開發前端元件時，只在正式範圍內維持 props、瀏覽器事件與框架元件的型別契約，並載入 TASK 選定的 `programming-language/typescript`。
+1. [Required] Before execution, verify that the TASK fixes entry points, files, states, interactions, content sources, assets, viewports, accessibility, performance and VAL. Stop for a specification defect if inference is needed.
+2. [Required] Keep the actual package manager, lockfile, configuration and existing component conventions. Change and validate only according to formal FILE, STEP, CMD, OP and VAL.
+3. [Required] Do not fill missing requirements with placeholders, temporary copy, unauthorized assets or unlisted dependencies. Record the smallest gap and return it to Task.
+4. [Required] Validation must cover TASK-specified build, static checks, browser states, keyboard, focus, responsive and manual conditions. Accurately record risks from unrun or unobservable checks.
+5. [Required] If the actual UI, content, browser result or project capability differs from the TASK, do not accept new behavior or broaden changes independently; stop and return to the specification layer.
+6. [Required] When the TASK develops frontend components in TypeScript, preserve props, browser-event and framework-component type contracts within the formal scope and load the TASK-selected `programming-language/typescript`.

@@ -6,13 +6,28 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package
+from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package, checked_workspace_version, tracked_skill_files
 
 
 class ReleasePackageTests(unittest.TestCase):
+    def test_both_skills_and_new_instruction_modules_are_packaged(self):
+        repository = Path(__file__).resolve().parents[4]
+        paths = tracked_skill_files(repository)
+        self.assertIn(Path("skills/work/SKILL.md"), paths)
+        self.assertIn(Path("skills/work/references/instruction-loading/tool-policy-integration.md"), paths)
+        self.assertIn(Path("skills/tooling/SKILL.md"), paths)
+        self.assertIn(Path("skills/tooling/references/instruction-loading.md"), paths)
+        self.assertNotIn(Path("skills/tooling/references/instructions/interfaces/repl/instructions.md"), paths)
+        self.assertFalse(any(path.name == ".DS_Store" for path in paths))
+
+        with patch("release_package.subprocess.run", return_value=SimpleNamespace(stdout=b"skills/work/SKILL.md\0")):
+            with self.assertRaisesRegex(ValueError, "Tooling skill entry is missing"):
+                tracked_skill_files(repository)
+
     def test_standalone_downloaders_are_bound_to_the_release_tag(self):
         repository = Path(__file__).resolve().parents[4]
         version = (repository / "VERSION").read_text(encoding="ascii").strip()
@@ -38,6 +53,7 @@ class ReleasePackageTests(unittest.TestCase):
                         self.assertNotIn(b"__WORK_RELEASE_TAG__", path.read_bytes())
 
     def test_records_actual_tested_environment(self):
+        workspace_version = checked_workspace_version(Path(__file__).resolve().parents[4])
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repository = root / "repository"
@@ -53,6 +69,8 @@ class ReleasePackageTests(unittest.TestCase):
                 path.write_text(name, encoding="utf-8")
             binary = root / "work"
             binary.write_bytes(b"binary")
+            tooling_binary = root / "tooling"
+            tooling_binary.write_bytes(b"tooling binary")
             environment = {
                 "runner_label": "macos-latest",
                 "runner_os": "macOS",
@@ -64,16 +82,20 @@ class ReleasePackageTests(unittest.TestCase):
                 "os_build": "24G207",
             }
             with patch("release_package.checked_version", return_value="1.2.3"), patch(
+                "release_package.checked_workspace_version", return_value=workspace_version
+            ), patch(
                 "release_package.tracked_skill_files", return_value=[]
             ), patch("release_package.subprocess.run") as run:
                 def compile_helper(command, check):
                     self.assertTrue(check)
                     Path(command[command.index("-o") + 1]).write_bytes(b"native lock helper")
                 run.side_effect = compile_helper
-                archive_path = build_package(repository, output, "macos-arm64", binary, "a" * 40, environment)
+                archive_path = build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, environment)
             with zipfile.ZipFile(archive_path) as archive:
                 info = json.loads(archive.read("release-info.json"))
                 self.assertEqual(archive.read("bin/work-install-lock"), b"native lock helper")
+                self.assertEqual(archive.read("bin/work"), b"binary")
+                self.assertEqual(archive.read("bin/tooling"), b"tooling binary")
                 self.assertEqual(archive.read("installer/cli/options.tsv"), b"os-scripts/common/installer/options.tsv")
                 self.assertEqual(archive.read("installer/state/install-state.json"),
                                  b"os-scripts/common/installer/install-state.json")
@@ -81,6 +103,8 @@ class ReleasePackageTests(unittest.TestCase):
                     relative = Path(source).relative_to("os-scripts/mac/installer")
                     self.assertEqual(archive.read(Path("installer", relative).as_posix()), source.encode())
             self.assertEqual(info["version"], "1.2.3")
+            self.assertEqual(info["work_version"], workspace_version)
+            self.assertEqual(info["tooling_version"], workspace_version)
             self.assertEqual(info["tested_environment"], environment)
             self.assertNotIn("e2e_runner", info)
             self.assertNotIn("minimum_os", info)
@@ -89,11 +113,11 @@ class ReleasePackageTests(unittest.TestCase):
                 incomplete = environment.copy()
                 incomplete[field] = ""
                 with self.subTest(field=field), self.assertRaises(ValueError):
-                    build_package(repository, output, "macos-arm64", binary, "a" * 40, incomplete)
+                    build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, incomplete)
             wrong_label = environment.copy()
             wrong_label["runner_label"] = "windows-latest"
             with self.assertRaises(ValueError):
-                build_package(repository, output, "macos-arm64", binary, "a" * 40, wrong_label)
+                build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, wrong_label)
 
 
 if __name__ == "__main__":

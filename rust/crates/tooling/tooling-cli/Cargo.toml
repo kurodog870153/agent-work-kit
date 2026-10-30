@@ -1,0 +1,15 @@
+[package]
+name = "tooling-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "tooling"
+path = "src/main.rs"
+
+[dependencies]
+tooling-flow = { path = "../tooling-flow" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true

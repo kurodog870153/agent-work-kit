@@ -1,24 +1,30 @@
 ---
-name: Java 持久層任務規劃
-description: 固定 Java 關聯式資料存取技術與共通契約時使用；不涉及持久層的工作不適用。
+name: Java persistence task planning
+description: Use to fix Java relational data-access technology and common contracts; not applicable to work outside the persistence layer.
 metadata:
-  work-tags:
+  tags:
     - persistence
     - relational-data
 ---
 
-# Java 持久層任務規劃指令
+# Java persistence task planning
 
-指令邊界：本層只固定持久層技術選擇與共通資料契約；JPA 與 MyBatis 細節由子層負責。
+Instruction boundary: This layer only fixes persistence-technology selection and common data contracts; child layers own JPA and MyBatis details.
 
-## 1. Reference 路由
+## 1. Reference routing
 
-1. [強制] TASK 涉及關聯式資料庫、schema、migration、SQL、交易、索引或資料映射時，載入 `task.programming-language.java.persistence.relational-data`（`references/relational-data.md`）。
+1. [Required] Evaluate the relational-data Reference below and load it only when its condition applies.
 
-## 2. 技術選擇
+## 2. Technology selection
 
-1. [強制] 使用 JPA 或 MyBatis／MyBatis-Plus 時，依實際受影響流程載入對應子層；兩者同時適用時維持各自邊界，不得互套 API 或預設只能選一種。
-2. [強制] 涉及關聯式資料時須交叉確認相依與目標流程的註解、介面、設定、查詢或映射以判定 JPA、MyBatis 或 MyBatis-Plus；既有流程沿用實際鏈路，新流程有多個同樣適用選項時展示證據並由使用者選擇，不得把候選留給 Execute。
-3. [強制] 技術選擇不授權新增或升級相依、processor、外掛、設定或 migration；同一不可分割 TASK 可涵蓋多個既有技術分支，但須分別固定流程邊界與指令層級。
-4. [強制] 關聯式技術判定須交叉確認建置相依與實際設定、註解、介面、實作、查詢或映射；不得只因父模組、BOM、starter、傳遞相依或未引用程式碼存在就判定。JPA 至少核對 Persistence namespace、實際適用的 Spring Data 或 Hibernate 相依及 Entity／Repository／EntityManager／查詢；MyBatis 至少核對相依及 Mapper／XML／SqlSession／BaseMapper／實際查詢。
-5. [強制] 既有流程依實際資料存取鏈路選擇，不能用 repository 其他位置的技術覆蓋；新流程有多個同樣適用選項、兩者皆未使用或證據衝突時，須展示證據並由使用者指定。正式 TASK 分別固定每個受影響流程的技術、模組、證據、實際版本、namespace／provider 與資料架構，不得留給 Execute。
+1. [Required] When JPA or MyBatis/MyBatis-Plus is used, load the corresponding child layer for each actually affected flow. If both apply, preserve their separate boundaries; do not mix APIs or assume only one can be selected.
+2. [Required] For relational data, cross-check dependencies with the target flow's annotations, interfaces, configuration, queries or mappings to identify JPA, MyBatis or MyBatis-Plus. Follow the actual chain for an existing flow. If several options equally apply to a new flow, show evidence and have the user choose; do not leave candidates for Execute.
+3. [Required] Technology selection does not authorize new or upgraded dependencies, processors, plugins, settings or migrations. One indivisible TASK may cover several existing technology branches, but must fix each flow boundary and instruction layer separately.
+4. [Required] Cross-check build dependencies against actual configuration, annotations, interfaces, implementation, queries or mappings to identify relational technology. Do not decide from a parent module, BOM, starter, transitive dependency or unused code alone. For JPA, check at least the Persistence namespace, applicable Spring Data or Hibernate dependency, and Entity/Repository/EntityManager/queries. For MyBatis, check at least dependencies and Mapper/XML/SqlSession/BaseMapper/actual queries.
+5. [Required] Select existing flows from their actual data-access chains; technology elsewhere in the repository cannot override them. If several options equally apply to a new flow, neither is used, or evidence conflicts, show the evidence and have the user specify the choice. For each affected flow, the formal TASK fixes technology, module, evidence, actual version, namespace/provider and data architecture; do not leave this to Execute.
+
+## References
+
+| Reference | Load condition |
+| --- | --- |
+| `references/relational-data.md` | The TASK involves a relational database, schema, migration, SQL, transaction, index or data mapping. |

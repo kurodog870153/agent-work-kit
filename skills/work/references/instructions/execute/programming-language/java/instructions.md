@@ -1,20 +1,20 @@
 ---
-name: Java 任務執行
-description: 依已確認的 Java 技術基準執行修改與驗證時使用；非 Java 工作不適用。
+name: Java task execution
+description: Use when changing and validating against a confirmed Java technical baseline; not applicable to non-Java work.
 metadata:
-  work-tags:
+  tags:
     - java
 ---
 
-# Java 任務執行指令
+# Java task execution
 
-指令邊界：本層只依已確認的 Java 技術基準執行 TASK，不選擇版本、架構、建置或測試策略。
+Instruction boundary: This layer executes the TASK against the confirmed Java technical baseline; it does not choose versions, architecture, build or test strategy.
 
-1. [強制] 執行前以既有入口核對實際 JDK、建置工具、框架、依賴與目標模組仍符合 TASK；不一致時記錄證據並以規格缺陷停止。
-2. [強制] 依 TASK 的步驟與既有風格修改，保持未列程式碼不變；需要新依賴、外掛、模組、產生器或工具時停止重新授權。
-3. [強制] 依 TASK 執行 Red／Green、編譯、測試、靜態分析與其他適用 VAL；是否 clean 只由 TASK 與本次驗證目的決定，不得固定追加。
-4. [強制] TASK 適用 Swagger reference 時，須實際產生或載入 OpenAPI 契約並執行完整性 VAL；Task 階段已確認的 Endpoint 契約不重複詢問，只有實際產物與核准內容不同時才停止並重新確認。TASK 不適用 Swagger 時，不得新增相關依賴、設定或工具，也不得因此阻擋 Controller 變更。
-5. [強制] 產生來源與產生檔不一致時只修改 TASK 明列的正式來源並重新產生，不得手動編輯產生檔掩蓋差異。
-6. [強制] 測試 VAL 須記錄目標模組、指定測試與實際測試數，零測試、只編譯或未到達目標測試不得記為通過。
-7. [強制] 執行前須核對 TASK 的實際 Task instruction hierarchy 與 references 已完整固定建置入口、版本證據、架構、集合、日期時間、Lombok、資料技術及適用驗證；缺漏或與現況不符時以規格缺陷停止，不得由 Execute 補決策。
-8. [強制] 每個 CMD 使用 TASK 固定環境與精確參數；TASK 固定執行檔、`JAVA_HOME` 或 toolchain 時必須使用該精確值，只有 TASK 明確指定 PATH 解析時才能使用 PATH。不得切換建置系統、改用其他 Wrapper／執行檔、安裝工具、替換版本、追加 clean 或改寫測試篩選；等價命令修正只依 Execute 通用授權流程處理。測試須確認指定 module／project、task／goal 與測試實際執行且數量大於零。
+1. [Required] Before execution, check through existing entry points that the actual JDK, build tool, framework, dependencies and target module still match the TASK. Record evidence and stop for a specification defect if they do not.
+2. [Required] Make changes according to the TASK steps and existing style, leaving unlisted code unchanged. Stop for renewed authorization if a new dependency, plugin, module, generator or tool is needed.
+3. [Required] Run the TASK's applicable Red/Green, compilation, tests, static analysis and other VAL. Whether to clean is determined only by the TASK and the purpose of this validation; do not add it by default.
+4. [Required] When the Swagger reference applies to the TASK, actually generate or load the OpenAPI contract and run its completeness VAL. Do not ask again about an endpoint contract already confirmed in Task; stop and reconfirm only when the actual artifact differs from the approved content. When Swagger does not apply, do not add related dependencies, configuration or tools, and do not block a Controller change for that reason.
+5. [Required] When generated output differs from its source, change only the formal source listed in the TASK and regenerate. Do not edit generated files manually to conceal the difference.
+6. [Required] For test VAL, record the target module, specified tests and actual test count. Zero tests, compilation alone or a run that never reaches the target tests is not a pass.
+7. [Required] Before execution, verify that the TASK's actual Task instruction hierarchy and references fully fix the build entry point, version evidence, architecture, collections, date/time handling, Lombok, data technology and applicable validation. Stop for a specification defect if anything is missing or inconsistent with current state; Execute must not supply the missing decision.
+8. [Required] Run each CMD with the exact environment and arguments fixed by the TASK. Use the exact executable, `JAVA_HOME` or toolchain when specified; use PATH resolution only when the TASK explicitly specifies it. Do not switch build systems, substitute a Wrapper or executable, install a tool, change versions, add clean or rewrite test filters. Handle an equivalent command correction only through the general Execute authorization flow. Verify that the specified module/project and task/goal actually ran tests and that the test count is greater than zero.

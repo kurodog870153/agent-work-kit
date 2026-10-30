@@ -19,5 +19,5 @@ if not exist "%package_directory%\bin\work.exe" (
 )
 "%package_directory%\bin\work.exe" --help >nul 2>nul
 if errorlevel 1 exit /b 1
-powershell.exe -NoProfile -File "%package_directory%\installer\runtime\install.ps1" -Mode package -Root "%package_directory%" %*
+powershell.exe -NoProfile -File "%package_directory%\installer\install\install-core.ps1" -Mode package -Root "%package_directory%" %*
 exit /b %errorlevel%

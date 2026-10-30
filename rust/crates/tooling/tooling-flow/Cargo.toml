@@ -1,0 +1,13 @@
+[package]
+name = "tooling-flow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+skill-api = { path = "../../skill/skill-api" }
+tooling-feature = { path = "../tooling-feature" }
+tooling-infrastructure = { path = "../tooling-infrastructure" }
+tooling-operations = { path = "../tooling-operations" }
+tooling-model = { path = "../tooling-model" }
+serde.workspace = true

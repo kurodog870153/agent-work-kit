@@ -47,8 +47,9 @@ jobs:
       - name: Verify macOS installer modules
         run: |
           bash .github/scripts/tests/release/mac/cli/test_parse_options.sh
-          node .github/scripts/tests/release/mac/state/test_state_model.js
+          node .github/scripts/tests/release/mac/state/test_install_state.js
           bash .github/scripts/tests/release/mac/transaction/test_work.sh
+          bash .github/scripts/tests/release/mac/transaction/test_tooling.sh
           bash .github/scripts/tests/release/mac/global-agents/test_policy.sh
           bash .github/scripts/tests/release/mac/global-agents/test_transaction.sh
           python3 -B .github/scripts/tests/release/mac/downloader/test_entry.py
@@ -56,14 +57,16 @@ jobs:
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
         working-directory: rust
-        run: cargo build --release --locked -p work-cli
+        run: |
+          cargo build --release --locked -p work-cli
+          cargo build --release --locked -p tooling-cli
       - name: Verify macOS target identity
         run: |
           bash .github/scripts/tests/release/mac/target/test_preflight.sh
-          bash .github/scripts/tests/release/mac/runtime/test_install.sh
+          bash .github/scripts/tests/release/mac/install/test_install.sh
       - name: Package and verify macOS ZIP
         run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
           (cd dist && shasum -a 256 "work-v$(cat ../VERSION)-macos-arm64.zip" > SHA256SUMS.txt)
           python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
           sandbox-exec -p '(version 1)(allow default)(deny network*)' python3 .github/scripts/release/release_install_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
@@ -105,9 +108,11 @@ jobs:
         run: |
           powershell.exe -NoProfile -File .github/scripts/tests/release/windows/cli/test_parse_options.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/state/test_state_model.ps1
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/state/test_install_state.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           powershell.exe -NoProfile -File .github/scripts/tests/release/windows/transaction/test_work.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/transaction/test_tooling.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_policy.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -119,18 +124,22 @@ jobs:
         run: rustup toolchain install $env:RUSTUP_TOOLCHAIN
       - name: Build native release binary
         working-directory: rust
-        run: cargo build --release --locked -p work-cli
+        run: |
+          cargo build --release --locked -p work-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --release --locked -p tooling-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows target identity
         run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/target/test_preflight.ps1 -Binary rust/target/release/work.exe
       - name: Verify Windows installer core
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/runtime/test_install.ps1 -Binary rust/target/release/work.exe
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/install/test_install.ps1 -Binary rust/target/release/work.exe
       - name: Verify Windows offline Package entry
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe
+        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe -ToolingBinary rust/target/release/tooling.exe
       - name: Package and verify Windows ZIP
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "work-v${version}-windows-x64-msvc.zip"
           $hash = (Get-FileHash "dist/$zip" -Algorithm SHA256).Hash.ToLowerInvariant()

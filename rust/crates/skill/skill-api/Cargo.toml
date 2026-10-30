@@ -1,0 +1,13 @@
+[package]
+name = "skill-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+skill-model = { path = "../skill-model" }
+skill-operations = { path = "../skill-operations" }
+skill-feature = { path = "../skill-feature" }
+skill-infrastructure = { path = "../skill-infrastructure" }
+serde.workspace = true
+serde_json.workspace = true

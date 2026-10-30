@@ -1,21 +1,21 @@
 ---
-name: Web 前端任務規劃
-description: 固定瀏覽器端頁面、元件、互動、可存取性、效能與驗證契約時使用；純後端或非視覺 Web 工作不適用。
+name: Web frontend task planning
+description: Use to fix browser pages, components, interactions, accessibility, performance and validation contracts; not applicable to backend-only or nonvisual Web work.
 metadata:
-  work-tags:
+  tags:
     - browser-ui
     - client-rendering
 ---
 
-# Web 前端任務規劃指令
+# Web frontend task planning
 
-指令邊界：本層先確認瀏覽器端可觀察成果與品質邊界，再固定框架中立的契約；語言、樣式與框架細節由更接近的技術層補足。
+Instruction boundary: This layer first confirms browser-observable outcomes and quality boundaries, then fixes a framework-neutral contract. Closer technical layers add language, styling and framework details.
 
-1. [強制] TASK 須先確認目標裝置、輸入方式、瀏覽器、響應式、可存取性及載入／互動成果，再依現有專案證據固定入口、路由、頁面或元件邊界、資料來源、狀態、互動、錯誤、空白、載入與適用的離線結果；不得自行補產品定位、受眾、內容結構、品牌語氣、行銷區塊或介面文字。缺少影響成果的內容決策時逐項確認。
-2. [強制] 每個互動須固定觸發方式、鍵盤行為、焦點結果、狀態轉換、重複操作與失敗結果；語意 HTML 與無障礙名稱必須來自已確認內容。
-3. [強制] 響應式與跨瀏覽器要求須固定代表性 viewport、輸入方式、縮放、溢出及支援範圍，不得只以單一桌面截圖驗收；既有介面須確認允許與禁止的視覺、互動、路由與狀態相容性結果，不得無證據假設可重新設計。
-4. [強制] 圖片、字型、圖示與其他資產須固定來源、格式、尺寸或載入邊界、替代文字責任及失敗行為；不得臨時抓取未授權資產。
-5. [強制] 效能要求依實際影響固定可測量的建置產物、載入、渲染、互動或資產條件，不得以主觀感受取代 VAL。
-6. [強制] 檔案、命令、測試與靜態檢查須沿用實際 package manager、manifest、lockfile、設定與專案慣例；新增依賴或工具須另行確認。
-7. [強制] VAL 至少直接涵蓋主要瀏覽器端結果、關鍵狀態、鍵盤與可存取性、響應式行為及實際建置；無法自動驗證的視覺條件須明列人工 confirmer 與 criteria。
-8. [強制] 使用 TypeScript 開發前端元件時，TASK 須固定受影響元件的 props、瀏覽器事件與框架元件型別來源及相容性，並選取 `programming-language/typescript`。
+1. [Required] The TASK must first confirm target devices, input methods, browsers, responsive behavior, accessibility and loading/interaction outcomes. Then use current project evidence to fix entry points, routes, page or component boundaries, data sources, states, interactions, errors, empty states, loading and applicable offline outcomes. Do not invent product positioning, audience, content structure, brand voice, marketing sections or UI copy. Confirm each missing content decision that affects the outcome.
+2. [Required] Fix each interaction's trigger, keyboard behavior, focus result, state transition, repeated-operation behavior and failure result. Semantic HTML and accessible names must come from confirmed content.
+3. [Required] Fix representative viewports, input methods, zoom, overflow and support scope for responsive and cross-browser requirements; one desktop screenshot is insufficient. For an existing UI, confirm allowed and prohibited visual, interaction, route and state compatibility outcomes. Do not assume redesign is allowed without evidence.
+4. [Required] Fix source, format, size or loading boundary, alternative-text responsibility and failure behavior for images, fonts, icons and other assets. Do not fetch unauthorized assets ad hoc.
+5. [Required] Set measurable build-output, loading, rendering, interaction or asset conditions for performance according to actual impact; subjective impressions cannot replace VAL.
+6. [Required] Files, commands, tests and static checks must follow the actual package manager, manifest, lockfile, configuration and project conventions. Confirm any new dependency or tool separately.
+7. [Required] VAL must directly cover at least the main browser outcome, critical states, keyboard and accessibility, responsive behavior and actual build. State a human confirmer and explicit criteria for visual conditions that cannot be automated.
+8. [Required] When developing frontend components in TypeScript, the TASK must fix affected props, browser events, framework-component type sources and compatibility, and select `programming-language/typescript`.

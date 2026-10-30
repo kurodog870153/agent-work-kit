@@ -1,18 +1,18 @@
 ---
-name: Web 前端 Astro 任務執行
-description: 執行並驗證 TASK 已固定的 Astro 頁面、元件、渲染、islands 與建置要求時使用；非 Astro 前端工作不適用。
+name: Web frontend Astro task execution
+description: Use to execute and validate TASK-fixed Astro pages, components, rendering, islands and build requirements; not applicable to non-Astro frontend work.
 metadata:
-  work-tags:
+  tags:
     - islands-architecture
     - static-rendering
 ---
 
-# Web 前端 Astro 任務執行指令
+# Web frontend Astro task execution
 
-指令邊界：本層只執行正式 Astro 契約，不新增頁面內容、route、framework integration、adapter 或 hydration 決策。
+Instruction boundary: This layer only executes the formal Astro contract; it makes no new page-content, route, framework-integration, adapter or hydration decisions.
 
-1. [強制] 修改前核對實際版本、Astro config、adapter、integrations、輸出模式、目錄、route 與命令均符合 TASK；任何影響契約的差異須停止交回 Task。
-2. [強制] 僅修改正式列出的 page、layout、Astro component、framework component、content source 與資產，並維持 server-only、client bundle 與環境變數邊界。
-3. [強制] Client directives、prerender、dynamic paths 與資料取得完全依 TASK 實作，不得為排除錯誤增加 hydration、改變輸出模式或搬移執行邊界。
-4. [強制] 不得以 placeholder、臨時 metadata、未確認內容或未授權 integration 補足缺漏；規格不足時停止。
-5. [強制] 執行正式 typecheck 或 Astro check、build 與 route 驗證；適用時檢查 hydration、產出檔、404、資產及 adapter 結果並記錄證據。
+1. [Required] Before changing code, verify that the actual version, Astro config, adapter, integrations, output mode, directories, routes and commands match the TASK. Return to Task on any contract-affecting difference.
+2. [Required] Change only the formally listed pages, layouts, Astro components, framework components, content sources and assets. Preserve server-only, client-bundle and environment-variable boundaries.
+3. [Required] Implement client directives, prerendering, dynamic paths and data fetching exactly as the TASK specifies. Do not add hydration, change output mode or move an execution boundary to suppress an error.
+4. [Required] Do not fill gaps with placeholders, temporary metadata, unconfirmed content or unauthorized integrations. Stop when the specification is insufficient.
+5. [Required] Run the formal typecheck or Astro check, build and route validation. Where applicable, inspect hydration, output files, 404 behavior, assets and adapter results and record evidence.

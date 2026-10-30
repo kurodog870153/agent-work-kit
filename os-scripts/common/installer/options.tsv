@@ -1,26 +1,10 @@
 kind	name	path
 option	--help
 option	-h
-option	--list-skills
-option	--skills
-option	--global-agents
-option	--no-global-agents
-option	--work-install-dir
-option	--global-agents-install-dir
+option	--global-agent
+option	--no-global-agent
+option	--skills-install-dir
+option	--global-agent-install-dir
 option	--non-interactive
 option	--dry-run
 option	--verbose
-skill	general	general
-skill	web	web
-skill	backend	web/backend
-skill	frontend	web/frontend
-skill	astro	web/frontend/astro
-skill	css	web/frontend/css
-skill	tailwind	web/frontend/css/tailwind
-skill	programming-language	programming-language
-skill	java	programming-language/java
-skill	spring-boot	programming-language/java/spring-boot
-skill	persistence	programming-language/java/persistence
-skill	jpa	programming-language/java/persistence/jpa
-skill	mybatis	programming-language/java/persistence/mybatis
-skill	typescript	programming-language/typescript
