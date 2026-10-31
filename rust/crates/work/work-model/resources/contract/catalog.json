@@ -239,16 +239,6 @@
       },
       {
         "caller_constructible": false,
-        "id": "work-operation-envelope",
-        "kind": "generated_request"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-operation-result",
-        "kind": "response"
-      },
-      {
-        "caller_constructible": false,
         "id": "work-record-begin",
         "kind": "response"
       },

@@ -1078,26 +1078,33 @@ fn prepare_simple_update_scoped(
     index["spec_id"] = json!(spec_id);
     index["readiness"]["spec_id"] = json!(spec_id);
     if semantic.get("source_update").is_some() {
-        let mut routing =
-            crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+        let mut routing = crate::legacy_manifest_sources::LegacyManifestSourceSession::new(
+            skill_root.to_path_buf(),
+        );
         for item in items.values_mut() {
-            item["instruction_selection"]["routing_manifest"] =
-                work_feature::instruction::migration_manifest(
+            if let Some(manifest) = item["instruction_selection"]
+                .get("routing_manifest")
+                .cloned()
+            {
+                item["instruction_selection"]["routing_manifest"] =
+                    work_feature::instruction::refresh_legacy_manifest(
+                        &mut routing,
+                        &manifest,
+                        item,
+                    )?;
+            }
+        }
+        if let Some(manifest) = index["instruction_selection"]
+            .get("routing_manifest")
+            .cloned()
+        {
+            index["instruction_selection"]["routing_manifest"] =
+                work_feature::instruction::refresh_legacy_manifest(
                     &mut routing,
-                    "task",
-                    "task_confirmed",
-                    "choose_task",
-                    item,
+                    &manifest,
+                    &index,
                 )?;
         }
-        index["instruction_selection"]["routing_manifest"] =
-            work_feature::instruction::migration_manifest(
-                &mut routing,
-                "task",
-                "task_confirmed",
-                "confirm_review",
-                &index,
-            )?;
         routing.recheck()?;
     }
     let mut updated_references = Vec::new();
@@ -1216,7 +1223,8 @@ fn prepare_simple_update_scoped(
     let paths = crate::artifact_paths::LocalArtifactPaths {
         project_root: root.to_path_buf(),
     };
-    let mut routing = crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+    let mut routing =
+        crate::legacy_manifest_sources::LegacyManifestSourceSession::new(skill_root.to_path_buf());
     let preview = preview_update(
         &instructions,
         &skills,
@@ -1522,8 +1530,9 @@ fn update_from_project_scoped(
         let paths = crate::artifact_paths::LocalArtifactPaths {
             project_root: root.to_path_buf(),
         };
-        let mut routing =
-            crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+        let mut routing = crate::legacy_manifest_sources::LegacyManifestSourceSession::new(
+            skill_root.to_path_buf(),
+        );
         let preview = preview_update(
             &instructions,
             &skills,

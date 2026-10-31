@@ -4,6 +4,7 @@ pub mod command_publication;
 pub mod document;
 pub mod file_transaction;
 pub mod recovery;
+pub mod scope;
 
 use std::collections::{HashMap, HashSet};
 

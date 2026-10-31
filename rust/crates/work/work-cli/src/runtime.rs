@@ -28,9 +28,6 @@ use work_flow::specification::{
     apply_reconciliation, prepare_reconciliation, preview_reconciliation, recover_reconciliation,
 };
 use work_flow::task::{TaskCollectionRepository, validate_collection as validate_task_collection};
-use work_flow::workflow::{
-    OperationContextRequest, build_operation_context, validate_operation_context,
-};
 use work_infrastructure::artifact_paths::LocalArtifactPaths;
 use work_infrastructure::clock_workspace::{LocalWorkspaceAllocator, local_date, local_timestamp};
 use work_infrastructure::codec::{canonical_json, decode_utf8, fingerprint, parse_json_contract};
@@ -38,7 +35,6 @@ use work_infrastructure::execution::storage::{AttemptStartRecoveryRequest, Local
 use work_infrastructure::files::resolve_project_path;
 use work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog;
 use work_infrastructure::instruction::refresh::source_impact;
-use work_infrastructure::routing_sources::RoutingSourceSession;
 use work_infrastructure::skill_catalog::{LocalSkillCatalog, SkillRootConfig};
 use work_infrastructure::source_snapshot_storage::LocalSourceSnapshotStorage;
 use work_infrastructure::specification::artifact_migration::{
@@ -276,28 +272,16 @@ fn dispatch_with_operation_context(
     if !matches!(command, "source" | "task" | "execute" | "discussion") {
         return dispatch(parsed, root, input, skill_root);
     }
-    let operation = parsed.path.get(1).map_or(command, String::as_str);
     let artifacts = operation_artifacts(parsed, root, input, true)?;
-    let mut routing = RoutingSourceSession::new(skill_root.to_path_buf());
-    let (envelope, selection) = build_operation_context(
-        &mut routing,
-        &OperationContextRequest {
-            command,
-            operation,
-            artifacts: &artifacts,
-            project_root: &root.to_string_lossy(),
-            approval_sha256: parsed
-                .arguments
-                .get("approved_sha256")
-                .and_then(Value::as_str),
-            transaction_workspace: parsed
-                .arguments
-                .get("execution_dir")
-                .and_then(Value::as_str),
-        },
-    )?;
     let current = operation_artifacts(parsed, root, input, false)?;
-    validate_operation_context(&envelope, &selection, &current)?;
+    if artifacts != current {
+        return Err(WorkError::new(
+            ExitCode::ArtifactIntegrity,
+            "operation_artifact_drift",
+            "A bound operation artifact changed before the worker started.",
+            json!({}),
+        ));
+    }
     let result = dispatch(parsed, root, input, skill_root)?;
     if result["schema"].as_str().is_none_or(str::is_empty) {
         return Err(WorkError::new(
@@ -1011,20 +995,8 @@ fn dispatch_with_writer_family(
                 requirement_id: argument(parsed, "requirement_id")?,
                 task_path: parsed.arguments.get("task_path").and_then(Value::as_str),
             })?;
-            let mut routing = RoutingSourceSession::new(skill_root.to_path_buf());
             let requirement_id = argument(parsed, "requirement_id")?;
-            let maintenance = parsed.arguments["instruction_maintenance"] == true;
-            let formal_events: &[&str] = if maintenance {
-                &["instruction_maintenance"]
-            } else {
-                &[]
-            };
-            let state = work_flow::workflow::status_with_events(
-                &mut routing,
-                requirement_id,
-                snapshot,
-                formal_events,
-            )?;
+            let state = work_flow::workflow::status(requirement_id, snapshot)?;
             let _: work_model::workflow::WorkflowState = serde_json::from_value(state.clone())
                 .expect("routed workflow state matches its model");
             Ok(state)
@@ -1789,36 +1761,15 @@ mod tests {
             prepared["input_file"]["raw_sha256"],
             input.source_raw_sha256
         );
-        let mut routing = RoutingSourceSession::new(PathBuf::from(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../../skills/work"
-        )));
-        let (envelope, selection) = build_operation_context(
-            &mut routing,
-            &OperationContextRequest {
-                command: "execute",
-                operation: "deviation-record",
-                artifacts: &prepared,
-                project_root: root.to_str().unwrap(),
-                approval_sha256: Some(&"a".repeat(64)),
-                transaction_workspace: Some("outputs/work/executions/example"),
-            },
-        )
-        .unwrap();
         let unchanged = operation_artifacts(&parsed, &root, Some(&input), false).unwrap();
-        validate_operation_context(&envelope, &selection, &unchanged).unwrap();
+        assert_eq!(prepared, unchanged);
         fs::write(
             &input_path,
             include_bytes!("../fixtures/runtime/changed-input.json"),
         )
         .unwrap();
         let drifted = operation_artifacts(&parsed, &root, Some(&input), false).unwrap();
-        assert_eq!(
-            validate_operation_context(&envelope, &selection, &drifted)
-                .unwrap_err()
-                .reason_code,
-            "operation_artifact_drift"
-        );
+        assert_ne!(prepared, drifted);
     }
 
     #[test]

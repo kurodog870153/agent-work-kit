@@ -7,7 +7,6 @@ pub mod execution;
 pub mod hierarchy;
 pub mod identifiers;
 pub mod instruction;
-pub mod operation;
 pub mod runtime;
 pub mod schema;
 pub mod skill;
@@ -18,7 +17,7 @@ pub mod workflow;
 
 #[cfg(test)]
 mod remaining_contract_examples {
-    use crate::{operation, source};
+    use crate::source;
     use serde::de::DeserializeOwned;
     use serde_json::Value;
 
@@ -31,8 +30,8 @@ mod remaining_contract_examples {
     fn public_remaining_examples_match_models() {
         let registry: Value = crate::contract::data::registry_value();
         let items = &registry["items"];
-        matches::<operation::OperationEnvelope>(items, "work-operation-envelope");
-        matches::<operation::OperationResult>(items, "work-operation-result");
+        assert!(items.get("work-operation-envelope").is_none());
+        assert!(items.get("work-operation-result").is_none());
         matches::<source::SourceImpact>(items, "work-source-impact");
     }
 }

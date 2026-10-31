@@ -119,10 +119,6 @@ pub enum PublicSchema {
     WorkInstructionSelection,
     #[serde(rename = "work-instructions")]
     WorkInstructions,
-    #[serde(rename = "work-operation-envelope")]
-    WorkOperationEnvelope,
-    #[serde(rename = "work-operation-result")]
-    WorkOperationResult,
     #[serde(rename = "work-record-begin")]
     WorkRecordBegin,
     #[serde(rename = "work-record-finish-request")]
@@ -194,7 +190,7 @@ pub enum PublicSchema {
 }
 
 impl PublicSchema {
-    pub const ALL: [Self; 93] = [
+    pub const ALL: [Self; 91] = [
         Self::WorkFileTransactionRequest,
         Self::WorkFileTransactionPreview,
         Self::WorkFileRecoveryPreview,
@@ -252,8 +248,6 @@ impl PublicSchema {
         Self::WorkInstructionSelectionManifest,
         Self::WorkInstructionSelection,
         Self::WorkInstructions,
-        Self::WorkOperationEnvelope,
-        Self::WorkOperationResult,
         Self::WorkRecordBegin,
         Self::WorkRecordFinishRequest,
         Self::WorkRecordFinish,
@@ -352,8 +346,6 @@ impl PublicSchema {
             Self::WorkInstructionSelectionManifest => "work-instruction-selection-manifest",
             Self::WorkInstructionSelection => "work-instruction-selection",
             Self::WorkInstructions => "work-instructions",
-            Self::WorkOperationEnvelope => "work-operation-envelope",
-            Self::WorkOperationResult => "work-operation-result",
             Self::WorkRecordBegin => "work-record-begin",
             Self::WorkRecordFinishRequest => "work-record-finish-request",
             Self::WorkRecordFinish => "work-record-finish",

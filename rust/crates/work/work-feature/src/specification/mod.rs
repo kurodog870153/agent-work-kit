@@ -107,7 +107,7 @@ pub fn preview_update<H, S, P>(
     skill_roots: &[SkillRoot],
     request: &Value,
     baseline: SpecificationBaseline<'_>,
-    routing: &mut impl crate::workflow::WorkflowRoutingRepository,
+    routing: &mut impl crate::instruction::LegacyManifestSources,
 ) -> Result<SpecificationPreview, WorkError>
 where
     H: InstructionSourceRepository,
@@ -297,12 +297,12 @@ where
             issue.details,
         )
     })?;
-    if request.get("source_confirmation").is_some() {
-        rebuilt["instruction_selection_manifest"] = crate::instruction::migration_manifest(
+    if request.get("source_confirmation").is_some()
+        && !rebuilt["instruction_selection_manifest"].is_null()
+    {
+        rebuilt["instruction_selection_manifest"] = crate::instruction::refresh_legacy_manifest(
             routing,
-            "execute",
-            "execution_bound",
-            "select_task_for_execution",
+            &rebuilt["instruction_selection_manifest"],
             &rebuilt,
         )?;
     }

@@ -5,7 +5,6 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkflowDecision {
     pub status: String,
-    pub next_action: String,
     pub target_artifact: &'static str,
     pub requires_user_confirmation: bool,
     pub required_checks: Vec<String>,
@@ -27,7 +26,6 @@ pub fn decide_pre_execution(
     let decision = match (source_validation, task_validation, execution_index_exists) {
         (None, _, _) => WorkflowDecision {
             status: "source_required".into(),
-            next_action: "capture_source".into(),
             target_artifact: "source",
             requires_user_confirmation: true,
             required_checks: vec![],
@@ -54,7 +52,6 @@ pub fn decide_pre_execution(
             };
             WorkflowDecision {
                 status: status.into(),
-                next_action: "review_discussion".into(),
                 target_artifact: "task",
                 requires_user_confirmation: true,
                 required_checks: vec!["source validate".into()],
@@ -63,7 +60,6 @@ pub fn decide_pre_execution(
         }
         (Some(_), Some(task_validation), false) => WorkflowDecision {
             status: "execution_recovery_required".into(),
-            next_action: "inspect_recovery".into(),
             target_artifact: "execution",
             requires_user_confirmation: true,
             required_checks: vec!["task validate".into()],
@@ -97,7 +93,6 @@ pub fn decide_execution(index: &Value, attempts: &Value) -> WorkflowDecision {
         if !active {
             return WorkflowDecision {
                 status: "execution_locked".into(),
-                next_action: "inspect_recovery".into(),
                 target_artifact: target,
                 requires_user_confirmation: true,
                 required_checks: vec!["execute preflight".into()],
@@ -134,24 +129,15 @@ pub fn decide_execution(index: &Value, attempts: &Value) -> WorkflowDecision {
         unresolved.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
         return WorkflowDecision {
             status: "execution_reconciliation_pending".into(),
-            next_action: "review_reconciliation".into(),
             target_artifact: target,
             requires_user_confirmation: true,
             required_checks: checks,
             details: json!({"overall_status":overall,"pending_deviation_ids":unresolved}),
         };
     }
-    let (action, confirmation) = match overall {
-        "pending" => ("select_task_for_execution", true),
-        "in_progress" => ("continue_execution", false),
-        "pending_retry" => ("confirm_retry", true),
-        "blocked" => ("review_reconciliation", true),
-        "completed" | "cancelled" => ("review_completion", true),
-        _ => ("review_state", true),
-    };
+    let confirmation = overall != "in_progress";
     WorkflowDecision {
         status: format!("execution_{overall}"),
-        next_action: action.into(),
         target_artifact: target,
         requires_user_confirmation: confirmation,
         required_checks: checks,
@@ -164,103 +150,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_discussion_and_recovery_states_follow_dependency_order() {
+    fn formal_states_follow_artifact_and_lock_evidence() {
         let missing = decide_pre_execution(None, None, None, false)
             .unwrap()
             .unwrap();
         assert_eq!(
-            (
-                missing.status.as_str(),
-                missing.next_action.as_str(),
-                missing.target_artifact
-            ),
-            ("source_required", "capture_source", "source")
+            (missing.status.as_str(), missing.target_artifact),
+            ("source_required", "source")
         );
-        assert!(missing.requires_user_confirmation);
-        let plan = json!({"sources":["SRC-001"]});
+        let source = json!({"sources":["SRC-001"]});
         let discussion = json!({"view":{"revision":1},"planning_ready":false});
-        let pending = decide_pre_execution(Some(&plan), Some(&discussion), None, false)
+        let pending = decide_pre_execution(Some(&source), Some(&discussion), None, false)
             .unwrap()
             .unwrap();
         assert_eq!(
-            (
-                pending.status.as_str(),
-                pending.next_action.as_str(),
-                pending.target_artifact
-            ),
-            ("task_discussion", "review_discussion", "task")
+            (pending.status.as_str(), pending.target_artifact),
+            ("task_discussion", "task")
         );
-        assert_eq!(pending.details["source"], plan);
         let task = json!({"task_collection_sha256":"2".repeat(64)});
-        let recovery = decide_pre_execution(Some(&plan), None, Some(&task), false)
+        let recovery = decide_pre_execution(Some(&source), None, Some(&task), false)
             .unwrap()
             .unwrap();
-        assert_eq!(
-            (
-                recovery.status.as_str(),
-                recovery.next_action.as_str(),
-                recovery.target_artifact
-            ),
-            (
-                "execution_recovery_required",
-                "inspect_recovery",
-                "execution"
-            )
-        );
+        assert_eq!(recovery.status, "execution_recovery_required");
         assert!(
-            decide_pre_execution(Some(&plan), None, Some(&task), true)
+            decide_pre_execution(Some(&source), None, Some(&task), true)
                 .unwrap()
                 .is_none()
         );
-    }
 
-    #[test]
-    fn active_lock_and_reconciliation_routes_match_current_contract() {
-        let fingerprint = "c".repeat(64);
-        let index = json!({
-            "overall_status":"in_progress",
-            "lock":{"kind":"execution","task_id":"TASK-001","attempt_id":"ATTEMPT-001","execute_instructions_sha256":fingerprint},
-            "tasks":[{"id":"TASK-001","status":"in_progress","latest_attempt":"ATTEMPT-001"}]
-        });
-        let attempts = json!({"TASK-001":{
-            "status":"in_progress","task_id":"TASK-001","attempt_id":"ATTEMPT-001",
-            "execute_instructions_sha256":fingerprint
-        }});
+        let index = json!({"overall_status":"in_progress","lock":{"kind":"execution","task_id":"TASK-001","attempt_id":"ATTEMPT-001","execute_instructions_sha256":"c".repeat(64)},"tasks":[{"id":"TASK-001","status":"in_progress","latest_attempt":"ATTEMPT-001"}]});
+        let attempts = json!({"TASK-001":{"status":"in_progress","task_id":"TASK-001","attempt_id":"ATTEMPT-001","execute_instructions_sha256":"c".repeat(64)}});
         let active = decide_execution(&index, &attempts);
-        assert_eq!(
-            (active.status.as_str(), active.next_action.as_str()),
-            ("execution_in_progress", "continue_execution")
-        );
+        assert_eq!(active.status, "execution_in_progress");
         assert!(!active.requires_user_confirmation);
-
         let mut drifted = attempts;
         drifted["TASK-001"]["execute_instructions_sha256"] = json!("d".repeat(64));
-        let locked = decide_execution(&index, &drifted);
-        assert_eq!(locked.next_action, "inspect_recovery");
-
-        let completed = json!({"overall_status":"completed","lock":null,"tasks":[{
-            "id":"TASK-001","status":"completed","latest_attempt":"ATTEMPT-001"
-        }]});
-        let mut attempts = json!({"TASK-001":{
-            "status":"completed","execution_deviations":[{
-                "deviation_id":"DEVIATION-001","decision":{"outcome":"approved"},
-                "reconciliation_status":"pending"
-            }]
-        }});
-        let pending = decide_execution(&completed, &attempts);
         assert_eq!(
-            (pending.status.as_str(), pending.next_action.as_str()),
-            ("execution_reconciliation_pending", "review_reconciliation")
-        );
-        assert_eq!(
-            pending.details["pending_deviation_ids"],
-            json!(["DEVIATION-001"])
-        );
-        attempts["TASK-001"]["_reconciliation_resolved_ids"] = json!(["DEVIATION-001"]);
-        let resolved = decide_execution(&completed, &attempts);
-        assert_eq!(
-            (resolved.status.as_str(), resolved.next_action.as_str()),
-            ("execution_completed", "review_completion")
+            decide_execution(&index, &drifted).status,
+            "execution_locked"
         );
     }
 }

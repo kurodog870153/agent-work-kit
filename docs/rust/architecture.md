@@ -70,7 +70,7 @@ Model 以 Rust 型別及 `serde` 定義公開資料契約，Operations 提供契
 1. `work-model/src/` 按 Source、Task、Execution、Specification 等業務概念，定義已登錄公開 request、artifact、response 與 envelope 的 Rust `struct`／`enum` 及固定巢狀物件。契約允許任意 JSON 的欄位保留 `Value`；其餘欄位以 `serde` 表達欄名、可選、`null` 與 enum 字面值。
 2. `work-model/src/contract/mod.rs` 定義契約目錄與描述的型別；`resources/contract/<業務領域>/<完整契約 ID>.json` 各保存一筆靜態契約描述、範例、scaffold 及欄位順序；根層的 `catalog.json` 與 `scaffold-orders.json` 保存目錄與 scaffold 順序。`build.rs` 掃描契約子目錄並產生編譯時內嵌清單，`src/contract/data.rs` 以型別解析各資源並組成公開目錄。CLI 的 `contract list`、`describe`、`scaffold` 從組裝後的目錄取資料，負責輸出映射與呈現；執行時不需額外交付 JSON 檔案。
 3. Operations 仍負責跨欄位驗證、canonical bytes、SHA 與指紋；Feature／Flow 保留 ports、功能及流程所需的暫時性輸入。已知的公開資料形狀由 Model 表達，生產路徑於邊界解析／產生對應型別。公開契約的解析與輸出集中於邊界，業務層使用對應的模型型別。
-4. `work-cli/resources/parser/commands.json` 是命令樹與 help 設定，留在 CLI；`work-operations/resources/routing_catalog.json`、`operation_effects.json` 是純規則資料，留在 Operations。測試 fixture 與 golden JSON 保持測試用途，不搬入 Model。這三份執行用設定透過 `include_str!` 編入 binary，不需要在使用者環境另外交付。
+4. `work-cli/resources/parser/commands.json` 是命令樹與 help 設定，留在 CLI，並透過 `include_str!` 編入 binary。Work 的狀態查詢依正式 Artifact 決定狀態；Instruction Selection 驗證重讀已保存 Manifest 的來源、路徑與指紋。
 
 ## 5. 錯誤、交易與復原
 
@@ -124,6 +124,6 @@ Feature 透過 repository 與 port 介面取得執行能力、來源資料及儲
 
 Runtime 的 owner、manifest 與 inventory 型別由 Model 定義，路徑、身分及指紋規則由 Operations 定義。Infrastructure 實作 workspace 配置、writer lock、交易暫存、journal、回讀與復原；CLI 透過 Flow 與 Feature 使用這些能力。
 
-CMD／OP／VAL 程序由 Host 執行。Model 定義綁定與 Host 回報型別；Operations 定義授權、版本及驗證條件等純規則。Infrastructure 在 `command-binding` 凍結正式 CMD 與宣告輸入，在 `record-finish` 重讀專案內 Host 證據及原始 SHA；歷史 Work receipts 依舊格式驗證。Work 不啟動目前 CMD，也不代替 Host 選擇工具。
+CMD／OP／VAL 程序由 Host 執行。Model 定義綁定與 Host 回報型別；Operations 定義授權、版本及驗證條件等純規則。Infrastructure 在 `command-binding` 凍結正式 CMD 與宣告輸入，在 `record-finish` 重讀專案內 Host 證據及原始 SHA。Work 不啟動 CMD，也不代替 Host 選擇工具。
 
 驗收的程序、AI 審查與指定使用者確認由 Model 的明確來源型別區分；Operations 定義程序條件、證據引用及來源／版本綁定的純規則。程序未指定額外條件時核對全部宣告命令的 Host 回報零退出碼，並標明其來源；Work 不宣稱獨立觀察 Host 執行。Infrastructure 核對證據與實際保存內容，Feature 沿既有 Attempt／Record／Acceptance use case 協調發布及復原，Flow 編排入口，CLI 負責輸入輸出與錯誤映射。不新增平行的執行、驗收或 Recovery 系統。

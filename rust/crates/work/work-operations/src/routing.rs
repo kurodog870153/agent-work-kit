@@ -3,7 +3,7 @@
 use crate::canonical::canonical_json_sha256;
 use serde_json::{Value, json};
 
-const CATALOG: &str = include_str!("../resources/routing_catalog.json");
+const CATALOG: &str = include_str!("../fixtures/historical/routing_catalog.json");
 const BOOTSTRAP: &str = "work.instruction-loading";
 
 #[derive(Debug, Clone)]
@@ -207,12 +207,6 @@ mod tests {
         ] {
             assert_eq!(infer_mode(operation), mode);
         }
-        assert_eq!(
-            crate::operation::routing_identity("migration", "preview")
-                .unwrap()
-                .mode,
-            "migration"
-        );
     }
 
     use crate::canonical::canonical_sha256;

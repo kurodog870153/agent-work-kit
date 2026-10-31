@@ -105,8 +105,8 @@ mod tests {
     #[test]
     fn segmented_registry_preserves_the_current_catalog() {
         let registry = registry();
-        assert_eq!(registry.items.len(), 93);
-        assert_eq!(registry.catalog.contracts.len(), 93);
+        assert_eq!(registry.items.len(), 91);
+        assert_eq!(registry.catalog.contracts.len(), 91);
         for (id, record) in &registry.items {
             assert_eq!(id, &record.description.id);
             assert!(

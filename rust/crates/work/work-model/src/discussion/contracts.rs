@@ -34,7 +34,7 @@ mod tests {
                 .clone(),
         )
         .unwrap();
-        assert_eq!(records.len(), 93);
+        assert_eq!(records.len(), 91);
         serde_json::from_value::<super::super::response::DiscussionResult>(
             records["work-discussion-result"]
                 .description

@@ -21,8 +21,6 @@ use work_operations::identifiers::RequirementId;
 use crate::discussion::storage::LocalDiscussionStorage;
 use crate::files::{LocalFiles, resolve_project_path};
 use crate::hierarchy_catalog::LocalHierarchyCatalog;
-#[cfg(test)]
-use crate::routing_sources::RoutingSourceSession;
 use crate::skill_catalog::{LocalSkillCatalog, SkillRootConfig};
 use crate::source_snapshot_storage::LocalSourceSnapshotStorage;
 use crate::specification::storage::storage_path;
@@ -544,9 +542,7 @@ fn workflow_state(request: &WorkflowStateRequest<'_>) -> Result<Value, WorkError
         index,
         latest_attempts,
     } = snapshot;
-    let mut routing = RoutingSourceSession::new(PathBuf::from(request.skill_root));
     if let Some(state) = pre_execution_state(
-        &mut routing,
         request.requirement_id,
         &artifacts,
         source.as_ref(),
@@ -557,7 +553,6 @@ fn workflow_state(request: &WorkflowStateRequest<'_>) -> Result<Value, WorkError
         return Ok(state);
     }
     execution_state(
-        &mut routing,
         request.requirement_id,
         &artifacts,
         index

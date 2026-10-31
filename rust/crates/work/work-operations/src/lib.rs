@@ -7,8 +7,8 @@ pub mod execution;
 pub mod hierarchy;
 pub mod identifiers;
 pub mod instruction;
-pub mod operation;
 pub mod protocol;
+#[cfg(test)]
 pub mod routing;
 pub mod skill;
 pub mod source_snapshot;

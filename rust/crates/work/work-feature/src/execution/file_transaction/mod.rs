@@ -4,7 +4,6 @@ use crate::error::{ExitCode, WorkError};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use work_model::execution::file_transaction::*;
-use work_model::schema::PublicSchema;
 use work_operations::derivation::{file_transaction as derive, fingerprint};
 
 mod candidate;
@@ -74,23 +73,11 @@ pub trait FileTransactionRepository {
     fn read_source(&self, path: &str) -> Result<Vec<u8>, WorkError>;
     fn inspect(&self, path: &str) -> Result<Option<FileState>, WorkError>;
     fn check_prepare(&self, context: &ExecutionWriterContext) -> Result<(), WorkError>;
-    fn apply(
-        &self,
-        context: &ExecutionWriterContext,
-        preview: &FileTransactionPreview,
-        evidence: &str,
-    ) -> Result<FileTransactionResult, WorkError>;
     fn recovery_preview(
         &self,
         context: &ExecutionWriterContext,
         identity: &str,
     ) -> Result<FileRecoveryPreview, WorkError>;
-    fn restore(
-        &self,
-        context: &ExecutionWriterContext,
-        preview: &FileRecoveryPreview,
-        evidence: &str,
-    ) -> Result<FileTransactionResult, WorkError>;
 }
 
 pub fn prepare(
@@ -319,102 +306,4 @@ pub fn verify_execute(
         return Err(error("file_transaction_execute_instructions_stale"));
     }
     Ok(())
-}
-
-pub fn run(
-    repository: &impl FileTransactionRepository,
-    context: &ExecutionWriterContext,
-    operation: &str,
-    request: &Value,
-) -> Result<Value, WorkError> {
-    let request: FileTransactionRequest = serde_json::from_value(request.clone())
-        .map_err(|_| error("file_transaction_request_invalid"))?;
-    if request.schema != PublicSchema::WorkFileTransactionRequest {
-        return Err(error("file_transaction_request_schema"));
-    }
-    let output = match (operation, request.command) {
-        (
-            "file-prepare",
-            FileTransactionCommand::Prepare {
-                attempt_id,
-                changes,
-                baseline_confirmation,
-            },
-        ) => json!(prepare(
-            repository,
-            context,
-            &attempt_id,
-            &changes,
-            baseline_confirmation.as_ref()
-        )?),
-        (
-            "file-apply",
-            FileTransactionCommand::Apply {
-                attempt_id,
-                changes,
-                expected_before,
-                baseline_confirmation,
-            },
-        ) => {
-            let current = prepare(
-                repository,
-                context,
-                &attempt_id,
-                &changes,
-                baseline_confirmation.as_ref(),
-            )?;
-            let observed: BTreeMap<_, _> = current
-                .manifest
-                .targets
-                .iter()
-                .map(|target| {
-                    (
-                        target.path.clone(),
-                        target.before.as_ref().map(|before| before.sha256.clone()),
-                    )
-                })
-                .collect();
-            if expected_before != observed {
-                return Err(error("file_transaction_read_baseline_stale"));
-            }
-            let attempt_path = format!(
-                "{}/{}/{}/attempt.json",
-                context.target().execution_dir,
-                context.target().task_id,
-                attempt_id
-            );
-            let attempt: Value = serde_json::from_slice(&repository.read_source(&attempt_path)?)
-                .map_err(|_| error("file_transaction_attempt_invalid"))?;
-            let evidence = attempt["authorization"]["authorization_evidence"]
-                .as_str()
-                .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| error("file_transaction_authorization_required"))?;
-            json!(repository.apply(context, &current, evidence)?)
-        }
-        (
-            "file-recovery-prepare",
-            FileTransactionCommand::RecoveryPrepare {
-                transaction_identity,
-            },
-        ) => json!(repository.recovery_preview(context, &transaction_identity)?),
-        (
-            "file-restore",
-            FileTransactionCommand::Restore {
-                transaction_identity,
-                approved_sha256,
-                authorization_evidence,
-            },
-        ) => {
-            if authorization_evidence.trim().is_empty() {
-                return Err(error("file_transaction_recovery_authorization_required"));
-            }
-            let preview = repository.recovery_preview(context, &transaction_identity)?;
-            if preview.approval_sha256 != approved_sha256 {
-                return Err(error("file_transaction_recovery_approval_stale"));
-            }
-            json!(repository.restore(context, &preview, &authorization_evidence)?)
-        }
-        _ => return Err(error("file_transaction_command_mismatch")),
-    };
-    Ok(output)
 }

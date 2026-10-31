@@ -307,9 +307,7 @@ mod tests {
     use super::*;
     use crate::execution::ExecutionWriterContext;
     use std::cell::Cell;
-    use work_model::execution::file_transaction::{
-        FileRecoveryPreview, FileTransactionPreview, FileTransactionResult,
-    };
+    use work_model::execution::file_transaction::FileRecoveryPreview;
     fn metadata() -> FileMetadata {
         FileMetadata {
             readonly: false,
@@ -401,28 +399,12 @@ mod tests {
         fn check_prepare(&self, _: &ExecutionWriterContext) -> Result<(), WorkError> {
             unreachable!()
         }
-        fn apply(
-            &self,
-            _: &ExecutionWriterContext,
-            _: &FileTransactionPreview,
-            _: &str,
-        ) -> Result<FileTransactionResult, WorkError> {
-            unreachable!("preview cannot write")
-        }
         fn recovery_preview(
             &self,
             _: &ExecutionWriterContext,
             _: &str,
         ) -> Result<FileRecoveryPreview, WorkError> {
             unreachable!()
-        }
-        fn restore(
-            &self,
-            _: &ExecutionWriterContext,
-            _: &FileRecoveryPreview,
-            _: &str,
-        ) -> Result<FileTransactionResult, WorkError> {
-            unreachable!("preview cannot restore")
         }
     }
     fn task() -> Value {

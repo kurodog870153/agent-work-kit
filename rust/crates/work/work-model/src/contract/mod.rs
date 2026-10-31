@@ -189,10 +189,6 @@ mod tests {
         assert_eq!(route["mode"], "task");
         assert_eq!(route["status"], "source_required");
         assert_eq!(route["operation"], "capture_source");
-        assert_eq!(
-            items["work-operation-envelope"]["description"]["example"]["operation"],
-            route["operation"]
-        );
         for publication in [
             &items["work-spec-migration-publication"]["description"]["example"],
             &items["work-spec-reconciliation-publication"]["description"]["example"]["publication"],

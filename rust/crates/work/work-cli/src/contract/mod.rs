@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn frozen_catalog_keeps_public_descriptions_and_scaffolds() {
-        assert_eq!(list()["contracts"].as_array().unwrap().len(), 93);
+        assert_eq!(list()["contracts"].as_array().unwrap().len(), 91);
         assert_eq!(
             describe("work-discussion-request").unwrap()["kind"],
             "semantic_request"
@@ -338,15 +338,9 @@ mod tests {
     }
 
     #[test]
-    fn operation_result_example_preserves_context_and_success_status() {
-        let description = describe("work-operation-result").unwrap();
-        let example = &description["example"];
-        assert_eq!(example["schema"], "work-operation-result");
-        assert_eq!(example["status"], "success");
-        assert_eq!(example["context_sha256"], "0".repeat(64));
-        for required in description["required"].as_array().unwrap() {
-            assert!(example.get(required.as_str().unwrap()).is_some());
-        }
+    fn retired_operation_context_contracts_are_not_public() {
+        assert!(describe("work-operation-envelope").is_err());
+        assert!(describe("work-operation-result").is_err());
     }
 
     #[test]
