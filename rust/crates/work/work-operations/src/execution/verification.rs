@@ -3,8 +3,9 @@ use super::ExecutionIssue;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use work_model::execution::command::capture::{
-    CommandExecutionEvidence, ValidationExecutionEvidence,
+    CommandExecutionEvidence, ValidationCommandEvidence, ValidationExecutionEvidence,
 };
+use work_model::execution::host_report::HostResultStatus;
 use work_model::task::verification::VerificationCondition;
 
 fn unknown() -> ExecutionIssue {
@@ -336,6 +337,47 @@ pub fn validate_command_evidence(
     Ok(evidence)
 }
 
+struct SelectedCommandProof<'a> {
+    task_id: &'a str,
+    attempt_id: &'a str,
+    record_id: &'a str,
+    exit_code: i64,
+    field: &'static str,
+    value: Value,
+}
+
+fn selected_command_proof(
+    selected: &ValidationCommandEvidence,
+) -> Result<SelectedCommandProof<'_>, ExecutionIssue> {
+    match (&selected.execution, &selected.host_report) {
+        (Some(execution), None) => {
+            let value = serde_json::to_value(execution).map_err(|_| unknown())?;
+            validate_command_evidence(&value)?;
+            Ok(SelectedCommandProof {
+                task_id: &execution.task_id,
+                attempt_id: &execution.attempt_id,
+                record_id: &execution.record_id,
+                exit_code: execution.exit_code,
+                field: "execution_evidence",
+                value,
+            })
+        }
+        (None, Some(report))
+            if report.valid_shape() && report.status == HostResultStatus::Exited =>
+        {
+            Ok(SelectedCommandProof {
+                task_id: &report.task_id,
+                attempt_id: &report.attempt_id,
+                record_id: &report.record_id,
+                exit_code: report.exit_code.ok_or_else(unknown)?,
+                field: "host_report",
+                value: serde_json::to_value(report).map_err(|_| unknown())?,
+            })
+        }
+        _ => Err(unknown()),
+    }
+}
+
 /// Stored provenance remains readable after engine changes; eligibility is checked separately.
 pub fn validate_carried_evidence_shape(
     attempt: &Value,
@@ -385,20 +427,15 @@ pub fn validate_carried_evidence_shape(
         return Err(unknown());
     }
     for (command, selected) in &proof.commands {
-        super::attempt::record_identity(
-            &json!(selected.execution.record_id),
-            "carried command record",
-        )?;
-        let execution = validate_command_evidence(
-            &serde_json::to_value(&selected.execution).map_err(|_| unknown())?,
-        )?;
+        let execution = selected_command_proof(selected)?;
+        super::attempt::record_identity(&json!(execution.record_id), "carried command record")?;
         if crate::task::item::numbered(command, "CMD").is_none()
             || execution.task_id != attempt["task_id"]
             || execution.record_id.split('#').next() != Some(command.as_str())
-            || crate::task::item::numbered(&execution.attempt_id, "ATTEMPT").is_none()
+            || crate::task::item::numbered(execution.attempt_id, "ATTEMPT").is_none()
             || crate::task::item::numbered(&selected.selected_from_attempt_id, "ATTEMPT").is_none()
-            || execution.attempt_id > evidence.owner_attempt_id
-            || execution.attempt_id > selected.selected_from_attempt_id
+            || execution.attempt_id > evidence.owner_attempt_id.as_str()
+            || execution.attempt_id > selected.selected_from_attempt_id.as_str()
             || selected.selected_from_attempt_id > evidence.owner_attempt_id
         {
             return Err(unknown());
@@ -470,7 +507,8 @@ pub fn validate_carried_validation_evidence(
                     .and_then(|(_, retry)| retry.parse::<u64>().ok())
                     .unwrap_or(0)
             });
-        if current.is_some_and(|row| row["record_id"] != selected.execution.record_id) {
+        let proof = selected_command_proof(selected)?;
+        if current.is_some_and(|row| row["record_id"] != proof.record_id) {
             return Err(unknown());
         }
     }
@@ -509,9 +547,7 @@ pub fn validate_validation_evidence(
         return Err(unknown());
     }
     for (command, selected) in &evidence.commands {
-        let proof = validate_command_evidence(
-            &serde_json::to_value(&selected.execution).map_err(|_| unknown())?,
-        )?;
+        let proof = selected_command_proof(selected)?;
         if proof.task_id != attempt["task_id"]
             || proof.record_id.split('#').next() != Some(command.as_str())
         {
@@ -534,8 +570,7 @@ pub fn validate_validation_evidence(
                 || latest["id"] != proof.record_id
                 || latest["status"] == "skipped"
                 || latest["exit_code"] != proof.exit_code
-                || latest["execution_evidence"]
-                    != serde_json::to_value(&proof).map_err(|_| unknown())?
+                || latest[proof.field] != proof.value
             {
                 return Err(unknown());
             }
@@ -847,7 +882,8 @@ mod tests {
                 "CMD-001".into(),
                 ValidationCommandEvidence {
                     selected_from_attempt_id: "ATTEMPT-001".into(),
-                    execution: command,
+                    execution: Some(command),
+                    host_report: None,
                 },
             )]),
         };

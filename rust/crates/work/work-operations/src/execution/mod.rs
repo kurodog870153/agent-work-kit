@@ -2,6 +2,7 @@
 pub mod attempt;
 pub mod command;
 pub mod file_transaction;
+pub mod host_report;
 
 use std::collections::{HashMap, HashSet};
 

@@ -9,8 +9,8 @@ Work 與 Tooling 以 Model、Operations、Feature、Flow、Infrastructure 與 CL
 ## 1.1 領域責任與依賴
 
 1. `rust/crates/skill/` 承接通用 Skill Discovery、Catalog、Metadata、Bootstrap、Instruction Loading、Hierarchy／References、通用 Selection／Validation、Bundle／Snapshot 及 Source／Fingerprint 能力。`skill-api` 組合 `skill-model`、`skill-operations`、`skill-feature`、`skill-infrastructure`，是其他領域唯一可直接依賴的 Skill crate。
-2. `rust/crates/work/` 保有 Workflow、TASK、Attempt、正式 CLI Routing、Work Formal Instruction Selection、Work 專屬 Fingerprint 組成、Operation Envelope／Authorization、Work Artifact／Immutable History 與 Recovery。六個 `work-*` crate 沿用下列內部層次，binary 名稱維持 `work`；Work 使用 Skill API，不重複實作通用 Skill 功能。
-3. `rust/crates/tooling/` 的六個 crate 負責政策組合與變更判定、Host 證據驗證及操作判定。`tooling-cli` binary 為 `tooling`，公開 `policy discover`、`policy load`、`operation evaluate`，命令進入 `tooling-flow`。Host 提供選定分支、觀察、授權與語意審查結論，並自行執行工具；Tooling 不保存政策狀態或執行 Host 工具。
+2. `rust/crates/work/` 保有 TASK、Attempt、正式資料狀態查詢、Work Formal Instruction Selection、Work 專屬 Fingerprint、Authorization、Work Artifact／Immutable History 與 Recovery。六個 `work-*` crate 沿用下列內部層次，binary 名稱維持 `work`；Work 使用 Skill API，不重複實作通用 Skill 功能。
+3. `rust/crates/tooling/` 的六個 crate 負責政策來源驗證與操作目標邊界檢查。`tooling-cli` binary 為 `tooling`，公開 `policy discover`、`policy load`、`operation evaluate`，命令進入 `tooling-flow`。Host 提供選定分支、觀察、授權與語意審查結論，並自行執行工具；Tooling 不保存政策狀態或執行 Host 工具。
 4. 領域依賴是 `work → skill-api ← tooling`。Skill 不依賴 Work 或 Tooling；Work 與 Tooling 彼此不依賴，且不直接依賴 Skill 內部 crate。`work` binary 只進入 Work 流程。通用 Skill Selection 與 Work Formal Selection 是不同權威。
 
 ## 2. Crate 職責與依賴方向
@@ -78,7 +78,7 @@ Model 以 Rust 型別及 `serde` 定義公開資料契約，Operations 提供契
 
 Flow／Feature 決定業務步驟、授權與狀態結果；Infrastructure 保證持久化所需的鎖、原子寫入與中斷復原。Infrastructure 可以使用 Operations 中的純轉換，但不得自行改變業務決策。復原結果經 port 回到 Feature／Flow，再由 CLI 轉成公開回應。
 
-檔案變更由 Feature 協調預檢、套用與完成判斷，Operations 計算版本與完整性規則，Infrastructure 提供實際內容、持久化、回讀與復原能力。復原政策屬業務決策，不由檔案 adapter 自行決定。
+專案原始碼由 Host 編輯。Work 在編輯前凍結完整候選、授權與版本，編輯後核對 Host 報告及全部目前目標，只發布正式檔案歷史。正式 Source、TASK、Specification、Execution 的寫入仍使用 Work 的鎖、交易、Journal、回讀與復原。復原政策屬業務決策，不由檔案 adapter 自行決定。
 
 ## 6. 建立 Task：資料流示例
 
@@ -124,8 +124,6 @@ Feature 透過 repository 與 port 介面取得執行能力、來源資料及儲
 
 Runtime 的 owner、manifest 與 inventory 型別由 Model 定義，路徑、身分及指紋規則由 Operations 定義。Infrastructure 實作 workspace 配置、writer lock、交易暫存、journal、回讀與復原；CLI 透過 Flow 與 Feature 使用這些能力。
 
-程序執行經 Feature 的 CommandRunner port，由 Infrastructure 的通用程序 adapter 實作。Model 定義命令與執行證據型別；Operations 定義命令選擇、核准指紋及驗證條件等純規則。Infrastructure 負責 argv、cwd、Windows batch、程序生命週期、輸出擷取與 receipts 儲存，平台細節不進入其他層。
+CMD／OP／VAL 程序由 Host 執行。Model 定義綁定與 Host 回報型別；Operations 定義授權、版本及驗證條件等純規則。Infrastructure 在 `command-binding` 凍結正式 CMD 與宣告輸入，在 `record-finish` 重讀專案內 Host 證據及原始 SHA；歷史 Work receipts 依舊格式驗證。Work 不啟動目前 CMD，也不代替 Host 選擇工具。
 
-程序 adapter 繼承外部執行環境，封裝平台生命週期與輸出能力；工具鏈管理及宿主隔離政策不屬此 adapter 的責任。
-
-驗收的程序、AI 審查與指定使用者確認由 Model 的明確來源型別區分；Operations 定義程序條件、證據引用及來源／版本綁定的純規則。程序未指定額外條件時核對全部宣告命令的實際零退出碼。驗證條件由 Operations evaluator 根據執行證據判定；Infrastructure 核對證據與實際保存內容，Feature 沿既有 Attempt／Record／Acceptance 與檔案交易 use case 協調發布及復原，Flow 編排入口，CLI 僅負責輸入輸出與錯誤映射。不新增平行的執行、驗收或 Recovery 系統。
+驗收的程序、AI 審查與指定使用者確認由 Model 的明確來源型別區分；Operations 定義程序條件、證據引用及來源／版本綁定的純規則。程序未指定額外條件時核對全部宣告命令的 Host 回報零退出碼，並標明其來源；Work 不宣稱獨立觀察 Host 執行。Infrastructure 核對證據與實際保存內容，Feature 沿既有 Attempt／Record／Acceptance use case 協調發布及復原，Flow 編排入口，CLI 負責輸入輸出與錯誤映射。不新增平行的執行、驗收或 Recovery 系統。

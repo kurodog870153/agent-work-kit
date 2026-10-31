@@ -34,27 +34,13 @@ pub fn decide_pre_execution(
             details: json!({}),
         },
         (Some(source_validation), None, _) => {
-            let (status, action, details) = match discussion {
+            let (status, details) = match discussion {
                 None => (
                     "task_discussion_required",
-                    "initialize_discussion",
                     json!({"source":source_validation}),
                 ),
                 Some(discussion) => {
-                    let action = match discussion["next_action"].as_str() {
-                        Some("preview") => "preview_task",
-                        Some("answer") => "answer_discussion",
-                        Some("update") => "update_discussion",
-                        _ => {
-                            return Err(WorkflowIssue {
-                                reason_code: "workflow_discussion_invalid",
-                                message: "The committed Discussion action is invalid.",
-                            });
-                        }
-                    };
-                    if discussion["view"].is_null()
-                        || discussion["requires_user_confirmation"] != true
-                    {
+                    if discussion["view"].is_null() || !discussion["planning_ready"].is_boolean() {
                         return Err(WorkflowIssue {
                             reason_code: "workflow_discussion_invalid",
                             message: "A verified committed Session view is required.",
@@ -62,14 +48,13 @@ pub fn decide_pre_execution(
                     }
                     (
                         "task_discussion",
-                        action,
                         json!({"source":source_validation,"discussion":discussion}),
                     )
                 }
             };
             WorkflowDecision {
                 status: status.into(),
-                next_action: action.into(),
+                next_action: "review_discussion".into(),
                 target_artifact: "task",
                 requires_user_confirmation: true,
                 required_checks: vec!["source validate".into()],
@@ -174,65 +159,6 @@ pub fn decide_execution(index: &Value, attempts: &Value) -> WorkflowDecision {
     }
 }
 
-pub fn mode_for_action(status: &str, next_action: &str) -> &'static str {
-    if next_action == "capture_source" || status.starts_with("task_") {
-        "task"
-    } else if next_action == "inspect_recovery" {
-        "execute"
-    } else if next_action == "review_reconciliation" {
-        "revise"
-    } else {
-        "execute"
-    }
-}
-
-pub fn lifecycle_for_status(status: &str) -> &str {
-    if status.ends_with("required") || status == "source_required" {
-        "missing"
-    } else {
-        status
-    }
-}
-
-pub fn next_action_guidance(next_action: &str, requirement_id: &str, artifacts: &Value) -> Value {
-    let common = json!({"user_config_root":"<user-config-root>"});
-    let task = json!({"requirement_id":requirement_id,"user_config_root":"<user-config-root>"});
-    let execute = json!({"task_path":artifacts["task"],"execution_dir":artifacts["execution"],"task_id":"<confirmed-task-id>","user_config_root":"<user-config-root>"});
-    let (command, contract, arguments): (Option<&str>, Option<&str>, Value) = match next_action {
-        "capture_source" => (
-            Some("source capture"),
-            None,
-            json!({"input_file":"<capture-metadata-file>","payload_file":"<original-source-bytes-file>"}),
-        ),
-        "initialize_discussion" | "update_discussion" | "answer_discussion" | "preview_task" => (
-            Some(match next_action {
-                "initialize_discussion" => "discussion init",
-                "answer_discussion" => "discussion answer",
-                "preview_task" => "task preview",
-                _ => "discussion update",
-            }),
-            Some("work-discussion-request"),
-            {
-                let mut value = task;
-                value["input_file"] = json!("<discussion-request-file>");
-                value
-            },
-        ),
-        "select_task_for_execution" | "confirm_retry" => (Some("execute preflight"), None, execute),
-        "review_reconciliation" => (
-            Some("specification reconciliation-prepare"),
-            Some("work-spec-reconciliation-prepare-request"),
-            {
-                let mut value = common;
-                value["input_file"] = json!("<semantic-input-file>");
-                value
-            },
-        ),
-        _ => (None, None, json!({})),
-    };
-    json!({"request_contract_id":contract,"command":command,"arguments":arguments,"semantic_input_contract":contract})
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,8 +178,7 @@ mod tests {
         );
         assert!(missing.requires_user_confirmation);
         let plan = json!({"sources":["SRC-001"]});
-        let discussion =
-            json!({"view":{"revision":1},"next_action":"update","requires_user_confirmation":true});
+        let discussion = json!({"view":{"revision":1},"planning_ready":false});
         let pending = decide_pre_execution(Some(&plan), Some(&discussion), None, false)
             .unwrap()
             .unwrap();
@@ -263,24 +188,9 @@ mod tests {
                 pending.next_action.as_str(),
                 pending.target_artifact
             ),
-            ("task_discussion", "update_discussion", "task")
+            ("task_discussion", "review_discussion", "task")
         );
         assert_eq!(pending.details["source"], plan);
-        let artifacts = json!({"source":"outputs/work/sources/example","task":"outputs/work/tasks/example/index.json","execution":"outputs/work/executions/example"});
-        for (action, command) in [
-            ("initialize_discussion", "discussion init"),
-            ("update_discussion", "discussion update"),
-            ("answer_discussion", "discussion answer"),
-            ("preview_task", "task preview"),
-        ] {
-            let guidance = next_action_guidance(action, "example", &artifacts);
-            assert_eq!(guidance["command"], command);
-            assert!(guidance["arguments"].get("plan_path").is_none());
-            assert_eq!(
-                guidance["arguments"]["user_config_root"],
-                "<user-config-root>"
-            );
-        }
         let task = json!({"task_collection_sha256":"2".repeat(64)});
         let recovery = decide_pre_execution(Some(&plan), None, Some(&task), false)
             .unwrap()
@@ -296,10 +206,6 @@ mod tests {
                 "inspect_recovery",
                 "execution"
             )
-        );
-        assert_eq!(
-            mode_for_action(&recovery.status, &recovery.next_action),
-            "execute"
         );
         assert!(
             decide_pre_execution(Some(&plan), None, Some(&task), true)
@@ -326,9 +232,6 @@ mod tests {
             ("execution_in_progress", "continue_execution")
         );
         assert!(!active.requires_user_confirmation);
-        assert!(
-            next_action_guidance(&active.next_action, "example", &json!({}))["command"].is_null()
-        );
 
         let mut drifted = attempts;
         drifted["TASK-001"]["execute_instructions_sha256"] = json!("d".repeat(64));
@@ -353,18 +256,6 @@ mod tests {
             pending.details["pending_deviation_ids"],
             json!(["DEVIATION-001"])
         );
-        let guidance = next_action_guidance(&pending.next_action, "example", &json!({}));
-        assert_eq!(guidance["command"], "specification reconciliation-prepare");
-        assert_eq!(
-            guidance["request_contract_id"],
-            "work-spec-reconciliation-prepare-request"
-        );
-        assert_eq!(
-            guidance["semantic_input_contract"],
-            guidance["request_contract_id"]
-        );
-        assert_eq!(guidance["arguments"]["input_file"], "<semantic-input-file>");
-
         attempts["TASK-001"]["_reconciliation_resolved_ids"] = json!(["DEVIATION-001"]);
         let resolved = decide_execution(&completed, &attempts);
         assert_eq!(

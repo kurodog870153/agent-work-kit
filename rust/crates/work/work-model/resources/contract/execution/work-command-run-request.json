@@ -1,6 +1,6 @@
 {
   "description": {
-    "caller_constructible": true,
+    "caller_constructible": false,
     "canonical_order": [
       "schema",
       "timeout_seconds"
@@ -11,7 +11,7 @@
     },
     "fields": [
       {
-        "constraints": {},
+          "constraints": {"retired": "command-prepare/run return command_launcher_retired; retained for historical receipt validation"},
         "name": "schema",
         "reference": null,
         "required": true,
@@ -34,20 +34,9 @@
     ],
     "schema": "work-contract-description"
   },
-  "scaffold": {
-    "canonical_order": [
-      "schema",
-      "timeout_seconds"
-    ],
-    "example": {
-      "schema": "work-command-run-request",
-      "timeout_seconds": 60
-    },
-    "id": "work-command-run-request",
-    "scaffold": {
-      "schema": "work-command-run-request",
-      "timeout_seconds": null
-    },
-    "schema": "work-contract-scaffold"
+  "scaffold_error": {
+    "details": {"contract_id": "work-command-run-request", "kind": "retired_request"},
+    "message": "Work command launching is retired; use command-binding and a Host result report.",
+    "reason_code": "command_launcher_retired"
   }
 }

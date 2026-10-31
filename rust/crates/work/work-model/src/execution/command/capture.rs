@@ -70,7 +70,10 @@ pub struct CommandExecutionEvidence {
 pub struct ValidationCommandEvidence {
     /// Current Attempt, or the explicitly authorized carried-record source Attempt.
     pub selected_from_attempt_id: String,
-    pub execution: CommandExecutionEvidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<CommandExecutionEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_report: Option<super::super::host_report::HostExecutionReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

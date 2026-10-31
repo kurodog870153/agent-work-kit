@@ -3,7 +3,7 @@ set -uo pipefail
 export LC_ALL=C
 
 release_tag=__WORK_RELEASE_TAG__
-release_base="https://github.com/kurodog870153/codex-workflow-kit/releases/download/$release_tag"
+release_base="https://github.com/kurodog870153/agent-work-kit/releases/download/$release_tag"
 archive="work-$release_tag-macos-arm64.zip"
 checksum=SHA256SUMS.txt
 

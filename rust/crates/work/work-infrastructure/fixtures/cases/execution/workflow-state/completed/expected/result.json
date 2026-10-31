@@ -1,88 +1,19 @@
 {
-  "arguments": {},
+  "schema": "work-workflow-state",
+  "requirement_id": "example",
+  "status": "execution_completed",
+  "target": "outputs/work/executions/example",
+  "requires_user_confirmation": true,
+  "required_checks": [
+    "task validate",
+    "execute preflight"
+  ],
   "artifacts": {
     "execution": "outputs/work/executions/example",
     "source": "outputs/work/sources/example",
     "task": "outputs/work/tasks/example/index.json"
   },
-  "command": null,
   "details": {
     "overall_status": "completed"
-  },
-  "next_action": "review_completion",
-  "request_contract_id": null,
-  "required_checks": [
-    "task validate",
-    "execute preflight"
-  ],
-  "required_instruction_sources": [
-    "work.instruction-loading",
-    "work.shared.formal-task-validation",
-    "work.shared.fingerprints",
-    "work.workflow.execute",
-    "work.workflow.execute.close-one-attempt"
-  ],
-  "requirement_id": "example",
-  "requires_user_confirmation": true,
-  "routing_reasons": [
-    "operation:review_completion",
-    "workflow_status:execution_completed",
-    "mode:execute"
-  ],
-  "routing_status": "VALID",
-  "schema": "work-workflow-state",
-  "selection_manifest": {
-    "confirmation_required": true,
-    "routing_input": {
-      "artifact_lifecycle": "execution_completed",
-      "authorization_state": "confirmation_required",
-      "formal_events": [],
-      "mode": "execute",
-      "operation": "review_completion",
-      "role": "main",
-      "status": "execution_completed",
-      "verified_state_sha256": "afb26d1e0019cae5ac2cbfd3907237df1aca2dcea438b504a1f7371a5796df42"
-    },
-    "routing_status": "VALID",
-    "schema": "work-instruction-selection-manifest",
-    "selection_sha256": "9ae29ed8b3c170a1888b4fc7dc42b54e7cc98e8965e520cae209f197262074ab",
-    "sources": [
-      {
-        "canonical_sha256": "816283719f5864d235cd41c91a3164342535288dbb66edbf603f3e1073f79649",
-        "logical_name": "work.instruction-loading",
-        "path": "references/instruction-loading.md"
-      },
-      {
-        "canonical_sha256": "dec478985173768e9fb19a5dce9639799723a319cbe85e3801fd83b418a281b2",
-        "logical_name": "work.shared.formal-task-validation",
-        "path": "references/instruction-loading/formal-task-validation.md"
-      },
-      {
-        "canonical_sha256": "fb41d17c58fd4a425d725c364fe6e225a2bfaee254c474dbc1198edcae611642",
-        "logical_name": "work.shared.fingerprints",
-        "path": "references/instruction-loading/fingerprints.md"
-      },
-      {
-        "canonical_sha256": "a54b5b6859a23ea118b75962bad8957fedd5aee2242e11746c914db15165185a",
-        "logical_name": "work.workflow.execute",
-        "path": "references/workflows/execute.md"
-      },
-      {
-        "canonical_sha256": "6033f206bc1d15efc3b7b0baff0847dc953ddfeda6dcaee28640e62c1222cc0c",
-        "logical_name": "work.workflow.execute.close-one-attempt",
-        "path": "references/workflows/execute/close-one-attempt.md"
-      }
-    ]
-  },
-  "selection_sha256": "9ae29ed8b3c170a1888b4fc7dc42b54e7cc98e8965e520cae209f197262074ab",
-  "semantic_input_contract": null,
-  "source_order": [
-    "work.instruction-loading",
-    "work.shared.formal-task-validation",
-    "work.shared.fingerprints",
-    "work.workflow.execute",
-    "work.workflow.execute.close-one-attempt"
-  ],
-  "status": "execution_completed",
-  "target": "outputs/work/executions/example"
+  }
 }

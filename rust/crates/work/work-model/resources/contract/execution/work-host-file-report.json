@@ -1,0 +1,54 @@
+{
+  "description": {
+    "schema": "work-contract-description",
+    "id": "work-host-file-report",
+    "kind": "semantic_request",
+    "caller_constructible": true,
+    "canonical_order": ["schema", "task_id", "attempt_id", "transaction_identity", "approval_sha256", "result_origin", "result_reference", "result_sha256", "status"],
+    "required": ["schema", "task_id", "attempt_id", "transaction_identity", "approval_sha256", "result_origin", "result_reference", "result_sha256", "status"],
+    "optional": [],
+    "example": {
+      "schema": "work-host-file-report",
+      "task_id": "TASK-001",
+      "attempt_id": "ATTEMPT-001",
+      "transaction_identity": "transaction-1",
+      "approval_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result_origin": "host_reported",
+      "result_reference": "host-evidence/file.json",
+      "result_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "completed_atomic"
+    },
+    "fields": [
+      {"name":"schema","type":"literal","required":true,"reference":null,"constraints":{}},
+      {"name":"task_id","type":"string","required":true,"reference":null,"constraints":{}},
+      {"name":"attempt_id","type":"string","required":true,"reference":null,"constraints":{}},
+      {"name":"transaction_identity","type":"string","required":true,"reference":null,"constraints":{}},
+      {"name":"approval_sha256","type":"string","required":true,"reference":null,"constraints":{"format":"SHA-256 of Work-owned frozen candidate"}},
+      {"name":"result_origin","type":"literal","required":true,"reference":null,"constraints":{"value":"host_reported"}},
+      {"name":"result_reference","type":"string","required":true,"reference":null,"constraints":{"scope":"project-local evidence file"}},
+      {"name":"result_sha256","type":"string","required":true,"reference":null,"constraints":{"format":"SHA-256 of raw result_reference bytes"}},
+      {"name":"status","type":"string","required":true,"reference":null,"constraints":{"values":["completed_atomic","partial","unknown"]}}
+    ]
+  },
+  "scaffold": {
+    "schema":"work-contract-scaffold",
+    "id":"work-host-file-report",
+    "canonical_order":["schema", "task_id", "attempt_id", "transaction_identity", "approval_sha256", "result_origin", "result_reference", "result_sha256", "status"],
+    "example": {
+      "schema": "work-host-file-report",
+      "task_id": "TASK-001",
+      "attempt_id": "ATTEMPT-001",
+      "transaction_identity": "transaction-1",
+      "approval_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result_origin": "host_reported",
+      "result_reference": "host-evidence/file.json",
+      "result_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "completed_atomic"
+    },
+    "scaffold": {
+      "schema":"work-host-file-report", "task_id":null, "attempt_id":null,
+      "transaction_identity":null, "approval_sha256":null, "result_origin":"host_reported",
+      "result_reference":null, "result_sha256":null, "status":null
+    }
+  }
+}

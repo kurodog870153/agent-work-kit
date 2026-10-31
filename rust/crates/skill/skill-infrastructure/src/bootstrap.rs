@@ -260,6 +260,55 @@ mod tests {
     }
 
     #[test]
+    fn activation_modes_validate_only_their_own_bootstrap() {
+        let repository = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../.."));
+        let work_root = repository.join("skills/work/references");
+        let tooling_root = repository.join("skills/tooling/references");
+        let work = fs::read_to_string(work_root.join("instruction-loading.md")).unwrap();
+        let tooling = fs::read_to_string(tooling_root.join("instruction-loading.md")).unwrap();
+        let work_modules = work_root.join("instruction-loading");
+        let tooling_modules = tooling_root.join("instruction-loading");
+
+        for (work_active, tooling_active) in [(true, false), (false, true), (true, true)] {
+            let work_routes = work_active.then(|| validate_modules(&work, &work_modules).unwrap());
+            let tooling_routes =
+                tooling_active.then(|| validate_modules(&tooling, &tooling_modules).unwrap());
+            assert_eq!(work_routes.is_some(), work_active);
+            assert_eq!(tooling_routes.is_some(), tooling_active);
+            if let Some(routes) = work_routes {
+                assert!(
+                    routes
+                        .iter()
+                        .any(|(name, _)| name == "formal-task-validation.md")
+                );
+                assert!(!routes.iter().any(|(name, _)| name == "discovery.md"));
+            }
+            if let Some(routes) = tooling_routes {
+                assert!(routes.iter().any(|(name, _)| name == "discovery.md"));
+                assert!(
+                    !routes
+                        .iter()
+                        .any(|(name, _)| name == "formal-task-validation.md")
+                );
+            }
+        }
+
+        let missing_work = work.replace("`formal-task-validation.md`", "`missing.md`");
+        assert!(matches!(
+            validate_modules(&missing_work, &work_modules),
+            Err(ModuleRouteError::Missing(_))
+        ));
+        assert!(validate_modules(&tooling, &tooling_modules).is_ok());
+
+        let missing_tooling = tooling.replace("`discovery.md`", "`missing.md`");
+        assert!(matches!(
+            validate_modules(&missing_tooling, &tooling_modules),
+            Err(ModuleRouteError::Missing(_))
+        ));
+        assert!(validate_modules(&work, &work_modules).is_ok());
+    }
+
+    #[test]
     fn reference_table_is_one_level_and_selected_path_stays_in_branch() {
         let root = std::env::temp_dir().join(format!(
             "skill-references-{}-{}",

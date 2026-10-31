@@ -4,7 +4,7 @@
 
 ## 1. 下載
 
-從同一個 [GitHub Release](https://github.com/kurodog870153/codex-workflow-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
+從同一個 [GitHub Release](https://github.com/kurodog870153/agent-work-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
 
 1. Windows x64 使用 `work-v<版本>-windows-x64-msvc.zip`
 2. macOS ARM64 使用 `work-v<版本>-macos-arm64.zip`

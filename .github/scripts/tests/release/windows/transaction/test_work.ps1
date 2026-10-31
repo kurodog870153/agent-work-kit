@@ -13,7 +13,7 @@ if (-not $resolvedScratch.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorCh
     -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.issue95-transaction\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
 $target = Join-Path $scratch 'work'
 $required = @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md',
-    'references/instruction-loading/invocation.md', 'references/instructions/task/general/instructions.md',
+    'references/instructions/task/general/instructions.md',
     'references/instructions/execute/general/instructions.md')
 $prepare = {
     param($prepared)

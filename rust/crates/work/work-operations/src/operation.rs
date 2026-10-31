@@ -47,11 +47,7 @@ pub struct OperationRouting {
     pub role: String,
 }
 
-pub fn routing_identity(
-    command: &str,
-    operation: &str,
-    delegated_role: Option<&str>,
-) -> Option<OperationRouting> {
+pub fn routing_identity(command: &str, operation: &str) -> Option<OperationRouting> {
     operation_effect(command, operation)?;
     let mut route = OperationRouting {
         mode: "execute",
@@ -103,15 +99,15 @@ pub fn routing_identity(
                     "discussion_save"
                 });
         }
-        "handoff" => route.formal_events.push("handoff"),
-        "delegation" => {
-            route.formal_events.push("delegation");
-            route.role = delegated_role.unwrap_or("main").into();
-        }
         "execute" => {
             if matches!(
                 operation,
-                "file-prepare" | "file-apply" | "file-recovery-prepare" | "file-restore"
+                "file-prepare"
+                    | "file-apply"
+                    | "file-recovery-prepare"
+                    | "file-restore"
+                    | "file-binding"
+                    | "file-record"
             ) {
                 route.formal_events.push("project_files");
             }
@@ -152,10 +148,8 @@ mod tests {
             ("task", 4),
             ("specification", 9),
             ("migration", 6),
-            ("execute", 20),
-            ("delegation", 2),
+            ("execute", 23),
             ("discussion", 8),
-            ("handoff", 7),
         ] {
             assert_eq!(table[command].as_object().unwrap().len(), count);
             for (operation, effect) in table[command].as_object().unwrap() {
@@ -168,7 +162,7 @@ mod tests {
                         "authorized"
                     }
                 );
-                assert!(routing_identity(command, operation, None).is_some());
+                assert!(routing_identity(command, operation).is_some());
             }
         }
         assert_eq!(
@@ -189,9 +183,7 @@ mod tests {
                 Some(OperationEffect::ReadOnly)
             );
             assert_eq!(
-                routing_identity("source", operation, None)
-                    .unwrap()
-                    .next_action,
+                routing_identity("source", operation).unwrap().next_action,
                 "read_source"
             );
         }
@@ -202,7 +194,7 @@ mod tests {
     #[test]
     fn routing_identity_tracks_current_contract_command_categories() {
         assert_eq!(
-            routing_identity("migration", "apply", None).unwrap(),
+            routing_identity("migration", "apply").unwrap(),
             OperationRouting {
                 mode: "migration",
                 next_action: "review_reconciliation",
@@ -211,15 +203,12 @@ mod tests {
             }
         );
         assert_eq!(
-            routing_identity("execute", "preflight", None)
+            routing_identity("execute", "preflight")
                 .unwrap()
                 .next_action,
             "select_task_for_execution"
         );
-        let delegated = routing_identity("delegation", "validate", Some("worker")).unwrap();
-        assert_eq!(
-            (delegated.role.as_str(), delegated.formal_events.as_slice()),
-            ("worker", ["delegation"].as_slice())
-        );
+        assert!(routing_identity("delegation", "validate").is_none());
+        assert!(routing_identity("handoff", "validate").is_none());
     }
 }

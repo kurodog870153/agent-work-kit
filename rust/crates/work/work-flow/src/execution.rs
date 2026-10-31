@@ -32,10 +32,10 @@ pub use work_feature::execution::{
 use work_feature::execution::{
     DeviationProjectRequest, begin_record_from_project, close_attempt_from_project,
     create_correction_from_project, finish_record_from_project, inspect_worktree_from_project,
-    prepare_attempt_start_from_project, prepare_command_from_project,
-    prepare_execute_preflight_from_project, prepare_recovery_from_project,
-    prepare_semantic_deviation_from_project, record_command_correction_from_project,
-    record_deviation_from_project, start_attempt_from_project,
+    prepare_attempt_start_from_project, prepare_execute_preflight_from_project,
+    prepare_recovery_from_project, prepare_semantic_deviation_from_project,
+    record_command_correction_from_project, record_deviation_from_project,
+    start_attempt_from_project,
 };
 
 fn required(value: Option<&str>) -> Result<&str, WorkError> {
@@ -58,10 +58,9 @@ pub struct ExecutionCommandInput<'a> {
     pub authorization_evidence: Option<&'a str>,
 }
 
-pub struct ExecutionTechnical<Start, Recover, Command> {
+pub struct ExecutionTechnical<Start, Recover> {
     pub recover_start: Start,
     pub recover: Recover,
-    pub command_run: Command,
 }
 
 pub fn run<H, S, P, T, E>(
@@ -73,7 +72,6 @@ pub fn run<H, S, P, T, E>(
     technical: ExecutionTechnical<
         impl FnOnce(Value, String) -> Result<Value, WorkError>,
         impl FnOnce(Value) -> Result<Value, WorkError>,
-        impl FnOnce(Value, String) -> Result<Value, WorkError>,
     >,
 ) -> Result<Value, WorkError>
 where
@@ -104,7 +102,6 @@ where
     let ExecutionTechnical {
         recover_start,
         recover,
-        command_run,
     } = technical;
     match command {
         "preflight" => {
@@ -125,19 +122,6 @@ where
         "recover-attempt-start" => recover_start(request()?, timestamp()),
         "recovery-prepare" => {
             prepare_recovery_from_project(sources, repository, target, &request()?)
-        }
-        "command-prepare" => {
-            let value = request()?;
-            prepare_command_from_project(
-                sources,
-                repository,
-                CommandProjectRequest {
-                    task_path: target.task_path,
-                    execution_dir: target.execution_dir,
-                    task_id: target.task_id,
-                    request: &value,
-                },
-            )
         }
         "deviation-prepare-semantic" => {
             prepare_semantic_deviation_from_project(sources, repository, target, &request()?)
@@ -160,7 +144,6 @@ where
             record_command_correction_from_project(sources, repository, target, &request()?)
         }
         "recover" => recover(request()?),
-        "command-run" => command_run(request()?, required(approved_sha256)?.to_owned()),
         "deviation-record" => {
             let proposal = request()?;
             record_deviation_from_project(

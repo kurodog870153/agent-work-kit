@@ -4,10 +4,7 @@ use serde_json::{Value, json};
 use work_operations::derivation::fingerprint;
 use work_operations::operation::{operation_effect, routing_identity};
 use work_operations::routing::RoutingRequest;
-use work_operations::workflow::{
-    WorkflowDecision, decide_execution, decide_pre_execution, lifecycle_for_status,
-    mode_for_action, next_action_guidance,
-};
+use work_operations::workflow::{WorkflowDecision, decide_execution, decide_pre_execution};
 
 use crate::error::{ExitCode, WorkError};
 
@@ -27,7 +24,6 @@ pub struct WorkflowSnapshot {
 pub struct OperationContextRequest<'a> {
     pub command: &'a str,
     pub operation: &'a str,
-    pub delegated_role: Option<&'a str>,
     pub artifacts: &'a Value,
     pub project_root: &'a str,
     pub approval_sha256: Option<&'a str>,
@@ -40,7 +36,6 @@ pub fn build_operation_context(
 ) -> Result<(Value, Value), WorkError> {
     let command = input.command;
     let operation = input.operation;
-    let delegated_role = input.delegated_role;
     let artifacts = input.artifacts;
     let project_root = input.project_root;
     let approval_sha256 = input.approval_sha256;
@@ -53,8 +48,7 @@ pub fn build_operation_context(
             json!({"command":command,"operation":operation}),
         )
     })?;
-    let identity =
-        routing_identity(command, operation, delegated_role).expect("classified operation");
+    let identity = routing_identity(command, operation).expect("classified operation");
     let state_sha256 = fingerprint::structured(&json!({
         "command":command,"operation":operation,"mode":identity.mode,
         "events":identity.formal_events,"role":identity.role,"artifacts":artifacts,
@@ -298,46 +292,6 @@ pub fn validate_execute_tool_write(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SubagentToolAccess {
-    Direct,
-    HostProxy,
-    Unavailable,
-}
-
-pub fn validate_subagent_tool_gate(
-    envelope: &Value,
-    selection: &Value,
-    artifacts: &Value,
-    policy: &RuntimeToolPolicy<'_>,
-    expected_role: &str,
-    host_authorized: bool,
-    access: SubagentToolAccess,
-) -> Result<SubagentToolAccess, WorkError> {
-    validate_tool_policy_gate(envelope, selection, artifacts, true, Some(policy))?;
-    if expected_role.is_empty()
-        || expected_role == "main"
-        || envelope["role"] != expected_role
-        || !host_authorized
-    {
-        return Err(WorkError::new(
-            ExitCode::WorkflowState,
-            "subagent_tool_scope_invalid",
-            "Subagent tool use exceeds its role, envelope or Host authorization.",
-            json!({}),
-        ));
-    }
-    if access == SubagentToolAccess::Unavailable {
-        return Err(WorkError::new(
-            ExitCode::WorkflowState,
-            "subagent_tool_unavailable",
-            "Neither direct nor Host-mediated access is available.",
-            json!({}),
-        ));
-    }
-    Ok(access)
-}
-
 pub fn pre_execution_state(
     routing: &mut impl WorkflowRoutingRepository,
     requirement_id: &str,
@@ -437,11 +391,11 @@ pub fn execution_state_with_events(
 }
 
 fn render_state(
-    routing: &mut impl WorkflowRoutingRepository,
+    _routing: &mut impl WorkflowRoutingRepository,
     requirement_id: &str,
     artifacts: &Value,
     decision: WorkflowDecision,
-    formal_events: &[&str],
+    _formal_events: &[&str],
 ) -> Result<Value, WorkError> {
     let target = artifacts[decision.target_artifact]
         .as_str()
@@ -453,43 +407,12 @@ fn render_state(
                 json!({"artifact":decision.target_artifact}),
             )
         })?;
-    let state_sha256 = fingerprint::structured(&json!({
-        "requirement_id":requirement_id,"status":decision.status,"next_action":decision.next_action,
-        "target":target,"artifacts":artifacts,
-    }))
-    .expect("workflow state serializes");
-    let routing_request = RoutingRequest {
-        status: &decision.status,
-        operation: &decision.next_action,
-        confirmation: decision.requires_user_confirmation,
-        mode: Some(mode_for_action(&decision.status, &decision.next_action)),
-        artifact_lifecycle: lifecycle_for_status(&decision.status),
-        formal_events,
-        role: "main",
-        authorization_state: Some(if decision.requires_user_confirmation {
-            "confirmation_required"
-        } else {
-            "read_only"
-        }),
-        verified_state_sha256: &state_sha256,
-    };
-    let routed = routing.route(&routing_request)?;
-    let guidance = next_action_guidance(&decision.next_action, requirement_id, artifacts);
-    let mut state = json!({
+    Ok(json!({
         "schema":"work-workflow-state","requirement_id":requirement_id,
-        "status":decision.status,"next_action":decision.next_action,"target":target,
+        "status":decision.status,"target":target,
         "requires_user_confirmation":decision.requires_user_confirmation,
         "required_checks":decision.required_checks,"artifacts":artifacts,"details":decision.details,
-    });
-    for additions in [&routed, &guidance] {
-        let object = additions
-            .as_object()
-            .expect("workflow additions are objects");
-        for (key, value) in object {
-            state[key] = value.clone();
-        }
-    }
-    Ok(state)
+    }))
 }
 
 #[cfg(test)]
@@ -520,7 +443,6 @@ mod tests {
             &OperationContextRequest {
                 command: "task",
                 operation: "preview",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -558,7 +480,6 @@ mod tests {
             &OperationContextRequest {
                 command: "discussion",
                 operation: "read",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -572,7 +493,6 @@ mod tests {
             &OperationContextRequest {
                 command: "discussion",
                 operation: "update",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: Some(&"a".repeat(64)),
@@ -590,7 +510,6 @@ mod tests {
             &OperationContextRequest {
                 command: "execute",
                 operation: "command-run",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: Some(&"a".repeat(64)),
@@ -608,7 +527,6 @@ mod tests {
             &OperationContextRequest {
                 command: "execute",
                 operation: "command-prepare",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -622,7 +540,6 @@ mod tests {
             &OperationContextRequest {
                 command: "execute",
                 operation: "recover",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -633,7 +550,7 @@ mod tests {
         .0;
         assert_ne!(prepare["context_sha256"], recovery["context_sha256"]);
         assert_eq!(
-            work_operations::operation::routing_identity("execute", "recover", None)
+            work_operations::operation::routing_identity("execute", "recover")
                 .unwrap()
                 .formal_events,
             ["recovery"]
@@ -648,7 +565,6 @@ mod tests {
             &OperationContextRequest {
                 command: "task",
                 operation: "preview",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -704,7 +620,6 @@ mod tests {
             &OperationContextRequest {
                 command: "task",
                 operation: "preview",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -754,7 +669,6 @@ mod tests {
                 &OperationContextRequest {
                     command: "task",
                     operation: "preview",
-                    delegated_role: None,
                     artifacts: &artifacts,
                     project_root: "/project",
                     approval_sha256: None,
@@ -776,7 +690,6 @@ mod tests {
             &OperationContextRequest {
                 command: "execute",
                 operation: "command-run",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: Some(&"a".repeat(64)),
@@ -918,99 +831,6 @@ mod tests {
             .unwrap_err()
             .reason_code,
             "tool_policy_invalid"
-        );
-    }
-
-    #[test]
-    fn subagent_tool_gate_keeps_role_and_host_authorization() {
-        let artifacts = json!({"target":"src/main.rs"});
-        let (envelope, selection) = build_operation_context(
-            &mut FixedRouting,
-            &OperationContextRequest {
-                command: "delegation",
-                operation: "validate",
-                delegated_role: Some("task-skill"),
-                artifacts: &artifacts,
-                project_root: "/project",
-                approval_sha256: None,
-                transaction_workspace: None,
-            },
-        )
-        .unwrap();
-        let policy = RuntimeToolPolicy {
-            source_identities: &["tooling/instructions.md"],
-            valid: true,
-        };
-        for access in [SubagentToolAccess::Direct, SubagentToolAccess::HostProxy] {
-            assert_eq!(
-                validate_subagent_tool_gate(
-                    &envelope,
-                    &selection,
-                    &artifacts,
-                    &policy,
-                    "task-skill",
-                    true,
-                    access
-                )
-                .unwrap(),
-                access
-            );
-        }
-        assert_eq!(
-            validate_subagent_tool_gate(
-                &envelope,
-                &selection,
-                &artifacts,
-                &policy,
-                "task-skill",
-                true,
-                SubagentToolAccess::Unavailable
-            )
-            .unwrap_err()
-            .reason_code,
-            "subagent_tool_unavailable"
-        );
-        assert_eq!(
-            validate_subagent_tool_gate(
-                &envelope,
-                &selection,
-                &artifacts,
-                &policy,
-                "execute",
-                true,
-                SubagentToolAccess::Direct
-            )
-            .unwrap_err()
-            .reason_code,
-            "subagent_tool_scope_invalid"
-        );
-        assert_eq!(
-            validate_subagent_tool_gate(
-                &envelope,
-                &selection,
-                &artifacts,
-                &policy,
-                "task-skill",
-                false,
-                SubagentToolAccess::HostProxy
-            )
-            .unwrap_err()
-            .reason_code,
-            "subagent_tool_scope_invalid"
-        );
-        assert_eq!(
-            validate_subagent_tool_gate(
-                &envelope,
-                &selection,
-                &json!({"target":"src/other.rs"}),
-                &policy,
-                "task-skill",
-                true,
-                SubagentToolAccess::Direct
-            )
-            .unwrap_err()
-            .reason_code,
-            "operation_artifact_drift"
         );
     }
 }

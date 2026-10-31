@@ -73,20 +73,3 @@ pub fn status_with_events(
         &latest_attempts,
     )
 }
-
-pub fn next(
-    routing: &mut impl WorkflowRoutingRepository,
-    requirement_id: &str,
-    snapshot: WorkflowSnapshot,
-) -> Result<Value, WorkError> {
-    status(routing, requirement_id, snapshot)
-}
-
-pub fn next_with_events(
-    routing: &mut impl WorkflowRoutingRepository,
-    requirement_id: &str,
-    snapshot: WorkflowSnapshot,
-    formal_events: &[&str],
-) -> Result<Value, WorkError> {
-    status_with_events(routing, requirement_id, snapshot, formal_events)
-}

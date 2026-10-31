@@ -27,6 +27,12 @@
 3. 專案檔案修改以操作前已記錄的路徑／原始 SHA 和操作後目前 bytes／SHA、範圍、版本與完整檔案集合核對。SHA 僅證明內容與聲明一致，不能單獨證明修改者、執行時間或外部副作用。多檔結果不明或部分成功時記錄現況，禁止推定原子成功或擅自重試。
 4. 正式 Artifact 的 Prepare／Preview／批准綁定 Apply／Verify／Recover 仍由 Work CLI 執行，不能交由 Host 直接寫入。Host 權限與 Work 狀態批准是兩個必須同時滿足的邊界。
 
+### Host 多檔編輯的正式歷史證據
+
+1. Work 在 Host 編輯前，將完整預定路徑、操作前位元組與 metadata、操作後預期位元組、Attempt 授權、Source／TASK／Instruction 指紋及目前檔案歷史版本凍結成 Work 所擁有的待完成綁定。Host 不得以操作後自行編造的「操作前」內容替代此綁定。
+2. Host 編輯後提交具原始 SHA 的專案內可重讀報告，明示 `completed_atomic`、`partial` 或 `unknown`，列出整組路徑與實際前後結果。`completed_atomic` 是 Host 回報的執行事實；Work 僅獨立核對報告原始位元組、完整路徑集合、目前檔案位元組／metadata／身份、範圍、授權與正式版本，不宣稱觀察到編輯過程的原子性。
+3. 僅在 `completed_atomic` 且全部核對通過時，Work 才發佈不寫入專案原始碼的正式檔案歷史。`partial`、`unknown`、缺失或矛盾證據保留待完成綁定與實際目前檔案，不推定成功、不覆寫或回復 Host 編輯；後續依正式 Recovery 與使用者決策處理。
+
 ## 跨對話與三種啟用模式
 
 1. 新對話從已提交 Source、DiscussionSession、TASK、Execution Index、Attempt／Correction 讀取並重新驗證；未持久化的語意決策標為未知，重新詢問，不使用專用 Handoff 推測。

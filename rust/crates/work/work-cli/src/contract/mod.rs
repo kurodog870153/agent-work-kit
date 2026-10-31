@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn frozen_catalog_keeps_public_descriptions_and_scaffolds() {
-        assert_eq!(list()["contracts"].as_array().unwrap().len(), 101);
+        assert_eq!(list()["contracts"].as_array().unwrap().len(), 93);
         assert_eq!(
             describe("work-discussion-request").unwrap()["kind"],
             "semantic_request"
@@ -216,7 +216,7 @@ mod tests {
             let description = describe(id).unwrap();
             assert_eq!(description["id"], id);
             assert_eq!(description["kind"], entry["kind"]);
-            if entry["kind"] == "semantic_request" {
+            if entry["caller_constructible"] == true {
                 let scaffold = scaffold(id).unwrap();
                 assert_eq!(scaffold["id"], id);
                 assert_eq!(scaffold["canonical_order"], description["canonical_order"]);
@@ -238,6 +238,12 @@ mod tests {
         }
         let task = scaffold("work-discussion-request").unwrap();
         assert_eq!(task["example"]["command"]["kind"], "read");
+        assert_eq!(
+            scaffold("work-command-run-request")
+                .unwrap_err()
+                .reason_code,
+            "command_launcher_retired"
+        );
         let generated = "work-spec-update-request";
         let description = describe(generated).unwrap();
         assert_eq!(description["kind"], "generated_request");
@@ -329,79 +335,6 @@ mod tests {
                 assert!(example.contains_key(field), "{id}: {field}");
             }
         }
-    }
-
-    #[test]
-    fn delegation_examples_keep_canonical_order_and_optional_projection() {
-        for (id, fields) in [
-            (
-                "work-delegation-build-request",
-                vec![
-                    "schema",
-                    "role",
-                    "mode",
-                    "request",
-                    "planning_source",
-                    "task_path",
-                    "task_id",
-                    "confirmed_request",
-                    "decisions",
-                    "affected_task_ids",
-                    "repository_evidence",
-                    "saved_discussion",
-                    "continuation_point",
-                ],
-            ),
-            (
-                "work-delegation-envelope",
-                vec![
-                    "schema",
-                    "marker",
-                    "skill",
-                    "role",
-                    "sender",
-                    "mode",
-                    "project_root",
-                    "skill_root",
-                    "request",
-                    "context",
-                ],
-            ),
-            (
-                "work-delegation-validation",
-                vec![
-                    "schema",
-                    "status",
-                    "role",
-                    "mode",
-                    "scope",
-                    "source_validation",
-                    "sender_authentication",
-                    "grants_authorization",
-                ],
-            ),
-        ] {
-            let description = describe(id).unwrap();
-            assert_eq!(description["canonical_order"], json!(fields), "{id}");
-            assert_eq!(description["example"]["schema"], id, "{id}");
-            let example = description["example"].as_object().unwrap();
-            let projected: Vec<_> = fields
-                .iter()
-                .copied()
-                .filter(|field| example.contains_key(*field))
-                .collect();
-            assert_eq!(projected.len(), example.len(), "{id}");
-            for required in description["required"].as_array().unwrap() {
-                assert!(example.contains_key(required.as_str().unwrap()), "{id}");
-            }
-        }
-        assert_eq!(
-            describe("work-delegation-build-request").unwrap()["example"]
-                .as_object()
-                .unwrap()
-                .len(),
-            4
-        );
     }
 
     #[test]

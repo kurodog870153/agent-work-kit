@@ -31,19 +31,20 @@
             "automated_validation": "actual complete owned CMD results; default all declared command exits equal zero, or explicit structured conditions including expected nonzero",
             "caller_forbidden": [
               "execution_evidence",
+              "host_binding",
               "verification_evidence",
               "file_version",
               "source",
               "review_evidence",
               "confirmation_evidence"
             ],
-            "command": "actual owned receipt and exit code authenticate historical results even when declared input contents have changed; current VAL separately rechecks current inputs",
+            "command": "a Host CMD report must bind the reserved command, authorization and file version to a project-local result_reference and raw result_sha256; complete captured bytes are reread for current VAL. Historical Work receipts remain verifiable under their original format",
             "modified_files": "actual modified project files must be recorded and verified",
             "file_version": "producer-owned ordered publication lineage plus declared concrete input fingerprints; changed content requires revalidation",
             "ai_review": {
               "input": "review: reviewer, rationale, references",
               "reviewer": "exact formal confirmer",
-              "references": "1..64 concrete artifact path/hash/detail, owned command record_id/finished_sha256/detail, or retained change transaction_identity/path/before_sha256/after_sha256/detail",
+              "references": "1..64 concrete artifact path/hash/detail, owned command record_id/finished_sha256/detail (legacy finished receipt SHA or Host result document raw SHA), or retained change transaction_identity/path/before_sha256/after_sha256/detail",
               "verification": "recheck actual source bytes, receipt ownership and retained complete publication; empty labels do not pass"
             },
             "manual": {

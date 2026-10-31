@@ -9,6 +9,7 @@ use crate::writer_lock::WriterLock;
 use serde_json::{Value, json};
 use work_feature::artifact_paths::ArtifactPathRepository;
 use work_feature::error::{ExitCode, WorkError};
+#[cfg(test)]
 use work_feature::execution::command_publication::build_command_request;
 #[cfg(test)]
 use work_feature::execution::command_publication::{approved_receipt, command_completion};
@@ -19,16 +20,20 @@ use work_feature::execution::recovery::{
 use work_feature::execution::{
     AttemptClosePublication, AttemptCloseRepository, AttemptStartPublication,
     AttemptStartRepository, CommandCorrectionPublication, CommandCorrectionRepository,
-    CommandPrepareRepository, CommandProjectRequest, CommandProjectSources, CorrectionPublication,
-    CorrectionRepository, DeviationRecordPublication, DeviationRecordRepository,
-    ExecutionIndexRepository, ExecutionProjectTarget, ExecutionWorktreeRepository,
-    RecordBeginPublication, RecordBeginRepository, RecordFinishPublication, RecordFinishRepository,
+    CommandPrepareRepository, CommandProjectSources, CorrectionPublication, CorrectionRepository,
+    DeviationRecordPublication, DeviationRecordRepository, ExecutionIndexRepository,
+    ExecutionProjectTarget, ExecutionWorktreeRepository, RecordBeginPublication,
+    RecordBeginRepository, RecordFinishPublication, RecordFinishRepository,
     RecoveryPrepareRepository, RuntimeExecutionReadiness, inspect_worktree,
-    prepare_execute_preflight_from_project, recheck_command_from_project,
+    prepare_execute_preflight_from_project,
 };
+#[cfg(test)]
+use work_feature::execution::{CommandProjectRequest, recheck_command_from_project};
 use work_feature::instruction::InstructionSourceRepository;
+#[cfg(test)]
+use work_feature::ports::CommandRunner;
 use work_feature::ports::SourceSnapshotReader;
-use work_feature::ports::{ArtifactStore, CommandRunner, Git};
+use work_feature::ports::{ArtifactStore, Git};
 #[cfg(test)]
 use work_feature::ports::{CommandRequest, CommandStatus};
 use work_feature::skill::SkillSnapshotRepository;
@@ -40,6 +45,7 @@ use work_operations::execution::attempt::start::{
 };
 #[cfg(windows)]
 use work_operations::execution::command::run::windows_batch_command_line;
+#[cfg(test)]
 use work_operations::execution::command::run::{build_command_started, command_json_bytes};
 use work_operations::execution::correction::{build_correction_candidates, render_correction};
 use work_operations::execution::preflight::FileState;
@@ -70,6 +76,7 @@ pub struct LocalExecutionStorage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 enum CommandReceiptStage {
     StartedWritten,
     StartedVerified,
@@ -2213,6 +2220,7 @@ impl LocalExecutionStorage {
         })
     }
 
+    #[cfg(test)]
     fn run_receipts_scoped(
         &self,
         context: &work_feature::execution::ExecutionWriterContext,
@@ -4955,6 +4963,34 @@ impl RuntimeExecutionStorage<'_> {
         let index = parse_json_contract(raw).map_err(|_| transaction_conflict())?;
         self.context.check_execution_index(&index, raw)
     }
+    #[cfg(test)]
+    pub fn run_command_from_project<H, S, P, T>(
+        &self,
+        sources: &CommandProjectSources<'_, H, S, P, T>,
+        input: CommandProjectRequest<'_>,
+        approved_sha256: &str,
+    ) -> Result<Value, WorkError>
+    where
+        H: InstructionSourceRepository,
+        S: SkillSnapshotRepository,
+        P: ArtifactPathRepository + SourceSnapshotReader,
+        T: TaskCollectionRepository,
+    {
+        let runner = super::command::runner::HostCommandRunner::for_task(self.context);
+        self.write(input.execution_dir, || {
+            self.storage.run_receipts_scoped(
+                self.context,
+                approved_sha256,
+                || {
+                    let (preview, evidence) = recheck_command_from_project(sources, self, input)?;
+                    runner.bind(&preview)?;
+                    Ok((preview, evidence))
+                },
+                &runner,
+                |_| Ok(()),
+            )
+        })
+    }
 
     fn write<T>(
         &self,
@@ -5018,18 +5054,6 @@ impl RuntimeExecutionStorage<'_> {
         self.write(input.execution_dir, || {
             self.check_index(input.index_before)?;
             self.storage.recover_command_correction_scoped(input, true)
-        })
-    }
-    fn run_prepared_command(
-        &self,
-        execution_dir: &str,
-        approved_sha256: &str,
-        recheck: impl FnOnce() -> Result<(Value, String), WorkError>,
-        runner: &super::command::runner::HostCommandRunner<'_>,
-    ) -> Result<Value, WorkError> {
-        self.write(execution_dir, || {
-            self.storage
-                .run_receipts_scoped(self.context, approved_sha256, recheck, runner, |_| Ok(()))
         })
     }
     pub fn recover_attempt_close(
@@ -5108,31 +5132,6 @@ impl RuntimeExecutionStorage<'_> {
                 )),
             }
         })
-    }
-
-    pub fn run_command_from_project<H, S, P, T>(
-        &self,
-        sources: &CommandProjectSources<'_, H, S, P, T>,
-        input: CommandProjectRequest<'_>,
-        approved_sha256: &str,
-    ) -> Result<Value, WorkError>
-    where
-        H: InstructionSourceRepository,
-        S: SkillSnapshotRepository,
-        P: ArtifactPathRepository + SourceSnapshotReader,
-        T: TaskCollectionRepository,
-    {
-        let runner = super::command::runner::HostCommandRunner::for_task(self.context);
-        self.run_prepared_command(
-            input.execution_dir,
-            approved_sha256,
-            || {
-                let (preview, evidence) = recheck_command_from_project(sources, self, input)?;
-                runner.bind(&preview)?;
-                Ok((preview, evidence))
-            },
-            &runner,
-        )
     }
 }
 
@@ -5504,7 +5503,7 @@ impl CommandPrepareRepository for RuntimeExecutionStorage<'_> {
     ) -> Result<Value, WorkError> {
         let _ = (receipt, record);
         let mut settings = settings.clone();
-        settings["host"] = super::command::runner::host_environment();
+        settings["host"] = super::command::host_environment();
         let index: Value = serde_json::from_slice(&self.storage.read_source(&format!(
             "{}/index.json",
             self.context.target().execution_dir
@@ -5629,6 +5628,100 @@ impl RuntimeExecutionSession<'_> {
         };
         action(&adapter)
     }
+
+    #[cfg(test)]
+    pub fn run_command_from_project<H, S, P, T>(
+        &self,
+        sources: &CommandProjectSources<'_, H, S, P, T>,
+        input: CommandProjectRequest<'_>,
+        approved_sha256: &str,
+    ) -> Result<Value, WorkError>
+    where
+        H: InstructionSourceRepository,
+        S: SkillSnapshotRepository,
+        P: ArtifactPathRepository + SourceSnapshotReader,
+        T: TaskCollectionRepository,
+    {
+        work_operations::execution::command::run::validate_command_run_request(input.request)
+            .map_err(recovery_rule)?;
+        self.with_context(|adapter| {
+            adapter.run_command_from_project(sources, input, approved_sha256)
+        })
+    }
+
+    pub fn host_command_binding(&self) -> Result<Value, WorkError> {
+        self.with_context(|adapter| {
+            let context = adapter.context;
+            let target = context.target();
+            let index_path = format!("{}/index.json", target.execution_dir);
+            let index_raw = adapter.storage.read_index(&index_path)?;
+            let index = parse_json_contract(&index_raw).map_err(|_| {
+                WorkError::new(
+                    ExitCode::ArtifactIntegrity,
+                    "execution_index_invalid",
+                    "The execution index is invalid.",
+                    json!({}),
+                )
+            })?;
+            context.check_execution_index(&index, &index_raw)?;
+            let attempt_id = index["lock"]["attempt_id"].as_str().ok_or_else(|| {
+                WorkError::new(
+                    ExitCode::WorkflowState,
+                    "host_command_not_reserved",
+                    "The active lock must reserve a CMD.",
+                    json!({}),
+                )
+            })?;
+            let attempt_path = format!(
+                "{}/{}/{attempt_id}/attempt.json",
+                target.execution_dir, target.task_id
+            );
+            let attempt_raw = adapter.storage.read_attempt(&attempt_path)?;
+            let attempt = parse_json_contract(&attempt_raw).map_err(|_| {
+                WorkError::new(
+                    ExitCode::ArtifactIntegrity,
+                    "attempt_invalid",
+                    "The current Attempt is invalid.",
+                    json!({}),
+                )
+            })?;
+            work_operations::execution::attempt::validate_attempt_bytes(&attempt, &attempt_raw)
+                .map_err(recovery_rule)?;
+            let task_context = context.task_context();
+            validate_execution_identity(
+                &task_context.collection,
+                &task_context.validation,
+                &index,
+                &attempt,
+                target.task_id,
+            )
+            .map_err(recovery_rule)?;
+            let task = task_context.contract["tasks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|item| item["id"] == target.task_id)
+                .ok_or_else(|| {
+                    WorkError::new(
+                        ExitCode::ArtifactIntegrity,
+                        "host_command_missing",
+                        "The reserved CMD TASK is missing.",
+                        json!({}),
+                    )
+                })?;
+            let version = super::file_transaction::storage::current_version(context, attempt_id)?;
+            let input_files = super::command::input_files(context)?;
+            work_operations::execution::host_report::binding(
+                task,
+                &attempt,
+                &index,
+                &task_context.collection,
+                &version,
+                &input_files,
+            )
+            .map_err(recovery_rule)
+        })
+    }
     pub fn recover_attempt_start_from_project<H, S, P, T>(
         &self,
         sources: &CommandProjectSources<'_, H, S, P, T>,
@@ -5658,24 +5751,6 @@ impl RuntimeExecutionSession<'_> {
         validate_recovery_request(request, false).map_err(recovery_rule)?;
         self.with_context(|adapter| {
             adapter.recover_execution_from_project(sources, target, request)
-        })
-    }
-    pub fn run_command_from_project<H, S, P, T>(
-        &self,
-        sources: &CommandProjectSources<'_, H, S, P, T>,
-        input: CommandProjectRequest<'_>,
-        approved_sha256: &str,
-    ) -> Result<Value, WorkError>
-    where
-        H: InstructionSourceRepository,
-        S: SkillSnapshotRepository,
-        P: ArtifactPathRepository + SourceSnapshotReader,
-        T: TaskCollectionRepository,
-    {
-        work_operations::execution::command::run::validate_command_run_request(input.request)
-            .map_err(recovery_rule)?;
-        self.with_context(|adapter| {
-            adapter.run_command_from_project(sources, input, approved_sha256)
         })
     }
 }
@@ -6473,6 +6548,7 @@ fn transaction_conflict() -> WorkError {
     )
 }
 
+#[cfg(test)]
 fn command_interrupted(receipt: &str) -> WorkError {
     WorkError::new(
         ExitCode::IoFailure,
@@ -10367,9 +10443,7 @@ mod tests {
             NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join("execution")).unwrap();
-        LocalGit
-            .mutate(&root, &["init".into(), "-q".into()])
-            .unwrap();
+        crate::git::initialize_fixture(&root);
         root
     }
 

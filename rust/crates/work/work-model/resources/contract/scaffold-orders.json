@@ -75,23 +75,6 @@
       "argv"
     ]
   },
-  "work-command-run-request": {
-    "": [
-      "schema",
-      "id",
-      "canonical_order",
-      "scaffold",
-      "example"
-    ],
-    "/example": [
-      "schema",
-      "timeout_seconds"
-    ],
-    "/scaffold": [
-      "schema",
-      "timeout_seconds"
-    ]
-  },
   "work-correction-create-request": {
     "": [
       "schema",
@@ -115,64 +98,6 @@
       "correct_value",
       "reason",
       "invalidates_completion"
-    ]
-  },
-  "work-delegation-build-request": {
-    "": [
-      "schema",
-      "id",
-      "canonical_order",
-      "scaffold",
-      "example"
-    ],
-    "/example": [
-      "schema",
-      "role",
-      "request",
-      "planning_source",
-      "continuation_point"
-    ],
-    "/scaffold": [
-      "schema",
-      "role",
-      "mode",
-      "request",
-      "planning_source",
-      "task_path",
-      "task_id",
-      "confirmed_request",
-      "decisions",
-      "affected_task_ids",
-      "repository_evidence",
-      "saved_discussion",
-      "continuation_point"
-    ],
-    "/scaffold/confirmed_request": []
-  },
-  "work-discussion-handoff-request": {
-    "": [
-      "schema",
-      "id",
-      "canonical_order",
-      "scaffold",
-      "example"
-    ],
-    "/example": [
-      "schema",
-      "direction",
-      "requirement_id",
-      "summary"
-    ],
-    "/scaffold": [
-      "schema",
-      "direction",
-      "requirement_id",
-      "summary",
-      "confirmed_approach",
-      "requested_changes",
-      "preserve",
-      "affected_ids",
-      "validation_requirements"
     ]
   },
   "work-execution-deviation-semantic-request": {
@@ -256,37 +181,6 @@
       "schema",
       "transaction",
       "attempt_id"
-    ]
-  },
-  "work-invocation": {
-    "": [
-      "schema",
-      "id",
-      "canonical_order",
-      "scaffold",
-      "example"
-    ],
-    "/example": [
-      "schema",
-      "mode",
-      "origin",
-      "request",
-      "confirmation",
-      "entry"
-    ],
-    "/example/entry": [
-      "kind"
-    ],
-    "/scaffold": [
-      "schema",
-      "mode",
-      "origin",
-      "request",
-      "confirmation",
-      "entry"
-    ],
-    "/scaffold/entry": [
-      "kind"
     ]
   },
   "work-record-finish-request": {

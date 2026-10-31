@@ -1,17 +1,16 @@
 {
-  "delegation": {
-    "build": "read_only",
-    "validate": "read_only"
-  },
   "execute": {
     "file-prepare": "write",
     "file-apply": "write",
     "file-recovery-prepare": "read_only",
     "file-restore": "write",
+    "file-binding": "write",
+    "file-record": "write",
     "attempt-close": "write",
     "attempt-start": "write",
     "attempt-start-prepare": "read_only",
     "command-correction": "write",
+    "command-binding": "read_only",
     "command-prepare": "read_only",
     "command-run": "external_effect",
     "correction-create": "write",
@@ -24,15 +23,6 @@
     "recover-attempt-start": "write",
     "recovery-prepare": "read_only",
     "worktree": "read_only"
-  },
-  "handoff": {
-    "build-discussion": "read_only",
-    "build-execute-to-task": "read_only",
-    "build-task-to-execute": "read_only",
-    "render": "read_only",
-    "validate": "read_only",
-    "verify-execute-to-task": "read_only",
-    "verify-task-to-execute": "read_only"
   },
   "task": {
     "preview": "read_only",

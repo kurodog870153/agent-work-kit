@@ -145,7 +145,10 @@ pub fn resume(
     let session = repository
         .read_current(requirement)?
         .ok_or_else(super::missing)?;
-    work_operations::discussion::workflow::resume(&session).map_err(|e| super::rejected(e.0))
+    work_operations::discussion::verify_integrity(&session)
+        .map_err(|issue| super::rejected(issue.0))?;
+    work_operations::discussion::workflow::resume(&session)
+        .map_err(|issue| super::rejected(issue.0))
 }
 
 pub fn command_definition(name: &str) -> Option<Value> {

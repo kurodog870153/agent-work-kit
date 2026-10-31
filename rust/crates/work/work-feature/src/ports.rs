@@ -137,7 +137,6 @@ pub fn with_runtime_writer<T>(
 
 pub trait Git {
     fn read_only(&self, root: &Path, args: &[String]) -> Result<Vec<u8>, WorkError>;
-    fn mutate(&self, root: &Path, args: &[String]) -> Result<Vec<u8>, WorkError>;
 }
 
 #[derive(Debug, Clone)]

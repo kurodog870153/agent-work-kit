@@ -2,23 +2,11 @@
 
 use super::{Result, ready_to_generate, view};
 use serde_json::{Value, json};
-use work_model::common::Nullable;
 use work_model::discussion::DiscussionSession;
 
 pub fn resume(session: &DiscussionSession) -> Result<Value> {
     let view = view(session)?;
-    let ready = ready_to_generate(session).is_ok();
-    let action = if ready {
-        "preview"
-    } else if view.continuation.question != Nullable::Null {
-        "answer"
-    } else {
-        "update"
-    };
-    Ok(
-        json!({"view":view,"next_action":action,"requires_user_confirmation":true,
-        "planning_ready":ready,"preview_required":true,"save_authorization_is_publication_authorization":false}),
-    )
+    Ok(json!({"view":view,"planning_ready":ready_to_generate(session).is_ok()}))
 }
 
 pub fn command_definition(name: &str) -> Option<Value> {

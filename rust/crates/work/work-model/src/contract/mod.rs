@@ -185,10 +185,6 @@ mod tests {
             items["work-instructions"]["description"]["example"]["hierarchy"]["work_directory"],
             "task"
         );
-        assert_eq!(
-            items["work-delegation-validation"]["description"]["example"]["role"],
-            "task-coordinator"
-        );
         let route = &items["work-instruction-selection-manifest"]["description"]["example"]["routing_input"];
         assert_eq!(route["mode"], "task");
         assert_eq!(route["status"], "source_required");

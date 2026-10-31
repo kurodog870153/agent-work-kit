@@ -16,7 +16,6 @@ mkdir "$target"
 installer_inspect_target "$target" "$source_work" 0
 [[ "$installer_target_kind" == new ]] || fail 'empty target'
 for relative in SKILL.md agents/openai.yaml references/instruction-loading.md \
-    references/instruction-loading/invocation.md \
     references/instructions/task/general/instructions.md \
     references/instructions/execute/general/instructions.md; do
     mkdir -p -- "$target/$(dirname "$relative")"
@@ -42,6 +41,11 @@ if installer_target_allows_install 0 0; then fail 'unconfirmed takeover'; fi
 installer_target_allows_install 0 1 || fail 'confirmed takeover'
 installer_inspect_target "$target" "$source_work" 1
 [[ "$installer_target_kind" == managed ]] || fail 'valid state'
+mkdir -p "$target/references/subagents"
+printf 'retired role' > "$target/references/subagents/execute.md"
+installer_inspect_target "$target" "$source_work" 1
+[[ "$installer_target_kind" == managed ]] || fail 'known retired role blocks upgrade'
+rm -r -- "$target/references/subagents"
 printf 'unknown skill\n' > "$target/SKILL.md"
 installer_inspect_target "$target" "$source_work" 0
 [[ "$installer_target_kind" == unsafe ]] || fail 'unrecognized managed content'

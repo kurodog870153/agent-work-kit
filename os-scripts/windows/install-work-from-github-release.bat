@@ -35,7 +35,7 @@ $cli = @()
 if ($args.Count -gt 2) { $cli = [string[]] $args[2..($args.Count - 1)] }
 $releaseTag = '__WORK_RELEASE_TAG__'
 $archiveName = "work-$releaseTag-windows-x64-msvc.zip"
-$base = "https://github.com/kurodog870153/codex-workflow-kit/releases/download/$releaseTag"
+$base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$releaseTag"
 function Clear-ReleaseStaleScratch {
     $parent = Split-Path -Path $scratch -Parent
     foreach ($folder in @(Get-ChildItem -LiteralPath $parent -Directory -Force -ErrorAction SilentlyContinue)) {

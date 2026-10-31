@@ -15,7 +15,7 @@ def build_test_downloaders(repository, output):
 fi
 """
         else:
-            anchor = b'$base = "https://github.com/kurodog870153/codex-workflow-kit/releases/download/$releaseTag"\r\n'
+            anchor = b'$base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$releaseTag"\r\n'
             injection = rb"""if ($env:WORK_RELEASE_TEST_MODE -eq '1' -and $env:WORK_RELEASE_TEST_BASE_URL -match '^http://127\.0\.0\.1:[0-9]+$') {
     $base = $env:WORK_RELEASE_TEST_BASE_URL.TrimEnd('/') + '/' + $releaseTag
 }

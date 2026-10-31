@@ -1,6 +1,5 @@
 //! Process bootstrap and command composition.
 
-use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,8 +7,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use work_flow::error::{ExitCode, WorkError};
 use work_flow::execution::{
-    CommandProjectRequest, CommandProjectSources, ExecutionProjectTarget, attempt_render,
-    attempt_validate, correction_render, correction_validate,
+    CommandProjectSources, ExecutionProjectTarget, attempt_render, attempt_validate,
+    correction_render, correction_validate,
 };
 use work_flow::fingerprint::text as fingerprint_text;
 use work_flow::hierarchy::{
@@ -17,15 +16,13 @@ use work_flow::hierarchy::{
     selection_validate as validate_selection,
 };
 use work_flow::instruction::{
-    catalog as instruction_catalog, load as load_instructions, resolve as resolve_instructions,
-    select as select_instructions,
+    load as load_instructions, resolve as resolve_instructions, select as select_instructions,
 };
-use work_flow::invocation::parse as parse_invocation_flow;
 use work_flow::paths::resolve as resolve_artifact_paths;
 use work_flow::skill::SkillRoot;
 use work_flow::skill::{
-    catalog as skill_catalog, selection_build as build_skill_selection,
-    selection_validate as validate_skill_selection, snapshot as skill_snapshot,
+    selection_build as build_skill_selection, selection_validate as validate_skill_selection,
+    snapshot as skill_snapshot,
 };
 use work_flow::specification::{
     apply_reconciliation, prepare_reconciliation, preview_reconciliation, recover_reconciliation,
@@ -39,7 +36,6 @@ use work_infrastructure::clock_workspace::{LocalWorkspaceAllocator, local_date, 
 use work_infrastructure::codec::{canonical_json, decode_utf8, fingerprint, parse_json_contract};
 use work_infrastructure::execution::storage::{AttemptStartRecoveryRequest, LocalExecutionStorage};
 use work_infrastructure::files::resolve_project_path;
-use work_infrastructure::handoff_storage::LocalHandoffStorage;
 use work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog;
 use work_infrastructure::instruction::refresh::source_impact;
 use work_infrastructure::routing_sources::RoutingSourceSession;
@@ -69,6 +65,15 @@ use work_infrastructure::workflow_storage::{WorkflowStateRequest, load_workflow_
 use crate::CliResult;
 use crate::contract;
 use crate::parser::{ParseOutcome, ParsedCommand, parse_tokens};
+
+fn file_error(reason: &str) -> WorkError {
+    WorkError::new(
+        ExitCode::Contract,
+        reason,
+        "Project file request is invalid or retired.",
+        json!({}),
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct FileInput {
@@ -268,10 +273,7 @@ fn dispatch_with_operation_context(
     let Some(command) = parsed.path.first().map(String::as_str) else {
         return dispatch(parsed, root, input, skill_root);
     };
-    if !matches!(
-        command,
-        "source" | "task" | "execute" | "discussion" | "handoff"
-    ) {
+    if !matches!(command, "source" | "task" | "execute" | "discussion") {
         return dispatch(parsed, root, input, skill_root);
     }
     let operation = parsed.path.get(1).map_or(command, String::as_str);
@@ -282,7 +284,6 @@ fn dispatch_with_operation_context(
         &OperationContextRequest {
             command,
             operation,
-            delegated_role: parsed.arguments.get("role").and_then(Value::as_str),
             artifacts: &artifacts,
             project_root: &root.to_string_lossy(),
             approval_sha256: parsed
@@ -935,12 +936,6 @@ fn dispatch_with_writer_family(
                 validate_selection(&catalog, &request)
             }
         }
-        ["instructions", "catalog"] => instruction_catalog(
-            &LocalHierarchyCatalog {
-                skill_root: skill_root.to_path_buf(),
-            },
-            argument(parsed, "mode")?,
-        ),
         ["instructions", "resolve"] => {
             let catalog = LocalHierarchyCatalog {
                 skill_root: skill_root.to_path_buf(),
@@ -983,15 +978,6 @@ fn dispatch_with_writer_family(
             argument(parsed, "journal_path")?,
             argument(parsed, "approved_sha256")?,
         ),
-        ["skills", "catalog"] => skill_catalog(
-            &LocalSkillCatalog {
-                roots: skill_configs(&string_list(parsed, "root"))?,
-            },
-            &string_list(parsed, "disabled_source")
-                .into_iter()
-                .collect::<HashSet<_>>(),
-            &HashSet::from(["work".to_owned()]),
-        ),
         ["skills", "snapshot"] => {
             let configs = skill_configs(&[argument(parsed, "root")?.to_owned()])?;
             let scope = configs[0].scope.clone();
@@ -1016,7 +1002,7 @@ fn dispatch_with_writer_family(
                 validate_skill_selection(&catalog, &roots, &request)
             }
         }
-        ["workflow", "status" | "next"] => {
+        ["workflow", "status"] => {
             let configs = skill_configs(&string_list(parsed, "skill_root"))?;
             let snapshot = load_workflow_snapshot(&WorkflowStateRequest {
                 project_root: root,
@@ -1033,21 +1019,12 @@ fn dispatch_with_writer_family(
             } else {
                 &[]
             };
-            let state = if parsed.path[1] == "status" {
-                work_flow::workflow::status_with_events(
-                    &mut routing,
-                    requirement_id,
-                    snapshot,
-                    formal_events,
-                )
-            } else {
-                work_flow::workflow::next_with_events(
-                    &mut routing,
-                    requirement_id,
-                    snapshot,
-                    formal_events,
-                )
-            }?;
+            let state = work_flow::workflow::status_with_events(
+                &mut routing,
+                requirement_id,
+                snapshot,
+                formal_events,
+            )?;
             let _: work_model::workflow::WorkflowState = serde_json::from_value(state.clone())
                 .expect("routed workflow state matches its model");
             Ok(state)
@@ -1137,35 +1114,18 @@ fn dispatch_with_writer_family(
             "Private delegation commands are retired; use formal Work records with Host-native delegation.",
             json!({"command": parsed.path.join(" ")}),
         )),
-        ["handoff", command] => {
-            let request = input_json(input)?;
-            let paths = LocalArtifactPaths {
-                project_root: root.to_path_buf(),
-            };
-            work_flow::handoff::run(
-                command,
-                &paths,
-                || {
-                    Ok(LocalHandoffStorage {
-                        project_root: root.to_path_buf(),
-                        skill_root: skill_root.to_path_buf(),
-                        skill_configs: skill_configs(&string_list(parsed, "skill_root"))?,
-                    })
-                },
-                work_flow::handoff::HandoffArgs {
-                    task_path: parsed.arguments.get("task_path").and_then(Value::as_str),
-                    task_id: parsed.arguments.get("task_id").and_then(Value::as_str),
-                    attempt_id: parsed.arguments.get("attempt_id").and_then(Value::as_str),
-                    preflight: parsed.arguments.get("preflight") == Some(&json!(true)),
-                },
-                &request,
-            )
-        }
-        ["invocation", "confirm"] => work_flow::invocation::confirm(&required_input(input)?.raw),
-        ["invocation", "parse"] => {
-            let input = required_input(input)?;
-            parse_invocation_flow(&input.raw)
-        }
+        ["handoff", _] => Err(WorkError::new(
+            ExitCode::Contract,
+            "handoff_command_retired",
+            "Handoff transport commands are retired; resume from verified formal Work records.",
+            json!({"command": parsed.path.join(" ")}),
+        )),
+        ["invocation", _] => Err(WorkError::new(
+            ExitCode::Contract,
+            "invocation_command_retired",
+            "Invocation conversation commands are retired; the Host selects the Work mode.",
+            json!({"command": parsed.path.join(" ")}),
+        )),
         ["contract", "list"] => Ok(work_flow::contract::list(&contract::EmbeddedRegistry)),
         ["contract", "describe"] => work_flow::contract::describe(
             &contract::EmbeddedRegistry,
@@ -1379,10 +1339,7 @@ fn dispatch_with_writer_family(
                 .and_then(Value::as_str),
             argument(parsed, "workflow_id")?,
         ),
-        [
-            "execute",
-            operation @ ("file-prepare" | "file-apply" | "file-recovery-prepare" | "file-restore"),
-        ] => {
+        ["execute", operation @ ("file-binding" | "file-record")] => {
             let configs = skill_configs(&string_list(parsed, "skill_root"))?;
             let target = ExecutionProjectTarget {
                 task_path: argument(parsed, "task_path")?,
@@ -1391,12 +1348,32 @@ fn dispatch_with_writer_family(
             };
             let context = prepare_execution_writer_context(root, skill_root, &configs, target)?;
             let repository=work_infrastructure::execution::file_transaction::storage::LocalFileTransactions::for_project(root.to_path_buf(),skill_root.to_path_buf());
-            work_flow::execution::run_file_transaction(
-                &repository,
-                &context,
-                operation,
-                &input_json(input)?,
-            )
+            let request: work_model::execution::file_transaction::FileTransactionRequest =
+                serde_json::from_value(input_json(input)?)
+                    .map_err(|_| file_error("file_transaction_request_invalid"))?;
+            if request.schema != work_model::schema::PublicSchema::WorkFileTransactionRequest {
+                return Err(file_error("file_transaction_request_schema"));
+            }
+            use work_model::execution::file_transaction::FileTransactionCommand;
+            match (*operation, request.command) {
+                (
+                    "file-binding",
+                    FileTransactionCommand::Bind {
+                        attempt_id,
+                        changes,
+                        baseline_confirmation,
+                    },
+                ) => Ok(json!(repository.bind_host(
+                    &context,
+                    &attempt_id,
+                    &changes,
+                    baseline_confirmation.as_ref()
+                )?)),
+                ("file-record", FileTransactionCommand::Record { report }) => {
+                    Ok(json!(repository.record_host(&context, &report)?))
+                }
+                _ => Err(file_error("file_transaction_command_mismatch")),
+            }
         }
         [
             "execute",
@@ -1406,7 +1383,7 @@ fn dispatch_with_writer_family(
             | "attempt-start-prepare"
             | "recover-attempt-start"
             | "recovery-prepare"
-            | "command-prepare"
+            | "command-binding"
             | "deviation-prepare-semantic"
             | "record-begin"
             | "record-finish"
@@ -1414,7 +1391,6 @@ fn dispatch_with_writer_family(
             | "correction-create"
             | "command-correction"
             | "recover"
-            | "command-run"
             | "deviation-record",
         ] => {
             let configs = skill_configs(&string_list(parsed, "skill_root"))?;
@@ -1457,6 +1433,9 @@ fn dispatch_with_writer_family(
                         storage: &execution,
                         load_context: &load_context,
                     };
+                if parsed.path[1] == "command-binding" {
+                    return runtime_execution.host_command_binding();
+                }
                 work_flow::execution::run(
                     work_flow::execution::ExecutionCommandInput {
                         command: &parsed.path[1],
@@ -1491,18 +1470,6 @@ fn dispatch_with_writer_family(
                         recover: |request: Value| {
                             runtime_execution
                                 .recover_execution_from_project(&sources, target, &request)
-                        },
-                        command_run: |request: Value, approved_sha256: String| {
-                            runtime_execution.run_command_from_project(
-                                &sources,
-                                CommandProjectRequest {
-                                    task_path: &task_path,
-                                    execution_dir: &execution_dir,
-                                    task_id: target.task_id,
-                                    request: &request,
-                                },
-                                &approved_sha256,
-                            )
                         },
                     },
                 )
@@ -1595,6 +1562,57 @@ pub fn run_with_skill_root(tokens: &[String], skill_root: &Path) -> (i32, CliRes
             ParseOutcome::Command(command) => command,
         };
         let root = root_path(argument(&parsed, "project_root")?)?;
+        if matches!(parsed.path.as_slice(), [first, second] if first == "execute" && matches!(second.as_str(), "command-prepare" | "command-run"))
+        {
+            return Err(WorkError::new(
+                ExitCode::Contract,
+                "command_launcher_retired",
+                "Work command launching is retired; the Host executes a reserved CMD and submits bound result evidence.",
+                json!({"command":parsed.path.join(" ")}),
+            ));
+        }
+        if matches!(parsed.path.as_slice(), [first, second] if first == "execute" && matches!(second.as_str(), "file-prepare" | "file-apply" | "file-recovery-prepare" | "file-restore"))
+        {
+            return Err(file_error("file_writer_retired"));
+        }
+        if parsed.path == ["workflow", "next"] {
+            return Err(WorkError::new(
+                ExitCode::Contract,
+                "workflow_next_retired",
+                "Next-action dispatch is retired; use workflow status and formal Work records.",
+                json!({}),
+            ));
+        }
+        if matches!(parsed.path.as_slice(), [first, second] if matches!((first.as_str(), second.as_str()), ("skills", "catalog") | ("instructions", "catalog")))
+        {
+            return Err(WorkError::new(
+                ExitCode::Contract,
+                "host_discovery_required",
+                "The Host discovers Skills and instructions; Work validates explicit formal selections.",
+                json!({"command": parsed.path.join(" ")}),
+            ));
+        }
+        if parsed
+            .path
+            .first()
+            .is_some_and(|command| matches!(command.as_str(), "handoff" | "invocation"))
+        {
+            let retired = parsed.path[0].as_str();
+            return Err(WorkError::new(
+                ExitCode::Contract,
+                if retired == "handoff" {
+                    "handoff_command_retired"
+                } else {
+                    "invocation_command_retired"
+                },
+                if retired == "handoff" {
+                    "Handoff transport commands are retired; resume from verified formal Work records."
+                } else {
+                    "Invocation conversation commands are retired; the Host selects the Work mode."
+                },
+                json!({"command": parsed.path.join(" ")}),
+            ));
+        }
         let input = parsed
             .arguments
             .get("input_file")
@@ -1780,7 +1798,6 @@ mod tests {
             &OperationContextRequest {
                 command: "execute",
                 operation: "deviation-record",
-                delegated_role: None,
                 artifacts: &prepared,
                 project_root: root.to_str().unwrap(),
                 approval_sha256: Some(&"a".repeat(64)),
@@ -2201,7 +2218,7 @@ mod tests {
     }
 
     #[test]
-    fn skill_catalog_and_snapshot_cli_match_current_contract_cases() {
+    fn host_discovers_skills_while_work_snapshots_explicit_provenance() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let base = std::env::temp_dir().join(format!(
             "work-cli-skills-catalog-{}-{}",
@@ -2234,9 +2251,8 @@ mod tests {
             )
         };
         let (exit, catalog) = invoke(vec!["catalog".into(), "--root".into(), root.clone()]);
-        assert_eq!(exit, 0);
-        assert_eq!(catalog.data["schema"], "work-skill-catalog");
-        assert_eq!(catalog.data["skills"][0]["name"], "frontend");
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(catalog.reason_code, "host_discovery_required");
         let (exit, snapshot) = invoke(vec![
             "snapshot".into(),
             "--root".into(),
@@ -2254,9 +2270,22 @@ mod tests {
             64
         );
         let (exit, invalid) = invoke(vec!["catalog".into(), "--root".into(), "repo".into()]);
-        assert_eq!(exit, ExitCode::CliUsage as i32);
+        assert_eq!(exit, ExitCode::Contract as i32);
         assert_eq!(invalid.schema, "work-cli-result");
-        assert_eq!(invalid.reason_code, "invalid_skill_root_argument");
+        assert_eq!(invalid.reason_code, "host_discovery_required");
+        let (exit, instructions) = run_with_skill_root(
+            &[
+                "--project-root".into(),
+                project.to_string_lossy().into_owned(),
+                "instructions".into(),
+                "catalog".into(),
+                "--mode".into(),
+                "task".into(),
+            ],
+            &repo.join("../skills/work"),
+        );
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(instructions.reason_code, "host_discovery_required");
         assert_eq!(fs::read_dir(project).unwrap().count(), 0);
     }
 
@@ -2458,71 +2487,27 @@ mod tests {
     }
 
     #[test]
-    fn invocation_parse_preserves_literal_request_without_project_effects() {
+    fn invocation_commands_reject_before_reading_input() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
-        let base = std::env::temp_dir().join(format!(
-            "work-cli-invocation-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let root = base.join("project");
+        let root =
+            std::env::temp_dir().join(format!("work-retired-invocation-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        let input = base.join("invocation.txt");
-        let raw = "$work execute -- $(touch should-not-exist) -- \"literal\"\n";
-        fs::write(&input, raw).unwrap();
-        let arguments = [
-            "--project-root".into(),
-            root.to_string_lossy().into_owned(),
-            "--verbose".into(),
-            "invocation".into(),
-            "parse".into(),
-            "--input-file".into(),
-            input.to_string_lossy().into_owned(),
-        ];
-        let (exit, result) = run_with_skill_root(&arguments, &repo.join("../skills/work"));
-        assert_eq!(exit, 0);
-        assert_eq!(result.data["request"], raw.split_once("--").unwrap().1);
-        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
-        fs::write(&input, "$work -- request").unwrap();
-        let (exit, result) = run_with_skill_root(&arguments, &repo.join("../skills/work"));
-        assert_ne!(exit, 0);
-        assert_eq!(result.reason_code, "work_invocation_mode_missing");
-    }
-
-    #[test]
-    fn invocation_input_decoding_accepts_one_bom_and_rejects_invalid_utf8() {
-        let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
-        let base = std::env::temp_dir().join(format!(
-            "work-cli-invocation-encoding-t25-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let root = base.join("project");
-        fs::create_dir_all(&root).unwrap();
-        let input = base.join("invocation.txt");
-        let arguments = [
-            "--project-root".into(),
-            root.to_string_lossy().into_owned(),
-            "--verbose".into(),
-            "invocation".into(),
-            "parse".into(),
-            "--input-file".into(),
-            input.to_string_lossy().into_owned(),
-        ];
-        fs::write(&input, "\u{feff} \t$work\ttask\n--\n需求").unwrap();
-        let (exit, result) = run_with_skill_root(&arguments, &repo.join("../skills/work"));
-        assert_eq!(exit, 0);
-        assert_eq!(result.data["request"], "\n需求");
-        fs::write(&input, b"$work plan -- \xff").unwrap();
-        let (exit, result) = run_with_skill_root(&arguments, &repo.join("../skills/work"));
-        assert_eq!(exit, 3);
-        assert_eq!(result.reason_code, "invalid_utf8");
+        for command in ["parse", "confirm"] {
+            let (exit, result) = run_with_skill_root(
+                &[
+                    "--project-root".into(),
+                    root.to_string_lossy().into_owned(),
+                    "invocation".into(),
+                    command.into(),
+                    "--input-file".into(),
+                    "missing.json".into(),
+                ],
+                &repo.join("../skills/work"),
+            );
+            assert_eq!(exit, ExitCode::Contract as i32);
+            assert_eq!(result.reason_code, "invocation_command_retired");
+        }
+        assert_eq!(fs::read_dir(root).unwrap().count(), 0);
     }
 
     #[test]
@@ -2806,7 +2791,7 @@ mod tests {
     }
 
     #[test]
-    fn instruction_catalog_and_source_selection_match_installed_reference() {
+    fn instruction_catalog_is_retired_but_explicit_source_selection_remains() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let skill_root = repo.join("../skills/work");
         let prefix = [
@@ -2823,10 +2808,8 @@ mod tests {
             .concat(),
             &skill_root,
         );
-        assert_eq!(exit, 0);
-        assert!(work_infrastructure::fixture_support::valid_sha256(
-            catalog.data["catalog_sha256"].as_str().unwrap()
-        ));
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(catalog.reason_code, "host_discovery_required");
         let (exit, selected) = run_with_skill_root(
             &[
                 prefix.as_slice(),
@@ -2844,7 +2827,7 @@ mod tests {
     }
 
     #[test]
-    fn instruction_cli_catalog_resolve_load_select_match_current_contract_cases() {
+    fn instruction_cli_resolve_load_select_validate_explicit_sources() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let skill_root = repo.join("../skills/work");
         let prefix = vec![
@@ -2858,59 +2841,17 @@ mod tests {
             args.extend(arguments.iter().map(|value| (*value).to_owned()));
             run_with_skill_root(&args, &skill_root)
         };
-        let task_paths = [
-            "general",
-            "programming-language",
-            "programming-language/java",
-            "programming-language/java/persistence",
-            "programming-language/java/persistence/jpa",
-            "programming-language/java/persistence/mybatis",
-            "programming-language/java/spring-boot",
-            "programming-language/typescript",
-            "web",
-            "web/backend",
-            "web/frontend",
-            "web/frontend/astro",
-            "web/frontend/css",
-            "web/frontend/css/tailwind",
-        ];
-        for (mode, paths) in [
-            ("task", task_paths.as_slice()),
-            ("execute", task_paths.as_slice()),
-        ] {
+        for mode in ["task", "execute"] {
             let (exit, response) = call(&["catalog", "--mode", mode]);
-            assert_eq!(exit, 0);
-            assert_eq!(response.data["schema"], "work-instruction-catalog");
-            assert_eq!(response.data["mode"], mode);
-            assert_eq!(response.data["paths"], json!(paths));
-            assert_eq!(
-                response.data["children"]["general"],
-                json!(["programming-language", "web"])
-            );
-            assert_eq!(
-                response.data["metadata"]["general"]
-                    .as_object()
-                    .unwrap()
-                    .keys()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>(),
-                vec!["description", "name", "work_tags"]
-            );
-            assert!(!response.data["metadata"].to_string().contains("指令邊界"));
+            assert_eq!(exit, ExitCode::Contract as i32);
+            assert_eq!(response.reason_code, "host_discovery_required");
         }
         let (exit, invalid) = call(&["catalog", "--mode", "build"]);
         assert_eq!(exit, 2);
         assert_eq!(invalid.reason_code, "cli_usage_error");
         let (exit, all) = call(&["catalog", "--mode", "all"]);
-        assert_eq!(exit, 0);
-        assert_eq!(all.data["mode"], "all");
-        assert_eq!(
-            all.data["metadata"]["programming-language/java/persistence/jpa"]["mode_support"],
-            json!(["task", "execute"])
-        );
-        assert!(work_infrastructure::fixture_support::valid_sha256(
-            all.data["catalog_sha256"].as_str().unwrap()
-        ));
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(all.reason_code, "host_discovery_required");
 
         let leaves = [
             "programming-language/java/persistence/jpa",
@@ -3079,7 +3020,7 @@ mod tests {
     }
 
     #[test]
-    fn skill_catalog_and_workflow_entrypoints_match_current_contract_reference() {
+    fn host_discovery_retirement_and_workflow_state_match_current_contract() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let skill_root = repo.join("../skills/work");
         let prefix = [
@@ -3108,11 +3049,8 @@ mod tests {
             .concat(),
             &skill_root,
         );
-        assert_eq!(exit, 0);
-        assert_eq!(
-            catalog.data,
-            json!({"schema":"work-skill-catalog","skills":[],"unavailable":[]})
-        );
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(catalog.reason_code, "host_discovery_required");
         let (exit, workflow) = run_with_skill_root(
             &[
                 prefix.as_slice(),
@@ -3129,11 +3067,9 @@ mod tests {
             &skill_root,
         );
         assert_eq!(exit, 0);
-        assert_eq!(workflow.data["next_action"], "capture_source");
-        assert_eq!(
-            workflow.data["selection_sha256"],
-            workflow.data["selection_manifest"]["selection_sha256"]
-        );
+        assert_eq!(workflow.data["status"], "source_required");
+        assert!(workflow.data.get("next_action").is_none());
+        assert!(workflow.data.get("source_order").is_none());
         let (next_exit, next) = run_with_skill_root(
             &[
                 prefix.as_slice(),
@@ -3149,8 +3085,8 @@ mod tests {
             .concat(),
             &skill_root,
         );
-        assert_eq!(next_exit, 0);
-        assert_eq!(next.data, workflow.data);
+        assert_eq!(next_exit, ExitCode::Contract as i32);
+        assert_eq!(next.reason_code, "workflow_next_retired");
         let (maintenance_exit, maintenance) = run_with_skill_root(
             &[
                 prefix.as_slice(),
@@ -3168,16 +3104,7 @@ mod tests {
             &skill_root,
         );
         assert_eq!(maintenance_exit, 0);
-        assert!(
-            maintenance.data["required_instruction_sources"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("work.shared.instruction-maintenance"))
-        );
-        assert_ne!(
-            maintenance.data["selection_sha256"],
-            workflow.data["selection_sha256"]
-        );
+        assert_eq!(maintenance.data, workflow.data);
     }
 
     #[test]
@@ -3203,33 +3130,27 @@ mod tests {
     }
 
     #[test]
-    fn handoff_validation_matches_current_contract_reference() {
+    fn handoff_commands_reject_without_loading_input_or_changing_formal_artifacts() {
         let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
         let fixture = repo.join(
             "crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/project",
         );
+        let task = fixture.join("outputs/work/tasks/example/index.json");
+        let original = fs::read(&task).unwrap();
         let (exit, result) = run_with_skill_root(
             &[
                 "--project-root".into(),
                 fixture.to_string_lossy().into_owned(),
-                "--verbose".into(),
                 "handoff".into(),
                 "validate".into(),
                 "--input-file".into(),
-                fixture
-                    .join("../expected/execute-to-task-result.json")
-                    .to_string_lossy()
-                    .into_owned(),
+                "missing.json".into(),
             ],
             &repo.join("../skills/work"),
         );
-        assert_eq!(exit, 0);
-        assert_eq!(
-            result.data,
-            json!({"direction":"execute_to_task","marker":"WORK-HANDOFF",
-            "requirement_id":"example","schema":"work-handoff-validation",
-            "source_stage":"execute","status":"valid","target_stage":"task"})
-        );
+        assert_eq!(exit, ExitCode::Contract as i32);
+        assert_eq!(result.reason_code, "handoff_command_retired");
+        assert_eq!(fs::read(task).unwrap(), original);
     }
 
     #[test]

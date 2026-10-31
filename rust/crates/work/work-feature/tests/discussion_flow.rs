@@ -235,10 +235,9 @@ fn staged_request_context_and_resume_follow_only_committed_state() {
     discussion::request::verify_context(&repo, &read, &context).unwrap();
     let result = discussion::request::dispatch(&repo, &NoPublication, &read).unwrap();
     assert_eq!(result["data"]["progress"]["confirmed"], 7);
-    assert_eq!(
-        discussion::request::resume(&repo, "example").unwrap()["next_action"],
-        "update"
-    );
+    let resumed = discussion::request::resume(&repo, "example").unwrap();
+    assert!(resumed.get("next_action").is_none());
+    assert_eq!(resumed["planning_ready"], false);
     discussion::prepare_question(&repo, "example", "ask-d008", question(8)).unwrap();
     assert_eq!(
         discussion::request::verify_context(&repo, &read, &context)
@@ -247,7 +246,7 @@ fn staged_request_context_and_resume_follow_only_committed_state() {
         "stale_discussion_context"
     );
     let resume = discussion::request::resume(&repo, "example").unwrap();
-    assert_eq!(resume["next_action"], "answer");
+    assert!(resume.get("next_action").is_none());
     assert_eq!(
         resume["view"]["continuation"]["question"]["display_options"]["1"],
         "first"

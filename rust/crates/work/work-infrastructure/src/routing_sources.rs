@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn source_required_workflow_state_selects_current_sources() {
+    fn source_required_workflow_state_exposes_formal_status_only() {
         let root = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../../../skills/work"
@@ -193,17 +193,10 @@ mod tests {
         let state = pre_execution_state(&mut session, "demo", &artifacts, None, None, None, false)
             .unwrap()
             .unwrap();
-        assert_eq!(
-            state["selection_sha256"],
-            state["selection_manifest"]["selection_sha256"]
-        );
-        assert!(work_operations::protocol::valid_sha256(
-            state["selection_manifest"]["routing_input"]["verified_state_sha256"]
-                .as_str()
-                .unwrap()
-        ));
-        assert_eq!(state["command"], "source capture");
-        assert_eq!(state["request_contract_id"], Value::Null);
+        assert_eq!(state["status"], "source_required");
+        assert!(state.get("next_action").is_none());
+        assert!(state.get("selection_manifest").is_none());
+        assert!(state.get("command").is_none());
     }
 
     #[test]
@@ -219,7 +212,6 @@ mod tests {
             &OperationContextRequest {
                 command: "discussion",
                 operation: "read",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: None,
@@ -309,7 +301,6 @@ mod source_context_tests {
             &OperationContextRequest {
                 command: "source",
                 operation: "capture",
-                delegated_role: None,
                 artifacts: &artifacts,
                 project_root: "/project",
                 approval_sha256: Some(&approval),

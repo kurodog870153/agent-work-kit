@@ -16,6 +16,14 @@ pub struct FileTransactionRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FileTransactionCommand {
+    Bind {
+        attempt_id: String,
+        changes: Vec<FileChange>,
+        baseline_confirmation: Option<FileBaselineConfirmation>,
+    },
+    Record {
+        report: super::host_file_report::HostFileReport,
+    },
     Prepare {
         attempt_id: String,
         changes: Vec<FileChange>,

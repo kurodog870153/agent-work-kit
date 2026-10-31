@@ -994,30 +994,16 @@ mod tests {
         };
         let missing = workflow_state(&request).unwrap();
         assert_eq!(missing["status"], "source_required");
-        assert_eq!(missing["next_action"], "capture_source");
         assert_eq!(missing["requires_user_confirmation"], true);
-        assert_eq!(missing["request_contract_id"], Value::Null);
-        assert_eq!(missing["command"], "source capture");
-        assert_eq!(
-            missing["arguments"]["input_file"],
-            "<capture-metadata-file>"
-        );
-        assert_eq!(
-            missing["semantic_input_contract"],
-            missing["request_contract_id"]
-        );
-        assert_eq!(missing["routing_status"], "VALID");
-        assert_eq!(
-            missing["source_order"],
-            missing["required_instruction_sources"]
-        );
-        assert_eq!(
-            missing["selection_manifest"]["selection_sha256"],
-            missing["selection_sha256"]
-        );
-        assert!(work_operations::protocol::valid_sha256(
-            missing["selection_sha256"].as_str().unwrap()
-        ));
+        for retired in [
+            "next_action",
+            "command",
+            "arguments",
+            "source_order",
+            "selection_manifest",
+        ] {
+            assert!(missing.get(retired).is_none(), "{retired}");
+        }
         assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
 
         let fixture =
@@ -1025,16 +1011,10 @@ mod tests {
         crate::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
         let source_only = workflow_state(&request).unwrap();
         assert_eq!(source_only["status"], "task_discussion_required");
-        assert_eq!(source_only["next_action"], "initialize_discussion");
         assert_eq!(
             source_only["details"]["source"]["snapshots"][0]["source_id"],
             "SRC-001"
         );
-        assert_eq!(
-            source_only["selection_sha256"],
-            source_only["selection_manifest"]["selection_sha256"]
-        );
-        assert_ne!(missing["selection_sha256"], source_only["selection_sha256"]);
         assert!(!root.join("outputs/work/plans").exists());
     }
 
@@ -1154,12 +1134,7 @@ mod tests {
         };
         let state = workflow_state(&request).unwrap();
         assert_eq!(state["status"], "execution_completed");
-        assert_eq!(state["next_action"], "review_completion");
         assert_eq!(state["details"], json!({"overall_status":"completed"}));
-        assert_eq!(
-            state["selection_sha256"],
-            state["selection_manifest"]["selection_sha256"]
-        );
     }
 
     #[test]
@@ -1191,12 +1166,7 @@ mod tests {
         };
         let state = workflow_state(&request).unwrap();
         assert_eq!(state["status"], "execution_pending");
-        assert_eq!(state["next_action"], "select_task_for_execution");
         assert_eq!(state["details"], json!({"overall_status":"pending"}));
-        assert_eq!(
-            state["selection_sha256"],
-            state["selection_manifest"]["selection_sha256"]
-        );
         let wrong_plan = root.join("other/example.json");
         fs::create_dir_all(wrong_plan.parent().unwrap()).unwrap();
         fs::copy(

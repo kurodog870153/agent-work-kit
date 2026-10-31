@@ -16,6 +16,7 @@ use work_feature::execution::RuntimeExecutionReadiness;
 use work_feature::execution::file_transaction::{FileTransactionRepository, error, prepare};
 use work_feature::ports::{ArtifactStore, RuntimeWriterLock, with_runtime_writer};
 use work_model::execution::file_transaction::*;
+use work_model::execution::host_file_report::{HostFileEvidence, HostFileReport, HostFileStatus};
 use work_model::runtime::{LockClass, RuntimeManifest, RuntimePhase};
 use work_model::schema::PublicSchema;
 use work_operations::derivation::{file_transaction as derive, fingerprint, publication};
@@ -26,6 +27,8 @@ struct TerminalEvidence {
     transaction_identity: String,
     phase: RuntimePhase,
     path_identities: BTreeMap<String, Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    host_report: Option<HostFileReport>,
 }
 fn terminal_prefix(phase: RuntimePhase) -> Result<&'static str, WorkError> {
     match phase {
@@ -68,6 +71,196 @@ fn temporary_prefix(expected: Option<&[u8]>, actual: &[u8]) -> Result<(), WorkEr
     Ok(())
 }
 impl LocalFileTransactions {
+    pub fn bind_host(
+        &self,
+        context: &ExecutionWriterContext,
+        attempt_id: &str,
+        changes: &[FileChange],
+        baseline_confirmation: Option<&FileBaselineConfirmation>,
+    ) -> Result<FileTransactionPreview, WorkError> {
+        with_runtime_writer(
+            &LocalWriterLock,
+            context.writer(),
+            LockClass::Execution,
+            |_| {
+                let owned = Self {
+                    root: self.root.clone(),
+                    owned: true,
+                    instruction_root: self.instruction_root.clone(),
+                };
+                let preview = prepare(&owned, context, attempt_id, changes, baseline_confirmation)?;
+                let binding = Self::binding(&preview.manifest)?;
+                let attempt_path = format!(
+                    "{}/{}/{}/attempt.json",
+                    context.target().execution_dir,
+                    binding.task_id,
+                    binding.attempt_id
+                );
+                let attempt: serde_json::Value =
+                    serde_json::from_slice(&self.read_source(&attempt_path)?)
+                        .map_err(|_| error("file_transaction_attempt_invalid"))?;
+                let authorization = attempt["authorization"]["authorization_evidence"]
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| error("file_transaction_authorization_required"))?;
+                let manifest = &preview.manifest;
+                let candidate = derive::candidate_bytes(&binding, &manifest.targets);
+                self.check_sources(context, &binding, None)?;
+                if self.observed(manifest)? != Self::expected(manifest, &binding, false)? {
+                    return Err(error("file_transaction_target_drift"));
+                }
+                for (path, expected) in &binding.path_identities {
+                    if self.path_identity(path)? != *expected {
+                        return Err(error("file_transaction_source_drift"));
+                    }
+                }
+                prepare_runtime_transaction(
+                    &LocalFiles,
+                    &self.root,
+                    manifest,
+                    &BTreeMap::from([("candidate.json".into(), candidate)]),
+                )?;
+                if self.load(&manifest.requirement_id, &manifest.transaction_identity)? != *manifest
+                {
+                    return Err(error("file_transaction_preparation_readback"));
+                }
+                self.authorize(manifest, authorization, None)?;
+                Ok(preview)
+            },
+        )
+    }
+
+    pub fn record_host(
+        &self,
+        context: &ExecutionWriterContext,
+        report: &HostFileReport,
+    ) -> Result<FileTransactionResult, WorkError> {
+        with_runtime_writer(
+            &LocalWriterLock,
+            context.writer(),
+            LockClass::Execution,
+            |_| {
+                let manifest = self.load(
+                    context.writer().requirement_id.as_str(),
+                    &report.transaction_identity,
+                )?;
+                if manifest.phase != RuntimePhase::Prepared {
+                    return Err(error("file_transaction_host_record_phase"));
+                }
+                self.validate_context(context, &manifest)?;
+                self.validate_host_report(&manifest, report)?;
+                let binding = Self::binding(&manifest)?;
+                self.check_sources(context, &binding, Some(&manifest))?;
+                let authorization_path = format!(
+                    "{}/{}/{}/attempt.json",
+                    context.target().execution_dir,
+                    binding.task_id,
+                    binding.attempt_id
+                );
+                let attempt: serde_json::Value =
+                    serde_json::from_slice(&self.read_source(&authorization_path)?)
+                        .map_err(|_| error("file_transaction_attempt_invalid"))?;
+                let authorization = attempt["authorization"]["authorization_evidence"]
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| error("file_transaction_authorization_required"))?;
+                let approval = FileAuthorization {
+                    transaction_identity: manifest.transaction_identity.clone(),
+                    publication_sha256: manifest.approval_sha256.clone(),
+                    authorization_evidence: authorization.into(),
+                    recovery: None,
+                };
+                let authorization_file = self
+                    .directory(&manifest.requirement_id, &manifest.transaction_identity)?
+                    .join(derive::authorization_path(&approval));
+                if !authorization_file.is_file() {
+                    return Err(error("file_transaction_authorization_missing"));
+                }
+                let expected = Self::expected(&manifest, &binding, true)?;
+                if self.observed(&manifest)? != expected {
+                    return Err(error("file_transaction_host_target_mismatch"));
+                }
+                let identities: BTreeMap<_, _> = expected
+                    .keys()
+                    .map(|path| Ok((path.clone(), self.path_identity(path)?)))
+                    .collect::<Result<_, WorkError>>()?;
+                if identities
+                    .iter()
+                    .any(|(path, identity)| identity.is_some() != expected[path].is_some())
+                {
+                    return Err(error("file_transaction_host_identity_mismatch"));
+                }
+                self.commit_terminal(
+                    &manifest,
+                    RuntimePhase::PublishedVerified,
+                    &identities,
+                    Some(report.clone()),
+                )?;
+                if self.observed(&manifest)? != expected {
+                    return Err(error("file_transaction_host_target_mismatch"));
+                }
+                self.validate_host_report(&manifest, report)?;
+                for (path, expected_identity) in &identities {
+                    if self.path_identity(path)? != *expected_identity {
+                        return Err(error("file_transaction_host_identity_mismatch"));
+                    }
+                }
+                update_runtime_progress(
+                    &LocalFiles,
+                    &self.root,
+                    &manifest,
+                    manifest.targets.len(),
+                    RuntimePhase::PublishedVerified,
+                )?;
+                Ok(FileTransactionResult {
+                    schema: PublicSchema::WorkFileTransactionResult,
+                    transaction_identity: manifest.transaction_identity,
+                    phase: RuntimePhase::PublishedVerified,
+                })
+            },
+        )
+    }
+    fn validate_host_report(
+        &self,
+        manifest: &RuntimeManifest,
+        report: &HostFileReport,
+    ) -> Result<(), WorkError> {
+        let binding = Self::binding(manifest)?;
+        if !report.valid_shape()
+            || report.status != HostFileStatus::CompletedAtomic
+            || report.task_id != binding.task_id
+            || report.attempt_id != binding.attempt_id
+            || report.transaction_identity != manifest.transaction_identity
+            || report.approval_sha256 != manifest.approval_sha256
+        {
+            return Err(error("file_transaction_host_report_binding"));
+        }
+        let raw = self.read_source(&report.result_reference)?;
+        if fingerprint::raw(&raw) != report.result_sha256 {
+            return Err(error("file_transaction_host_evidence_drift"));
+        }
+        let evidence_value = work_operations::canonical::parse_json_contract(&raw)
+            .map_err(|_| error("file_transaction_host_evidence_invalid"))?;
+        let evidence: HostFileEvidence = serde_json::from_value(evidence_value)
+            .map_err(|_| error("file_transaction_host_evidence_invalid"))?;
+        if !evidence.valid_shape()
+            || evidence.status != HostFileStatus::CompletedAtomic
+            || evidence.task_id != report.task_id
+            || evidence.attempt_id != report.attempt_id
+            || evidence.transaction_identity != report.transaction_identity
+            || evidence.paths.len() != manifest.targets.len()
+            || manifest.targets.iter().any(|target| {
+                evidence.paths.get(&target.path).is_none_or(|path| {
+                    path.before_sha256 != target.before.as_ref().map(|state| state.sha256.clone())
+                        || path.after_sha256
+                            != target.after.as_ref().map(|state| state.sha256.clone())
+                })
+            })
+        {
+            return Err(error("file_transaction_host_evidence_invalid"));
+        }
+        Ok(())
+    }
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,
@@ -527,6 +720,12 @@ impl LocalFileTransactions {
         {
             return Err(error("file_transaction_terminal_evidence_invalid"));
         }
+        if let Some(report) = &receipt.host_report {
+            if phase != RuntimePhase::PublishedVerified {
+                return Err(error("file_transaction_terminal_evidence_invalid"));
+            }
+            self.validate_host_report(manifest, report)?;
+        }
         Ok(Some(receipt))
     }
     fn terminal_identities(
@@ -569,11 +768,13 @@ impl LocalFileTransactions {
         manifest: &RuntimeManifest,
         phase: RuntimePhase,
         identities: &BTreeMap<String, Option<String>>,
+        host_report: Option<HostFileReport>,
     ) -> Result<(), WorkError> {
         let receipt = TerminalEvidence {
             transaction_identity: manifest.transaction_identity.clone(),
             phase,
             path_identities: identities.clone(),
+            host_report,
         };
         let raw = serde_json::to_vec(&receipt).expect("receipt serializes");
         let dir = runtime_manifest_directory(&self.root, manifest)?;
@@ -921,7 +1122,7 @@ impl LocalFileTransactions {
                 return Err(error("file_transaction_source_drift"));
             }
         }
-        self.commit_terminal(manifest, RuntimePhase::PublishedVerified, &identities)?;
+        self.commit_terminal(manifest, RuntimePhase::PublishedVerified, &identities, None)?;
         for (path, expected) in &identities {
             if self.path_identity(path)? != *expected {
                 return Err(error("file_transaction_external_change"));
@@ -1130,7 +1331,7 @@ impl LocalFileTransactions {
             if self.observed(&manifest)? != before {
                 return Err(error("file_transaction_restore_readback"));
             }
-            self.commit_terminal(&manifest, RuntimePhase::Restored, &identities)?;
+            self.commit_terminal(&manifest, RuntimePhase::Restored, &identities, None)?;
             for (path, expected) in &identities {
                 if self.path_identity(path)? != *expected {
                     return Err(error("file_transaction_external_change"));

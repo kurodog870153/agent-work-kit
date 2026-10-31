@@ -45,7 +45,7 @@
 | R14–R15 | `skills *`、`instructions *`、`hierarchy *`、selection contracts | M | Host 載入／選擇，Work Provenance 保留；Task 10。 |
 | R16–R17 | `execute command-prepare/run`、`work-infrastructure/src/execution/command/runner.rs` | M | Runner 退役，Attempt／Evidence 保留；Task 12。 |
 | R18–R19 | `execute file-*`、`work-infrastructure/src/execution/file_transaction/` | M | 專案檔案 Writer 退役，正式 Artifact 交易保留；Task 13。 |
-| R20–R21 | `execute worktree`、`work-feature/src/tool_evidence.rs`、`execution/host_evidence.rs` | M | Git 操作退役，範圍／版本／來源證據保留；Task 14。 |
+| R20–R21 | `execute worktree`、`work-feature/src/tool_evidence.rs`、`execution/host_evidence.rs` | M | Git 修改入口與未使用的 Tool Evidence 摘要轉接已退役；唯讀 Git 狀態、範圍／版本檢查及 CMD Host 證據保留；Task 14。 |
 | R22–R23 | `discussion *`、`discussion/workflow.rs`、`workflow status/next` | M | Host 對話安排，Work 已提交決策保留；Task 9、11。 |
 | R24–R25 | `private-roles.md`、`internal-envelope.md`、`transaction-workspace.md`、`workflows/` | M | 私有傳輸引用退役，Journal／Workspace 保留；Task 7–9、18。 |
 | R26 | `rust/Cargo.toml`、`os-scripts/`、`.github/`、`docs/`、`README.md` | M | 清理退役產物，Work＋Tooling 安裝與 Recovery 保留；Task 18–19。 |
@@ -55,3 +55,9 @@
 1. Work parser 為 `rust/crates/work/work-cli/resources/parser/commands.json`；公開 contract 在 `work-model/resources/contract/catalog.json`、各類 schema 與 scaffold orders；operation effects 與 routing catalog 必須跟每個入口同步核對。
 2. Work 的 model／operations／flow／feature／infrastructure／CLI 六層、Tooling 的對應六層、`work-cli/tests`、`tooling-cli/tests`、`work-feature/tests` 及 `work-infrastructure/fixtures` 均在變更面內；歷史 fixture 用來證明相容性，不能預設清理。
 3. Shared／Work／Tooling Bootstrap、Work Workflow Modules、Tooling Capability／Interface／Family、macOS／Windows installer、Release package／checksum、CI、README 與架構文件是發布面。具體檔案需在各任務寫入前重新唯讀檢查，以避免依賴過期內容。
+
+## Task 10 — Skill 與 Instruction 入口處置
+
+1. `skills catalog`、`instructions catalog` 屬 Work 主導的廣域發現入口，現回報 `host_discovery_required`；Host 由已啟用的 Skill 根目錄自行發現並決定是否載入。
+2. `skills snapshot/selection-build/selection-validate` 保留對 Host 明示選擇的身份、來源、支援模式與 Fingerprint 驗證。`hierarchy resolve/selection-build/selection-validate` 與 `instructions resolve/load/select` 僅處理指定路徑、祖先鏈、來源摘要及正式 Selection；它們不選擇 Host 的下一步或讀入指令正文供執行。
+3. `instructions impact/recover` 保留正式來源變更與 Journal 復原；正式 TASK 驗證仍核對完整 Source、Hierarchy、Instruction、Skill Selection 與版本，缺來源、非法祖先鏈或漂移時拒絕。

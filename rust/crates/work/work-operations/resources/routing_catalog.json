@@ -3,7 +3,6 @@
     "assemble_for_review": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -13,7 +12,6 @@
     "choose_task": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -24,7 +22,6 @@
       "work.instruction-loading",
       "work.workflow.task",
       "work.shared.discussion-progress",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -45,7 +42,6 @@
     "confirm_review": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -55,7 +51,6 @@
     "confirm_start": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -65,7 +60,6 @@
     "confirm_task_list": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.skill-discovery",
       "work.shared.skill-selection",
       "work.shared.source-loading",
@@ -129,7 +123,6 @@
     "prepare_revision": [
       "work.instruction-loading",
       "work.workflow.specification",
-      "work.shared.invocation",
       "work.shared.artifact-revision",
       "work.shared.transaction-workspace",
       "work.shared.artifact-paths",
@@ -142,20 +135,17 @@
       "work.instruction-loading",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
-      "work.shared.fingerprints",
-      "work.shared.internal-envelope"
+      "work.shared.fingerprints"
     ],
     "read_source": [
       "work.instruction-loading",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
-      "work.shared.fingerprints",
-      "work.shared.internal-envelope"
+      "work.shared.fingerprints"
     ],
     "initialize_discussion": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.skill-discovery",
       "work.shared.skill-selection",
       "work.shared.source-loading",
@@ -167,7 +157,6 @@
     "update_discussion": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -178,7 +167,6 @@
       "work.instruction-loading",
       "work.workflow.task",
       "work.shared.discussion-progress",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -188,7 +176,6 @@
     "preview_task": [
       "work.instruction-loading",
       "work.workflow.task",
-      "work.shared.invocation",
       "work.shared.source-loading",
       "work.shared.artifact-paths",
       "work.shared.fingerprints",
@@ -219,26 +206,15 @@
     "correction": [
       "work.workflow.execute.create-an-immutable-correction"
     ],
-    "delegation": [
-      "work.shared.private-roles",
-      "work.shared.internal-envelope"
-    ],
     "file_failure": [
       "work.workflow.task.file-and-failure-semantics"
     ],
-    "handoff": [
-      "work.shared.handoff",
-      "work.workflow.task.use-deterministic-handoffs",
-      "work.workflow.execute.use-deterministic-handoffs"
-    ],
+    "handoff": [],
     "invalid_artifact": [
       "work.workflow.task.reconstruct-an-invalid-related-specification",
       "work.workflow.execute.handle-invalid-related-artifacts-before-execution"
     ],
-    "invocation": [
-      "work.shared.invocation",
-      "work.shared.cli-response"
-    ],
+    "invocation": [],
     "migration": [
       "work.shared.artifact-migration"
     ],
@@ -274,7 +250,8 @@
       "work.shared.discussion-progress",
       "work.workflow.discussion.ownership-and-identity",
       "work.workflow.discussion.content-and-saving"
-    ]
+    ],
+    "delegation": []
   },
   "modes": {},
   "sources": {
@@ -298,10 +275,6 @@
       "references/instruction-loading/artifact-revision.md",
       18
     ],
-    "work.shared.cli-response": [
-      "references/instruction-loading/cli-response.md",
-      10
-    ],
     "work.shared.cli-transport": [
       "references/instruction-loading/cli-transport.md",
       20
@@ -317,22 +290,6 @@
     "work.shared.formal-task-validation": [
       "references/instruction-loading/formal-task-validation.md",
       15
-    ],
-    "work.shared.handoff": [
-      "references/instruction-loading/handoff.md",
-      21
-    ],
-    "work.shared.internal-envelope": [
-      "references/instruction-loading/internal-envelope.md",
-      14
-    ],
-    "work.shared.invocation": [
-      "references/instruction-loading/invocation.md",
-      12
-    ],
-    "work.shared.private-roles": [
-      "references/instruction-loading/private-roles.md",
-      13
     ],
     "work.shared.routed-references": [
       "references/instruction-loading/routed-references.md",
@@ -418,10 +375,6 @@
       "references/workflows/execute/start-an-attempt-transaction.md",
       223
     ],
-    "work.workflow.execute.use-deterministic-handoffs": [
-      "references/workflows/execute/use-deterministic-handoffs.md",
-      221
-    ],
     "work.workflow.execute.use-the-canonical-attempt-contract": [
       "references/workflows/execute/use-the-canonical-attempt-contract.md",
       222
@@ -473,10 +426,6 @@
     "work.workflow.task.saved-planning-entry-point": [
       "references/workflows/task/saved-planning-entry-point.md",
       209
-    ],
-    "work.workflow.task.use-deterministic-handoffs": [
-      "references/workflows/task/use-deterministic-handoffs.md",
-      214
     ],
     "work.workflow.task.use-the-deterministic-task-contract": [
       "references/workflows/task/use-the-deterministic-task-contract.md",

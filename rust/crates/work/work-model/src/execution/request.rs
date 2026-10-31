@@ -345,6 +345,10 @@ pub struct RecordFinishData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_evidence: Option<super::command::capture::CommandExecutionEvidence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_report: Option<super::host_report::HostExecutionReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_binding: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification_evidence: Option<super::command::capture::ValidationExecutionEvidence>,
 }
 

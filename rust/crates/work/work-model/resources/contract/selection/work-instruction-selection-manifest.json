@@ -23,17 +23,11 @@
       },
       "routing_status": "VALID",
       "schema": "work-instruction-selection-manifest",
-      "selection_sha256": "593efe9bc74de9fcbf8a0b4e3bdbc677abb97145337aa79653b217992ec96d0b",
       "sources": [
         {
           "canonical_sha256": "816283719f5864d235cd41c91a3164342535288dbb66edbf603f3e1073f79649",
           "logical_name": "work.instruction-loading",
           "path": "references/instruction-loading.md"
-        },
-        {
-          "canonical_sha256": "69f5e5493e8a48145913c699e1bdceda77b542903a57ddd490d168bdd96a340f",
-          "logical_name": "work.shared.internal-envelope",
-          "path": "references/instruction-loading/internal-envelope.md"
         },
         {
           "canonical_sha256": "6f0c15ba27a369b972efb93b2e8120809c2af92165feb6850ce2266ee3646b28",
@@ -50,7 +44,8 @@
           "logical_name": "work.shared.fingerprints",
           "path": "references/instruction-loading/fingerprints.md"
         }
-      ]
+      ],
+      "selection_sha256": "396377e575abd9ac80e9aea364775bfb0bd03d6bacd42f28633fb84806dbc5fc"
     },
     "fields": [
       {

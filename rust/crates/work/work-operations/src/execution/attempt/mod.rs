@@ -394,7 +394,12 @@ fn validate_records(
                     row,
                     &location,
                     &["id", "kind", "exit_code", "result"],
-                    &["correction", "execution_evidence"],
+                    &[
+                        "correction",
+                        "execution_evidence",
+                        "host_report",
+                        "host_binding",
+                    ],
                 )?,
                 "operation" => strict(row, &location, &["id", "kind", "outcome", "state"], &[])?,
                 _ => strict(
@@ -467,6 +472,38 @@ fn validate_records(
                                 json!({}),
                             ));
                         }
+                    }
+                    if let Some(value) = row.get("host_report") {
+                        let report: work_model::execution::host_report::HostExecutionReport =
+                            serde_json::from_value(value.clone()).map_err(|_| {
+                                issue(
+                                    "host_result_invalid",
+                                    "The Host result is invalid.",
+                                    json!({}),
+                                )
+                            })?;
+                        if !report.valid_shape()
+                            || row["id"] != report.record_id
+                            || row["exit_code"].as_i64() != report.exit_code
+                            || row.get("execution_evidence").is_some()
+                            || row.get("host_binding").is_none()
+                        {
+                            return Err(issue(
+                                "host_result_invalid",
+                                "The Host result disagrees with its CMD record.",
+                                json!({}),
+                            ));
+                        }
+                        crate::execution::host_report::validate_frozen_binding(
+                            &row["host_binding"],
+                            &report,
+                        )?;
+                    } else if row.get("host_binding").is_some() {
+                        return Err(issue(
+                            "host_result_invalid",
+                            "A Host binding requires its result report.",
+                            json!({}),
+                        ));
                     }
                     if let Some(correction) = row.get("correction") {
                         crate::execution::command::correction::validate_command_correction(

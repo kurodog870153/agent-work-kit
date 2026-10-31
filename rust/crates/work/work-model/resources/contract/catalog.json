@@ -88,7 +88,7 @@
         "kind": "response"
       },
       {
-        "caller_constructible": true,
+        "caller_constructible": false,
         "id": "work-command-run-request",
         "kind": "semantic_request"
       },
@@ -125,31 +125,6 @@
       {
         "caller_constructible": true,
         "id": "work-correction-create-request",
-        "kind": "semantic_request"
-      },
-      {
-        "caller_constructible": true,
-        "id": "work-delegation-build-request",
-        "kind": "semantic_request"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-delegation-envelope",
-        "kind": "generated_request"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-delegation-validation",
-        "kind": "response"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-discussion-handoff",
-        "kind": "response"
-      },
-      {
-        "caller_constructible": true,
-        "id": "work-discussion-handoff-request",
         "kind": "semantic_request"
       },
       {
@@ -229,21 +204,6 @@
       },
       {
         "caller_constructible": false,
-        "id": "work-handoff",
-        "kind": "artifact"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-handoff-source-validation",
-        "kind": "response"
-      },
-      {
-        "caller_constructible": false,
-        "id": "work-handoff-validation",
-        "kind": "response"
-      },
-      {
-        "caller_constructible": false,
         "id": "work-hierarchy",
         "kind": "response"
       },
@@ -276,11 +236,6 @@
         "caller_constructible": false,
         "id": "work-instructions",
         "kind": "response"
-      },
-      {
-        "caller_constructible": true,
-        "id": "work-invocation",
-        "kind": "semantic_request"
       },
       {
         "caller_constructible": false,

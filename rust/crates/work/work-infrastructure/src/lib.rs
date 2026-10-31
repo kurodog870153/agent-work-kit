@@ -3,13 +3,11 @@
 pub mod artifact_paths;
 pub mod clock_workspace;
 pub mod codec;
-pub mod delegation_storage;
 pub mod discussion;
 pub mod execution;
 pub mod files;
 pub mod fixture_support;
 pub mod git;
-pub mod handoff_storage;
 pub mod hierarchy_catalog;
 pub mod instruction;
 pub mod process;

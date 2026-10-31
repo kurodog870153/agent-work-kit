@@ -414,6 +414,11 @@ pub fn restore_historical_task_instructions(root: &std::path::Path) -> std::io::
             .join("fixtures/historical/instructions/issue-101-baseline/references"),
         &root.join("references"),
     )?;
+    copy_tree(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/historical/instructions/issue-103-workflow-baseline/references"),
+        &root.join("references"),
+    )?;
     std::fs::write(
         root.join(".historical-instruction-fixture"),
         b"issue-101-baseline\n",

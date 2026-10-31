@@ -16,7 +16,7 @@ try {
     Assert-Kind 'new' (Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $false)
     New-Item -ItemType Directory -Path $target | Out-Null
     Assert-Kind 'new' (Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $false)
-    foreach ($relative in @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md', 'references/instruction-loading/invocation.md', 'references/instructions/task/general/instructions.md', 'references/instructions/execute/general/instructions.md')) {
+    foreach ($relative in @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md', 'references/instructions/task/general/instructions.md', 'references/instructions/execute/general/instructions.md')) {
         $destination = Join-Path $target $relative
         $null = New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force
         Copy-Item -LiteralPath (Join-Path $sourceWork $relative) -Destination $destination
@@ -32,6 +32,11 @@ try {
     if (Test-InstallerTargetAuthorization -Inspection $firstUpdate -NonInteractive $false -Confirmed $false) { throw 'unconfirmed takeover' }
     if (-not (Test-InstallerTargetAuthorization -Inspection $firstUpdate -NonInteractive $false -Confirmed $true)) { throw 'confirmed takeover' }
     Assert-Kind 'managed' (Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $true)
+    $retired = Join-Path $target 'references/subagents/execute.md'
+    $null = New-Item -ItemType Directory -Path (Split-Path $retired -Parent) -Force
+    Set-Content -LiteralPath $retired -Value 'retired role'
+    Assert-Kind 'managed' (Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $true)
+    Remove-Item -LiteralPath (Split-Path $retired -Parent) -Recurse
     Set-Content -LiteralPath (Join-Path $target 'SKILL.md') -Value 'unknown skill'
     Assert-Kind 'unsafe' (Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $false)
     Copy-Item -LiteralPath (Join-Path $sourceWork 'SKILL.md') -Destination (Join-Path $target 'SKILL.md') -Force

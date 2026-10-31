@@ -18,6 +18,18 @@ installer_managed_relative() {
     esac
 }
 
+installer_retired_relative() {
+    case "$1" in
+        references/instruction-loading/handoff.md|references/instruction-loading/internal-envelope.md|\
+        references/instruction-loading/invocation.md|references/instruction-loading/private-roles.md|\
+        references/subagents|references/subagents/artifact-editor.md|references/subagents/execute.md|\
+        references/subagents/task-coordinator.md|references/subagents/task-skill.md|\
+        references/workflows/execute/use-deterministic-handoffs.md|\
+        references/workflows/task/use-deterministic-handoffs.md) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 installer_recognize_legacy_work() {
     local target="$1" response
     [[ -x "$target/scripts/work" ]] || return 1
@@ -27,7 +39,11 @@ installer_recognize_legacy_work() {
     grep -q '^name: work$' "$target/SKILL.md" || return 1
     grep -q '^  display_name: "Work"$' "$target/agents/openai.yaml" || return 1
     grep -q '^# Work Instruction Loading Bootstrap$' "$target/references/instruction-loading.md" || return 1
-    grep -q '^# Invocation contract$' "$target/references/instruction-loading/invocation.md" || return 1
+    if [[ -f "$target/references/instruction-loading/invocation.md" ]]; then
+        grep -q '^# Invocation contract$' "$target/references/instruction-loading/invocation.md" || return 1
+    else
+        grep -q '^# Work Instruction Loading Bootstrap$' "$target/references/instruction-loading.md" || return 1
+    fi
     grep -Eq '^# (任務規劃指令|Task planning)$' "$target/references/instructions/task/general/instructions.md" || return 1
     grep -Eq '^# (任務執行指令|Task execution)$' "$target/references/instructions/execute/general/instructions.md" || return 1
 }
@@ -63,12 +79,11 @@ installer_inspect_target() {
             installer_target_reject "unknown entry: $relative"; return 0
         fi
         if [[ "$relative" != scripts && "$relative" != scripts/work && "$relative" != install-state.json &&
-              ! -e "$source/$relative" ]]; then
+              ! -e "$source/$relative" ]] && ! installer_retired_relative "$relative"; then
             installer_target_reject "unrecognized Work entry: $relative"; return 0
         fi
     done
     for relative in SKILL.md agents/openai.yaml references/instruction-loading.md \
-        references/instruction-loading/invocation.md \
         references/instructions/task/general/instructions.md \
         references/instructions/execute/general/instructions.md scripts/work; do
         if [[ ! -f "$target/$relative" ]]; then

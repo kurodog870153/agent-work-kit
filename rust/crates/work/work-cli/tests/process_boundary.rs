@@ -1,5 +1,47 @@
 //! Contracts that require launching the public executable.
 
+mod host_command_support;
+
+#[test]
+fn retired_command_launcher_rejects_before_reading_input_or_writing_state() {
+    let root = std::env::temp_dir().join(format!(
+        "work-retired-launcher-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    for command in ["command-prepare", "command-run"] {
+        let mut args = vec![
+            "--project-root".into(),
+            root.to_string_lossy().into_owned(),
+            "--verbose".into(),
+            "execute".into(),
+            command.into(),
+            "--user-config-root".into(),
+            root.to_string_lossy().into_owned(),
+            "--task-path".into(),
+            "missing-task.json".into(),
+            "--execution-dir".into(),
+            "missing-execution".into(),
+            "--task-id".into(),
+            "TASK-001".into(),
+            "--input-file".into(),
+            "missing-request.json".into(),
+        ];
+        if command == "command-run" {
+            args.extend(["--approved-sha256".into(), "0".repeat(64)]);
+        }
+        let output = run(&args);
+        assert!(!output.status.success());
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["reason_code"], "command_launcher_retired", "{value}");
+        assert!(!root.join("missing-execution").exists());
+    }
+}
+
 use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::OnceLock;
@@ -357,48 +399,28 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
         assert!(ok, "{started}");
         let (ok, reserved) = invoke("record-begin", None, None);
         assert!(ok, "{reserved}");
-        let request = json!({"schema":"work-command-run-request","timeout_seconds":3});
-        let (ok, prepared) = invoke("command-prepare", Some(&request), None);
-        assert!(ok, "{prepared}");
-        let preview = &prepared["data"];
-        assert_eq!(preview["execution"]["host"]["mode"], "inherited");
-        assert!(preview["execution"].get("work_isolation").is_none());
+        let (ok, binding) = invoke("command-binding", None, None);
+        assert!(ok, "{binding}");
+        assert_eq!(binding["data"]["schema"], "work-host-command-binding");
+        assert_eq!(binding["data"]["record_id"], "CMD-001");
+        assert_eq!(binding["data"]["command"]["mode"], "argv");
+        assert!(binding["data"]["command_sha256"].as_str().is_some());
         assert!(!root.join("tool-output").exists());
         let before = fs::read(execution.join("index.json")).unwrap();
-        let (ok, stale) = invoke("command-run", Some(&request), Some(&"0".repeat(64)));
-        assert!(!ok, "{stale}");
-        assert!(!root.join("tool-output").exists());
+        let host = host_command_support::execute(&root, &binding["data"]);
+        assert_eq!(host.output.status.code(), Some(expected_exit));
         assert_eq!(fs::read(execution.join("index.json")).unwrap(), before);
-        let (ok, result) = invoke(
-            "command-run",
-            Some(&request),
-            preview["approved_sha256"].as_str(),
-        );
-        assert_eq!(ok, expected_exit == 0, "{result}");
         assert!(
             fs::read(root.join("tool-output/after"))
                 .unwrap()
                 .starts_with(b"candidate")
         );
         assert_eq!(fs::read(root.join("original")).unwrap(), b"before");
-        let receipt = root.join(preview["receipt_dir"].as_str().unwrap());
-        let started_raw = fs::read(receipt.join("started.json")).unwrap();
-        let finished: Value =
-            serde_json::from_slice(&fs::read(receipt.join("finished.json")).unwrap()).unwrap();
-        assert_eq!(finished["status"], "exited");
-        assert_eq!(finished["exit_code"], expected_exit);
-        assert!(finished["timing"]["started_at"].is_string());
-        assert!(finished["timing"]["finished_at"].is_string());
-        assert!(finished["timing"]["elapsed_ms"].is_u64());
-        let (ok, repeated) = invoke(
-            "command-run",
-            Some(&request),
-            preview["approved_sha256"].as_str(),
-        );
-        assert!(!ok, "{repeated}");
-        assert_eq!(fs::read(receipt.join("started.json")).unwrap(), started_raw);
+        let receipt = host.directory;
+        let captured: Value =
+            serde_json::from_slice(&fs::read(receipt.join("result.json")).unwrap()).unwrap();
         for stream in ["stdout", "stderr"] {
-            let artifact = &finished["captures"][stream];
+            let artifact = &captured[stream];
             let bytes = fs::read(receipt.join(artifact["file"].as_str().unwrap())).unwrap();
             assert_eq!(artifact["complete"], true);
             assert_eq!(artifact["size_bytes"], json!(bytes.len()));
@@ -410,16 +432,17 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
         let (ok, forged) = invoke("record-finish", Some(&false_result), None);
         assert!(!ok, "{forged}");
         assert_eq!(fs::read(&attempt_path).unwrap(), before_finish);
-        let mut finish = json!({"schema":"work-record-finish-request","record":{"exit_code":finished["exit_code"],"result":"Reviewed actual execution"}});
-        if finished["exit_code"] != 0 {
+        let mut finish =
+            json!({"schema":"work-record-finish-request","record":{"host_report":host.report}});
+        if expected_exit != 0 {
             finish["authorization_evidence"] = json!("Reviewed the actual frozen command failure");
         }
         let (ok, recorded) = invoke("record-finish", Some(&finish), None);
         assert!(ok, "{recorded}");
         let attempt: Value = serde_json::from_slice(&fs::read(&attempt_path).unwrap()).unwrap();
         assert_eq!(
-            attempt["records"][0]["execution_evidence"]["finished_sha256"],
-            raw_sha256(&fs::read(receipt.join("finished.json")).unwrap())
+            attempt["records"][0]["host_report"]["result_sha256"],
+            raw_sha256(&fs::read(receipt.join("result.json")).unwrap())
         );
         let (ok, reserved) = invoke_for("record-begin", None, None, Some("VAL-001"));
         assert!(ok, "{reserved}");
@@ -530,7 +553,7 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
                     );
                 } else {
                     assert_eq!(
-                        latest["records"][0]["verification_evidence"]["commands"]["CMD-001"]["execution"]
+                        latest["records"][0]["verification_evidence"]["commands"]["CMD-001"]["host_report"]
                             ["attempt_id"],
                         "ATTEMPT-001"
                     );
@@ -667,14 +690,140 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
             );
             assert!(ok, "{closed}");
         }
-        let (ok, repeated) = invoke(
-            "command-run",
-            Some(&request),
-            preview["approved_sha256"].as_str(),
-        );
+        let (ok, repeated) = invoke("record-finish", Some(&finish), None);
         assert!(!ok, "{repeated}");
         assert_eq!(fs::read(root.join("original")).unwrap(), b"before");
     }
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn host_reported_command_revalidates_evidence_before_validation() {
+    let root = std::env::temp_dir().join(format!(
+        "work-host-report-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    let root = root.canonicalize().unwrap();
+    let skills = installed_executable().parent().unwrap().parent().unwrap();
+    let files = std::collections::BTreeMap::from([("source.txt".into(), b"input".to_vec())]);
+    #[cfg(target_os = "macos")]
+    let argv = vec!["/usr/bin/printf".into(), "host output".into()];
+    #[cfg(windows)]
+    let argv = vec![
+        std::env::var("COMSPEC").unwrap(),
+        "/d".into(),
+        "/c".into(),
+        "echo host output".into(),
+    ];
+    work_infrastructure::fixture_support::input_verification_fixture(&root, skills, &files, &argv)
+        .unwrap();
+    let invoke = |command: &str, input: Option<&Value>, record: Option<&str>| -> (bool, Value) {
+        let mut args = vec![
+            "--project-root".into(),
+            root.to_string_lossy().into_owned(),
+            "--verbose".into(),
+            "execute".into(),
+            command.into(),
+            "--user-config-root".into(),
+            root.to_string_lossy().into_owned(),
+            "--task-path".into(),
+            "outputs/work/tasks/example/index.json".into(),
+            "--execution-dir".into(),
+            "outputs/work/executions/example".into(),
+            "--task-id".into(),
+            "TASK-001".into(),
+        ];
+        if let Some(input) = input {
+            let path = root.join("request.json");
+            fs::write(&path, serde_json::to_vec(input).unwrap()).unwrap();
+            args.extend(["--input-file".into(), path.to_string_lossy().into_owned()]);
+        }
+        if let Some(record) = record {
+            args.extend(["--record-id".into(), record.into()]);
+        }
+        let output = run(&args);
+        (
+            output.status.success(),
+            serde_json::from_slice(&output.stdout).unwrap(),
+        )
+    };
+    let (ok, reserved) = invoke("record-begin", None, Some("CMD-001"));
+    assert!(ok, "{reserved}");
+    let (ok, bound) = invoke("command-binding", None, None);
+    assert!(ok, "{bound}");
+    let binding = &bound["data"];
+    let evidence_dir = root.join("host-evidence");
+    fs::create_dir(&evidence_dir).unwrap();
+    let stdout = b"host output";
+    fs::write(evidence_dir.join("stdout.bin"), stdout).unwrap();
+    fs::write(evidence_dir.join("stderr.bin"), b"").unwrap();
+    let captures = json!({
+        "stdout":{"file":"stdout.bin","size_bytes":stdout.len(),"sha256":work_infrastructure::fixture_support::raw_sha256(stdout),"complete":true},
+        "stderr":{"file":"stderr.bin","size_bytes":0,"sha256":work_infrastructure::fixture_support::raw_sha256(b""),"complete":true},
+        "reports":{}
+    });
+    let capture_raw = serde_json::to_vec(&captures).unwrap();
+    fs::write(evidence_dir.join("result.json"), &capture_raw).unwrap();
+    let report = json!({
+        "schema":"work-host-execution-report","task_id":binding["task_id"],
+        "attempt_id":binding["attempt_id"],"record_id":binding["record_id"],
+        "task_collection_sha256":binding["task_collection_sha256"],
+        "authorization_sha256":binding["authorization_sha256"],
+        "file_version":binding["file_version"],"command_sha256":binding["command_sha256"],
+        "result_origin":"host_reported","result_reference":"host-evidence/result.json",
+        "result_sha256":work_infrastructure::fixture_support::raw_sha256(&capture_raw),
+        "status":"exited","exit_code":0,"output_complete":true
+    });
+    let attempt_path =
+        root.join("outputs/work/executions/example/TASK-001/ATTEMPT-001/attempt.json");
+    let index_path = root.join("outputs/work/executions/example/index.json");
+    let attempt_before = fs::read(&attempt_path).unwrap();
+    let index_before = fs::read(&index_path).unwrap();
+    for (field, changed, reason) in [
+        (
+            "command_sha256",
+            json!("e".repeat(64)),
+            "host_result_binding_mismatch",
+        ),
+        ("status", json!("partial"), "host_result_unknown"),
+        (
+            "result_sha256",
+            json!("f".repeat(64)),
+            "host_result_evidence_drift",
+        ),
+    ] {
+        let mut invalid = report.clone();
+        invalid[field] = changed;
+        if field == "status" {
+            invalid["exit_code"] = Value::Null;
+        }
+        let request =
+            json!({"schema":"work-record-finish-request","record":{"host_report":invalid}});
+        let (ok, rejected) = invoke("record-finish", Some(&request), None);
+        assert!(!ok, "{rejected}");
+        assert_eq!(rejected["reason_code"], reason, "{rejected}");
+        assert_eq!(fs::read(&attempt_path).unwrap(), attempt_before);
+        assert_eq!(fs::read(&index_path).unwrap(), index_before);
+    }
+    let finish = json!({"schema":"work-record-finish-request","record":{"host_report":report}});
+    let (ok, recorded) = invoke("record-finish", Some(&finish), None);
+    assert!(ok, "{recorded}");
+    let (ok, reserved) = invoke("record-begin", None, Some("VAL-001"));
+    assert!(ok, "{reserved}");
+    let validate = json!({"schema":"work-record-finish-request","record":{"outcome":"passed","evidence":"Host output was verified"}});
+    let before = fs::read(&attempt_path).unwrap();
+    fs::write(evidence_dir.join("stdout.bin"), b"drift").unwrap();
+    let (ok, rejected) = invoke("record-finish", Some(&validate), None);
+    assert!(!ok, "{rejected}");
+    assert_eq!(fs::read(&attempt_path).unwrap(), before);
+    fs::write(evidence_dir.join("stdout.bin"), stdout).unwrap();
+    let (ok, verified) = invoke("record-finish", Some(&validate), None);
+    assert!(ok, "{verified}");
 }
 
 #[cfg(any(target_os = "macos", windows))]
@@ -693,57 +842,82 @@ fn native_generation_publication_and_new_validation_complete_without_weakening_i
     let skills = installed_executable().parent().unwrap().parent().unwrap();
     work_infrastructure::fixture_support::file_transaction_command_fixture(&root, skills).unwrap();
     let execution_dir = "outputs/work/executions/example";
-    let invoke =
-        |command: &str, input: Option<Value>, record: Option<&str>, approval: Option<&str>| {
-            let mut args = vec![
-                "--project-root".into(),
-                root.to_str().unwrap().into(),
-                "--verbose".into(),
-                "execute".into(),
-                command.into(),
-                "--task-path".into(),
-                "outputs/work/tasks/example/index.json".into(),
-                "--execution-dir".into(),
-                execution_dir.into(),
-                "--task-id".into(),
-                "TASK-001".into(),
-                "--user-config-root".into(),
-                root.to_str().unwrap().into(),
-            ];
-            if let Some(input) = input {
-                let path = root.join("outputs/work/transactions/example/file-test/request.json");
-                fs::write(&path, serde_json::to_vec(&input).unwrap()).unwrap();
-                args.extend(["--input-file".into(), path.to_str().unwrap().into()]);
-            }
-            if let Some(record) = record {
-                args.extend(["--record-id".into(), record.into()]);
-            }
-            if let Some(approval) = approval {
-                args.extend(["--approved-sha256".into(), approval.into()]);
-            }
-            let output = run(&args);
-            let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-            (output.status.success(), value)
-        };
+    let invoke = |command: &str,
+                  input: Option<Value>,
+                  record: Option<&str>,
+                  approval: Option<&str>| {
+        let mut args = vec![
+            "--project-root".into(),
+            root.to_str().unwrap().into(),
+            "--verbose".into(),
+            "execute".into(),
+            command.into(),
+            "--task-path".into(),
+            "outputs/work/tasks/example/index.json".into(),
+            "--execution-dir".into(),
+            execution_dir.into(),
+            "--task-id".into(),
+            "TASK-001".into(),
+            "--user-config-root".into(),
+            root.to_str().unwrap().into(),
+        ];
+        if matches!(command, "file-prepare" | "file-apply") {
+            let context = work_cli::runtime::prepare_execution_writer_context(
+                &root,
+                skills,
+                &[],
+                work_flow::execution::ExecutionProjectTarget {
+                    task_path: "outputs/work/tasks/example/index.json",
+                    execution_dir,
+                    task_id: "TASK-001",
+                },
+            )
+            .unwrap();
+            let repository = work_infrastructure::execution::file_transaction::storage::LocalFileTransactions::for_project(
+                    root.clone(), skills.to_path_buf()
+                );
+            let result = work_flow::execution::run_file_transaction(
+                &repository,
+                &context,
+                command,
+                input.as_ref().unwrap(),
+            );
+            return match result {
+                Ok(value) => (true, json!({"data":value,"status":"success"})),
+                Err(error) => (
+                    false,
+                    json!({"reason_code":error.reason_code,"status":"rejected"}),
+                ),
+            };
+        }
+        if let Some(input) = input {
+            let path = root.join("outputs/work/transactions/example/file-test/request.json");
+            fs::write(&path, serde_json::to_vec(&input).unwrap()).unwrap();
+            args.extend(["--input-file".into(), path.to_str().unwrap().into()]);
+        }
+        if let Some(record) = record {
+            args.extend(["--record-id".into(), record.into()]);
+        }
+        if let Some(approval) = approval {
+            args.extend(["--approved-sha256".into(), approval.into()]);
+        }
+        let output = run(&args);
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        (output.status.success(), value)
+    };
     let before = fs::read(root.join("c-existing.txt")).unwrap();
-    let command_request = json!({"schema":"work-command-run-request","timeout_seconds":10});
     let (ok, reserved) = invoke("record-begin", None, Some("CMD-001"), None);
     assert!(ok, "{reserved}");
-    let (ok, prepared) = invoke("command-prepare", Some(command_request.clone()), None, None);
-    assert!(ok, "{prepared}");
+    let (ok, bound) = invoke("command-binding", None, None, None);
+    assert!(ok, "{bound}");
+    let host = host_command_support::execute(&root, &bound["data"]);
     let staging = root.join("tool-output");
-    let (ok, executed) = invoke(
-        "command-run",
-        Some(command_request.clone()),
-        None,
-        prepared["data"]["approved_sha256"].as_str(),
-    );
-    assert!(ok, "{executed}");
+    assert!(host.output.status.success());
     assert_eq!(fs::read(root.join("c-existing.txt")).unwrap(), before);
     let (ok, finished) = invoke(
         "record-finish",
         Some(json!({"schema":"work-record-finish-request",
-        "record":{"exit_code":0,"result":"Actual staged generation"}})),
+        "record":{"host_report":host.report}})),
         None,
         None,
     );
@@ -798,28 +972,23 @@ fn native_generation_publication_and_new_validation_complete_without_weakening_i
     assert_ne!(published, before);
     let (ok, reserved) = invoke("record-begin", None, Some("CMD-002"), None);
     assert!(ok, "{reserved}");
-    let (ok, prepared) = invoke("command-prepare", Some(command_request.clone()), None, None);
-    assert!(ok, "{prepared}");
-    let (ok, executed) = invoke(
-        "command-run",
-        Some(command_request),
-        None,
-        prepared["data"]["approved_sha256"].as_str(),
-    );
-    assert!(ok, "{executed}");
+    let (ok, bound) = invoke("command-binding", None, None, None);
+    assert!(ok, "{bound}");
+    let host = host_command_support::execute(&root, &bound["data"]);
+    assert!(host.output.status.success());
     let (ok, finished) = invoke(
         "record-finish",
         Some(json!({"schema":"work-record-finish-request",
-        "record":{"exit_code":0,"result":"Actual published output verification"}})),
+        "record":{"host_report":host.report}})),
         None,
         None,
     );
     assert!(ok, "{finished}");
-    let receipt = root.join(prepared["data"]["receipt_dir"].as_str().unwrap());
+    let receipt = host.directory;
     let captured: Value =
-        serde_json::from_slice(&fs::read(receipt.join("finished.json")).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(receipt.join("result.json")).unwrap()).unwrap();
     for stream in ["stdout", "stderr"] {
-        let artifact = &captured["captures"][stream];
+        let artifact = &captured[stream];
         assert_eq!(
             artifact["complete"], true,
             "CMD-002 {stream} capture: {captured}"
@@ -858,11 +1027,8 @@ fn native_generation_publication_and_new_validation_complete_without_weakening_i
         None,
     );
     assert!(!ok, "{rejected}");
-    assert_eq!(rejected["reason_code"], "validation_execution_unverified");
-    assert_eq!(
-        rejected["data"],
-        json!({"evidence_stage":"capture_bytes","record_id":"CMD-002"})
-    );
+    assert_eq!(rejected["reason_code"], "command_capture_unverified");
+    assert_eq!(rejected["data"], json!({"stage":"capture_bytes"}));
     assert_eq!(fs::read(&attempt_path).unwrap(), attempt_before);
     assert_eq!(fs::read(&index_path).unwrap(), index_before);
     fs::write(&stdout_path, &stdout_before).unwrap();
@@ -1116,22 +1282,12 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
         ],
         true,
     );
-    let command_request = json!({"schema":"work-command-run-request","timeout_seconds":3});
-    let preview = invoke("command-prepare", Some(&command_request), &[], true);
-    invoke(
-        "command-run",
-        Some(&command_request),
-        &[
-            "--approved-sha256",
-            preview["data"]["approved_sha256"].as_str().unwrap(),
-        ],
-        true,
-    );
+    let bound = invoke("command-binding", None, &[], true);
+    let host = host_command_support::execute(&root, &bound["data"]);
+    assert!(host.output.status.success());
     invoke(
         "record-finish",
-        Some(
-            &json!({"schema":"work-record-finish-request","record":{"exit_code":0,"result":"Actual command result"}}),
-        ),
+        Some(&json!({"schema":"work-record-finish-request","record":{"host_report":host.report}})),
         &[],
         true,
     );
@@ -1229,7 +1385,7 @@ fn workspace_transport_retains_binary_inputs_and_exclusive_cli_steps() {
             "workspace".to_owned(),
             "create".to_owned(),
             "--workflow-id".to_owned(),
-            "invocation".to_owned(),
+            "task".to_owned(),
         ];
         if let Some(id) = requirement {
             args.extend(["--requirement-id".to_owned(), id.to_owned()]);
@@ -1247,7 +1403,7 @@ fn workspace_transport_retains_binary_inputs_and_exclusive_cli_steps() {
         pending["path"]
             .as_str()
             .unwrap()
-            .starts_with("outputs/work/transactions/pending/invocation/")
+            .starts_with("outputs/work/transactions/pending/task/")
     );
     let paths = &pending["paths"];
     for kind in ["inputs", "requests", "responses", "envelopes"] {
@@ -1279,16 +1435,18 @@ fn workspace_transport_retains_binary_inputs_and_exclusive_cli_steps() {
     save(&attachment, binary);
     let input = root
         .join(paths["requests"].as_str().unwrap())
-        .join("001-invocation-confirm.json");
-    let raw = serde_json::to_vec(&json!({"mode":"task","request":"原始需求", "confirmation":{"mode":"task","request":"原始需求","confirmed":true,"evidence":"Approved exact request."}})).unwrap();
+        .join("001-correction-render.json");
+    let registry = work_model::contract::data::registry_value();
+    let example = &registry["items"]["work-correction"]["description"]["example"];
+    let raw = serde_json::to_vec(example).unwrap();
     save(&input, &raw);
     for step in 1..=2 {
         let output = run(&[
             "--project-root".into(),
             root.to_string_lossy().into_owned(),
             "--verbose".into(),
-            "invocation".into(),
-            "confirm".into(),
+            "correction".into(),
+            "render".into(),
             "--input-file".into(),
             input.to_string_lossy().into_owned(),
         ]);
@@ -1298,27 +1456,21 @@ fn workspace_transport_retains_binary_inputs_and_exclusive_cli_steps() {
             String::from_utf8_lossy(&output.stdout)
         );
         let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(response["data"]["request"], "原始需求");
+        assert_eq!(&response["data"], example);
         save(
             &root
                 .join(paths["responses"].as_str().unwrap())
-                .join(format!("{step:03}-invocation-confirm.json")),
+                .join(format!("{step:03}-correction-render.json")),
             &output.stdout,
         );
     }
-    save(
-        &root
-            .join(paths["envelopes"].as_str().unwrap())
-            .join("003-task-coordinator.json"),
-        include_bytes!("../fixtures/process/task-coordinator-envelope.json"),
-    );
     let known = allocate(Some("example"));
     assert_ne!(known["path"], pending["path"]);
     assert!(
         known["path"]
             .as_str()
             .unwrap()
-            .starts_with("outputs/work/transactions/example/invocation/")
+            .starts_with("outputs/work/transactions/example/task/")
     );
     assert_eq!(fs::read(&attachment).unwrap(), binary);
     assert_eq!(fs::read(&input).unwrap(), raw);
@@ -1326,9 +1478,9 @@ fn workspace_transport_retains_binary_inputs_and_exclusive_cli_steps() {
 }
 
 #[test]
-fn invocation_confirmation_is_bound_read_only_and_cannot_forge_explicit_origin() {
+fn retired_invocation_commands_reject_without_reading_or_writing() {
     let root = std::env::temp_dir().join(format!(
-        "work-invocation-confirm-{}-{}",
+        "work-retired-invocation-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1336,119 +1488,20 @@ fn invocation_confirmation_is_bound_read_only_and_cannot_forge_explicit_origin()
             .as_nanos()
     ));
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("request.json");
-    let request = "  完整需求 e\u{0301}\r\n$HOME $(command) -- \"literal\"\n";
-    let value = json!({"mode":"task","request":request,"confirmation":{"mode":"task","request":request,"confirmed":true,"evidence":"User approved task mode and this exact request."}});
-    let invoke = || {
-        Command::new(executable())
-            .args([
-                "--project-root",
-                root.to_str().unwrap(),
-                "--verbose",
-                "invocation",
-                "confirm",
-                "--input-file",
-                input.to_str().unwrap(),
-            ])
-            .output()
-            .unwrap()
-    };
-    let raw = serde_json::to_vec(&value).unwrap();
-    fs::write(&input, &raw).unwrap();
-    let output = invoke();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(response["data"]["origin"], "implicit_confirmed");
-    assert_eq!(response["data"]["request"], request);
-    assert_eq!(response["data"]["confirmation"], value["confirmation"]);
-    assert_eq!(fs::read(&input).unwrap(), raw);
-    for request in [
-        "example",
-        "resume example",
-        "討論需求",
-        "$work execute -- opaque",
-    ] {
-        let value = json!({"mode":"task","request":request,"confirmation":{
-            "mode":"task","request":request,"confirmed":true,"evidence":"Approved exact input."}});
-        fs::write(&input, serde_json::to_vec(&value).unwrap()).unwrap();
-        let output = invoke();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(result["data"]["request"], request);
-        assert_eq!(result["data"]["origin"], "implicit_confirmed");
+    for command in ["parse", "confirm"] {
+        let output = run(&[
+            "--project-root".into(),
+            root.to_string_lossy().into_owned(),
+            "invocation".into(),
+            command.into(),
+            "--input-file".into(),
+            "missing.json".into(),
+        ]);
+        assert_eq!(output.status.code(), Some(4), "{command}");
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["reason_code"], "invocation_command_retired");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
     }
-    for case in [
-        "unconfirmed",
-        "changed_request",
-        "forged_origin",
-        "missing_confirmation",
-        "removed_mode",
-    ] {
-        let mut invalid = value.clone();
-        match case {
-            "unconfirmed" => invalid["confirmation"]["confirmed"] = json!(false),
-            "changed_request" => invalid["confirmation"]["request"] = json!("Changed"),
-            "forged_origin" => invalid["origin"] = json!("explicit"),
-            "missing_confirmation" => {
-                invalid.as_object_mut().unwrap().remove("confirmation");
-            }
-            "removed_mode" => invalid["mode"] = json!("plan"),
-            _ => unreachable!(),
-        }
-        let raw = serde_json::to_vec(&invalid).unwrap();
-        fs::write(&input, &raw).unwrap();
-        assert!(!invoke().status.success(), "{case}");
-        assert_eq!(fs::read(&input).unwrap(), raw);
-    }
-    let duplicate = include_bytes!("../fixtures/process/duplicate-mode.json.invalid");
-    fs::write(&input, duplicate).unwrap();
-    assert!(!invoke().status.success());
-    assert_eq!(fs::read(&input).unwrap(), duplicate);
-    let raw = b"$work task --  original request\n";
-    fs::write(&input, raw).unwrap();
-    let explicit = Command::new(executable())
-        .args([
-            "--project-root",
-            root.to_str().unwrap(),
-            "--verbose",
-            "invocation",
-            "parse",
-            "--input-file",
-            input.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(explicit.status.success());
-    let response: Value = serde_json::from_slice(&explicit.stdout).unwrap();
-    assert_eq!(response["data"]["origin"], "explicit");
-    assert_eq!(response["data"]["request"], "  original request\n");
-    assert_eq!(fs::read(&input).unwrap(), raw);
-    fs::write(&input, b"$work plan -- removed").unwrap();
-    let removed = Command::new(executable())
-        .args([
-            "--project-root",
-            root.to_str().unwrap(),
-            "invocation",
-            "parse",
-            "--input-file",
-            input.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(!removed.status.success());
-    assert_eq!(
-        serde_json::from_slice::<Value>(&removed.stdout).unwrap()["reason_code"],
-        "work_invocation_mode_invalid"
-    );
-    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
 }
 
 #[test]
@@ -1553,28 +1606,14 @@ fn artifact_render_data_round_trips_without_cli_envelope() {
     for (command, contract_id, ordered) in [
         ("attempt", "work-attempt", Some("attempt_id")),
         ("correction", "work-correction", Some("correction_id")),
-        ("handoff", "work-handoff", None),
     ] {
-        let fixture_root = PathBuf::from(project_root())
-            .join("rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/project");
-        let example: Value = if command == "handoff" {
-            serde_json::from_slice(
-                &fs::read(fixture_root.join("../expected/execute-to-task-result.json")).unwrap(),
-            )
-            .unwrap()
-        } else {
-            registry["items"][contract_id]["description"]["example"].clone()
-        };
+        let example: Value = registry["items"][contract_id]["description"]["example"].clone();
         let input = base.join(format!("{command}.json"));
         fs::write(&input, serde_json::to_vec(&example).unwrap()).unwrap();
         let args = |action: &str| {
             vec![
                 "--project-root".to_owned(),
-                if command == "handoff" {
-                    fixture_root.to_string_lossy().into_owned()
-                } else {
-                    project_root()
-                },
+                project_root(),
                 "--verbose".to_owned(),
                 command.to_owned(),
                 action.to_owned(),
@@ -1871,7 +1910,7 @@ fn every_public_leaf_has_frozen_help_at_process_boundary() {
         .expect("command manifest");
     let mut count = 0;
     check_help(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 86);
+    assert_eq!(count, 89);
 }
 
 #[test]
@@ -1893,7 +1932,12 @@ fn public_command_tree_matches_frozen_baseline() {
     let mut commands = Vec::new();
     collect(&manifest["root"], &mut Vec::new(), &mut commands);
     commands.sort();
-    assert_eq!(commands.len(), 86);
+    assert_eq!(commands.len(), 89);
+    assert!(
+        commands
+            .iter()
+            .any(|command| command == "execute command-binding")
+    );
     assert_eq!(
         commands
             .iter()
@@ -1975,6 +2019,9 @@ fn public_command_tree_matches_frozen_baseline() {
                 && command != "invocation confirm"
                 && command != "specification reconciliation-recover"
                 && command != "instructions recover"
+                && command != "execute command-binding"
+                && command != "execute file-binding"
+                && command != "execute file-record"
                 && ![
                     "execute file-prepare",
                     "execute file-apply",
@@ -2432,453 +2479,65 @@ fn removed_rules_command_returns_public_usage_error() {
 }
 
 #[test]
-fn handoff_invalid_json_fails_before_source_lookup() {
-    let root = project_root();
-    let base = std::env::temp_dir().join(format!(
-        "work-handoff-invalid-json-{}-{}",
+fn retired_handoff_commands_reject_before_input_read_and_preserve_formal_artifacts() {
+    let root = std::env::temp_dir().join(format!(
+        "work-retired-handoff-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
     ));
-    fs::create_dir(&base).unwrap();
-    let input = base.join("request.json");
-    fs::write(&input, "{").unwrap();
-    for command in ["validate", "build-task-to-execute"] {
-        let mut arguments = vec![
-            "--project-root".into(),
-            root.clone(),
-            "handoff".into(),
-            command.into(),
-            "--input-file".into(),
-            input.to_string_lossy().into_owned(),
+    fs::create_dir_all(root.join("outputs/work/tasks/example")).unwrap();
+    let task = root.join("outputs/work/tasks/example/index.json");
+    fs::write(&task, b"formal bytes").unwrap();
+    for command in [
+        "validate",
+        "render",
+        "build-discussion",
+        "verify-task-to-execute",
+        "build-task-to-execute",
+        "build-execute-to-task",
+        "verify-execute-to-task",
+    ] {
+        let mut args = vec![
+            "--project-root".to_owned(),
+            root.to_string_lossy().into_owned(),
+            "handoff".to_owned(),
+            command.to_owned(),
+            "--input-file".to_owned(),
+            "missing.json".to_owned(),
         ];
-        if command == "build-task-to-execute" {
-            arguments.extend([
-                "--task-path".into(),
-                "outputs/work/tasks/missing/index.json".into(),
-                "--task-id".into(),
-                "TASK-001".into(),
-                "--user-config-root".into(),
-                root.clone(),
+        if command.contains("task-to-execute") || command.contains("execute-to-task") {
+            args.extend([
+                "--user-config-root".to_owned(),
+                root.to_string_lossy().into_owned(),
+                "--task-path".to_owned(),
+                "outputs/work/tasks/example/index.json".to_owned(),
+                "--task-id".to_owned(),
+                "TASK-001".to_owned(),
             ]);
         }
-        let output = run(&arguments);
-        assert_eq!(output.status.code(), Some(3), "{command}");
-        assert!(output.stderr.is_empty(), "{command}");
-        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(response["schema"], "work-cli-result", "{command}");
-        assert_eq!(
-            response["reason_code"], "invalid_json_contract",
-            "{command}"
-        );
-    }
-}
-
-#[test]
-fn handoff_build_output_validates_across_installed_processes() {
-    fn copy_tree(source: &Path, target: &Path) {
-        fs::create_dir_all(target).unwrap();
-        for entry in fs::read_dir(source).unwrap() {
-            let entry = entry.unwrap();
-            let destination = target.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &destination);
-            } else {
-                fs::copy(entry.path(), destination).unwrap();
-            }
+        if command.contains("execute-to-task") {
+            args.push("--preflight".to_owned());
         }
-    }
-    let repo = PathBuf::from(project_root());
-    let base = std::env::temp_dir().join(format!(
-        "work-handoff-process-t25-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    let skill = base.join("work");
-    let installed = skill.join("scripts/work");
-    fs::create_dir_all(installed.parent().unwrap()).unwrap();
-    fs::copy(executable(), &installed).unwrap();
-    copy_tree(
-        &repo.join("skills/work/references"),
-        &skill.join("references"),
-    );
-    let fixture =
-        repo.join("rust/crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project");
-    let project = base.join("project");
-    let task_path = "outputs/work/tasks/example/index.json";
-    for relative in [task_path, "outputs/work/tasks/example/tasks/TASK-001.json"] {
-        let target = project.join(relative);
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy(fixture.join(relative), target).unwrap();
-    }
-    work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &project).unwrap();
-    work_infrastructure::fixture_support::rebind_current_fixture_collection(
-        &project, &skill, task_path,
-    )
-    .unwrap();
-    let original = fs::read(project.join(task_path)).unwrap();
-    let request = base.join("request.json");
-    fs::write(
-        &request,
-        include_str!("../fixtures/process/handoff-request.json"),
-    )
-    .unwrap();
-    let built = Command::new(&installed)
-        .args([
-            "--project-root",
-            project.to_str().unwrap(),
-            "--verbose",
-            "handoff",
-            "build-task-to-execute",
-            "--input-file",
-            request.to_str().unwrap(),
-            "--task-path",
-            task_path,
-            "--task-id",
-            "TASK-001",
-            "--user-config-root",
-            project.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(built.status.code(), Some(0));
-    assert!(built.stderr.is_empty());
-    let response: Value = serde_json::from_slice(&built.stdout).unwrap();
-    assert_eq!(response["schema"], "work-cli-result");
-    assert_eq!(response["data"]["schema"], "work-handoff");
-    let handoff = base.join("handoff.json");
-    fs::write(&handoff, serde_json::to_vec(&response["data"]).unwrap()).unwrap();
-    let validated = Command::new(&installed)
-        .args([
-            "--project-root",
-            project.to_str().unwrap(),
-            "handoff",
-            "validate",
-            "--input-file",
-            handoff.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(validated.status.code(), Some(0));
-    assert!(validated.stderr.is_empty());
-    let checked: Value = serde_json::from_slice(&validated.stdout).unwrap();
-    assert_eq!(checked["data"]["status"], "valid");
-    assert_eq!(fs::read(project.join(task_path)).unwrap(), original);
-    assert!(!project.join("outputs/work/plans").exists());
-    assert!(!project.join("outputs/work/executions").exists());
-
-    for relative in [
-        task_path,
-        "outputs/work/tasks/example/tasks/TASK-001.json",
-        "outputs/work/executions/example/index.json",
-    ] {
-        let destination = project.join(relative);
-        fs::create_dir_all(destination.parent().unwrap()).unwrap();
-        fs::copy(
-            repo.join(
-                "rust/crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project",
-            )
-            .join(relative),
-            &destination,
-        )
-        .unwrap();
-    }
-    work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &project).unwrap();
-    work_infrastructure::fixture_support::rebind_current_fixture_collection(
-        &project, &skill, task_path,
-    )
-    .unwrap();
-    let run_handoff = |root: &Path, command: &str, input: &Path, flags: &[&str]| -> Value {
-        let mut arguments = vec![
-            "--project-root",
-            root.to_str().unwrap(),
-            "--verbose",
-            "handoff",
-            command,
-            "--input-file",
-            input.to_str().unwrap(),
-            "--user-config-root",
-            root.to_str().unwrap(),
-        ];
-        arguments.extend_from_slice(flags);
-        let output = Command::new(&installed).args(arguments).output().unwrap();
+        let output = run(&args);
         assert_eq!(
             output.status.code(),
-            Some(0),
+            Some(4),
             "{command}: {}",
             String::from_utf8_lossy(&output.stdout)
         );
         assert!(output.stderr.is_empty(), "{command}");
         let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-        response["data"].clone()
-    };
-    let return_request = json!({"summary":"Review specification.",
-        "confirmed_approach":"Retain the interface.",
-        "requested_changes":["Clarify scope."],"preserve":["Current behavior."],
-        "affected_ids":["TASK-001"],"validation_requirements":["Review criteria."]});
-    let mut preflight_request = return_request.clone();
-    preflight_request["reason"] = json!("Specification defect.");
-    for (build, verify, semantic, build_flags, verify_flags) in [
-        (
-            "build-task-to-execute",
-            "verify-task-to-execute",
-            json!({"summary":"Start execution."}),
-            vec!["--task-path", task_path, "--task-id", "TASK-001"],
-            vec!["--task-path", task_path, "--task-id", "TASK-001"],
-        ),
-        (
-            "build-execute-to-task",
-            "verify-execute-to-task",
-            preflight_request.clone(),
-            vec![
-                "--task-path",
-                task_path,
-                "--task-id",
-                "TASK-001",
-                "--preflight",
-            ],
-            vec![
-                "--task-path",
-                task_path,
-                "--task-id",
-                "TASK-001",
-                "--preflight",
-            ],
-        ),
-    ] {
-        fs::write(&request, serde_json::to_vec(&semantic).unwrap()).unwrap();
-        let built = run_handoff(&project, build, &request, &build_flags);
-        assert_eq!(built["schema"], "work-handoff", "{build}");
-        assert_eq!(built["artifacts"]["task"], task_path, "{build}");
-        fs::write(&handoff, serde_json::to_vec(&built).unwrap()).unwrap();
-        let checked = run_handoff(&project, verify, &handoff, &verify_flags);
-        assert_eq!(checked["status"], "valid", "{verify}");
-        assert_eq!(checked["source"], built["source"], "{verify}");
-    }
-    assert_eq!(fs::read(project.join(task_path)).unwrap(), original);
-
-    let custom_project = base.join("custom-project");
-    let custom_task_path = "custom/tasks/example/index.json";
-    let custom_artifacts = json!({"source":"custom/sources/example","task":custom_task_path,"execution":"custom/executions/example"});
-    let mut custom_index: Value =
-        serde_json::from_slice(&fs::read(project.join(task_path)).unwrap()).unwrap();
-    custom_index["artifacts"] = json!({"source":"custom/sources/example","task":custom_task_path,"execution":"custom/executions/example"});
-    work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &custom_project).unwrap();
-    fs::create_dir_all(custom_project.join("custom/sources")).unwrap();
-    fs::rename(
-        custom_project.join("outputs/work/sources/example"),
-        custom_project.join("custom/sources/example"),
-    )
-    .unwrap();
-    let custom_index_raw =
-        work_infrastructure::fixture_support::render_task_index(&custom_index).unwrap();
-    let custom_index_file = custom_project.join(custom_task_path);
-    fs::create_dir_all(custom_index_file.parent().unwrap()).unwrap();
-    fs::write(&custom_index_file, &custom_index_raw).unwrap();
-    let item_file = custom_index_file
-        .parent()
-        .unwrap()
-        .join("tasks/TASK-001.json");
-    fs::create_dir_all(item_file.parent().unwrap()).unwrap();
-    fs::copy(
-        project.join("outputs/work/tasks/example/tasks/TASK-001.json"),
-        &item_file,
-    )
-    .unwrap();
-    {
-        let (build, verify, semantic, build_flags, verify_flags) = (
-            "build-task-to-execute",
-            "verify-task-to-execute",
-            json!({"summary":"Start execution."}),
-            vec!["--task-path", custom_task_path, "--task-id", "TASK-001"],
-            vec!["--task-path", custom_task_path, "--task-id", "TASK-001"],
-        );
-        fs::write(&request, serde_json::to_vec(&semantic).unwrap()).unwrap();
-        let built = run_handoff(&custom_project, build, &request, &build_flags);
-        assert_eq!(built["artifacts"], custom_artifacts, "{build}");
-        fs::write(&handoff, serde_json::to_vec(&built).unwrap()).unwrap();
-        let checked = run_handoff(&custom_project, verify, &handoff, &verify_flags);
-        assert_eq!(checked["status"], "valid", "{verify}");
-    }
-    assert_eq!(fs::read(&custom_index_file).unwrap(), custom_index_raw);
-
-    let closed_project = base.join("closed-project");
-    let closed_fixture = repo.join(
-        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/project",
-    );
-    for relative in [
-        task_path,
-        "outputs/work/tasks/example/tasks/TASK-001.json",
-        "outputs/work/tasks/example/tasks/TASK-002.json",
-        "outputs/work/executions/example/index.json",
-        "outputs/work/executions/example/TASK-001/ATTEMPT-004/attempt.json",
-    ] {
-        let target = closed_project.join(relative);
-        fs::create_dir_all(target.parent().unwrap()).unwrap();
-        fs::copy(closed_fixture.join(relative), target).unwrap();
-        work_infrastructure::fixture_support::copy_fixture_sources(
-            &closed_fixture,
-            &closed_project,
-        )
-        .unwrap();
-    }
-    work_infrastructure::fixture_support::rebind_current_fixture_collection(
-        &closed_project,
-        &skill,
-        task_path,
-    )
-    .unwrap();
-    let execution: Value = serde_json::from_slice(
-        &fs::read(closed_project.join("outputs/work/executions/example/index.json")).unwrap(),
-    )
-    .unwrap();
-    let attempt_path =
-        closed_project.join("outputs/work/executions/example/TASK-001/ATTEMPT-004/attempt.json");
-    let mut attempt: Value = serde_json::from_slice(&fs::read(&attempt_path).unwrap()).unwrap();
-    for field in [
-        "task_collection_sha256",
-        "task_index_sha256",
-        "task_instructions_sha256",
-        "hierarchy_selection_sha256",
-    ] {
-        attempt[field] = execution[field].clone();
-    }
-    attempt["task_item_sha256"] = execution["tasks"][0]["task_item_sha256"].clone();
-    fs::write(
-        &attempt_path,
-        work_infrastructure::fixture_support::render_attempt(&attempt).unwrap(),
-    )
-    .unwrap();
-    let closed_request = json!({"summary":"調整已確認範圍", "reason":"Clarify specification",
-        "confirmed_approach":"保留既有介面", "requested_changes":["新增驗收條件"],
-        "preserve":["既有功能"], "affected_ids":["ACCEPTANCE-001","TASK-001"],
-        "validation_requirements":["重新確認驗收條件"]});
-    fs::write(&request, serde_json::to_vec(&closed_request).unwrap()).unwrap();
-    let drifted = Command::new(&installed)
-        .args([
-            "--project-root",
-            closed_project.to_str().unwrap(),
-            "handoff",
-            "build-execute-to-task",
-            "--input-file",
-            request.to_str().unwrap(),
-            "--task-path",
-            task_path,
-            "--task-id",
-            "TASK-001",
-            "--attempt-id",
-            "ATTEMPT-004",
-            "--user-config-root",
-            closed_project.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(drifted.status.code(), Some(5));
-    let drift_response: Value = serde_json::from_slice(&drifted.stdout).unwrap();
-    assert_eq!(
-        drift_response["reason_code"],
-        "handoff_execute_instructions_changed"
-    );
-    attempt["execute_instructions_sha256"] = drift_response["data"]["actual"].clone();
-    fs::write(
-        &attempt_path,
-        work_infrastructure::fixture_support::render_attempt(&attempt).unwrap(),
-    )
-    .unwrap();
-
-    {
-        let (build, verify) = ("build-execute-to-task", "verify-execute-to-task");
-        let built = run_handoff(
-            &closed_project,
-            build,
-            &request,
-            &[
-                "--task-path",
-                task_path,
-                "--task-id",
-                "TASK-001",
-                "--attempt-id",
-                "ATTEMPT-004",
-            ],
-        );
         assert_eq!(
-            built["source"]["execution_context"]["phase"], "execution",
-            "{build}"
+            response["reason_code"], "handoff_command_retired",
+            "{command}"
         );
-        fs::write(&handoff, serde_json::to_vec(&built).unwrap()).unwrap();
-        let checked = run_handoff(
-            &closed_project,
-            verify,
-            &handoff,
-            &[
-                "--task-path",
-                task_path,
-                "--task-id",
-                "TASK-001",
-                "--attempt-id",
-                "ATTEMPT-004",
-            ],
-        );
-        assert_eq!(checked["status"], "valid", "{verify}");
-        assert_eq!(checked["source"], built["source"], "{verify}");
+        assert_eq!(fs::read(&task).unwrap(), b"formal bytes", "{command}");
     }
-    for command in [
-        "build-plan-to-task",
-        "verify-plan-to-task",
-        "build-task-to-plan",
-        "verify-task-to-plan",
-        "build-execute-to-plan",
-        "verify-execute-to-plan",
-    ] {
-        let output = Command::new(&installed)
-            .args([
-                "--project-root",
-                project.to_str().unwrap(),
-                "handoff",
-                command,
-                "--input-file",
-                request.to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{command}");
-    }
-    for command in [
-        "build-task-to-execute",
-        "verify-task-to-execute",
-        "build-execute-to-task",
-        "verify-execute-to-task",
-    ] {
-        let mut invocation = Command::new(&installed);
-        invocation.args([
-            "--project-root",
-            project.to_str().unwrap(),
-            "handoff",
-            command,
-            "--input-file",
-            request.to_str().unwrap(),
-            "--user-config-root",
-            project.to_str().unwrap(),
-            "--task-path",
-            task_path,
-            "--task-id",
-            "TASK-001",
-            "--plan-path",
-            "legacy.json",
-        ]);
-        if command.ends_with("-to-task") {
-            invocation.arg("--preflight");
-        }
-        let output = invocation.output().unwrap();
-        assert_eq!(output.status.code(), Some(2), "{command}");
-    }
-    assert!(!project.join("outputs/work/plans").exists());
 }
+
 fn assert_retired_delegation_role(role: &str) {
     let root = std::env::temp_dir().join(format!(
         "work-retired-delegation-{role}-{}-{}",
@@ -3229,7 +2888,7 @@ fn every_public_command_help_returns_one_json_response() {
         serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
     let mut count = 0;
     check(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 106);
+    assert_eq!(count, 109);
 }
 
 #[test]
@@ -3245,13 +2904,15 @@ fn relative_unicode_request_path_uses_child_cwd_and_utf8_stdout() {
     let root = base.join("專案 workspace");
     fs::create_dir_all(&root).unwrap();
     let input = base.join("需求.txt");
-    fs::write(&input, "$work task -- 需求").unwrap();
+    let registry = work_model::contract::data::registry_value();
+    let example = &registry["items"]["work-correction"]["description"]["example"];
+    fs::write(&input, serde_json::to_vec(example).unwrap()).unwrap();
     let arguments = [
         "--project-root",
         root.to_str().unwrap(),
         "--verbose",
-        "invocation",
-        "parse",
+        "correction",
+        "render",
         "--input-file",
         "需求.txt",
     ];
@@ -3268,7 +2929,7 @@ fn relative_unicode_request_path_uses_child_cwd_and_utf8_stdout() {
     assert!(success.stderr.is_empty());
     let response: Value = serde_json::from_slice(&success.stdout).unwrap();
     assert_eq!(response["schema"], "work-cli-result");
-    assert_eq!(response["data"]["request"], " 需求");
+    assert_eq!(&response["data"], example);
     let missing = invoke("找不到 missing.json");
     assert_eq!(missing.status.code(), Some(8));
     assert!(missing.stderr.is_empty());
@@ -3490,13 +3151,9 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
         String::from_utf8_lossy(&missing.stdout)
     );
     let missing: Value = serde_json::from_slice(&missing.stdout).unwrap();
-    assert_eq!(missing["data"]["next_action"], "capture_source");
-    assert_eq!(missing["data"]["command"], "source capture");
-    assert_eq!(
-        missing["data"]["arguments"]["payload_file"],
-        "<original-source-bytes-file>"
-    );
-    assert!(missing["data"]["arguments"].get("requirement_id").is_none());
+    assert_eq!(missing["data"]["status"], "source_required");
+    assert!(missing["data"].get("next_action").is_none());
+    assert!(missing["data"].get("source_order").is_none());
     assert_eq!(fs::read_dir(&project).unwrap().count(), 0);
     for command in ["status", "next"] {
         assert_eq!(
@@ -3507,12 +3164,11 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
     work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &project).unwrap();
     let source_path = project.join("outputs/work/sources/example/SRC-001/source.txt");
     let source_raw = fs::read(&source_path).unwrap();
-    let available = run("next", &[]);
+    let available = run("status", &[]);
     assert!(available.status.success());
     let available: Value = serde_json::from_slice(&available.stdout).unwrap();
-    assert_eq!(available["data"]["next_action"], "initialize_discussion");
-    assert_eq!(available["data"]["command"], "discussion init");
-    assert!(available["data"]["arguments"].get("plan_path").is_none());
+    assert_eq!(available["data"]["status"], "task_discussion_required");
+    assert!(available["data"].get("command").is_none());
     let discussion_fixture = repo.join(
         "rust/crates/work/work-infrastructure/fixtures/cases/discussion/assembly/valid/input",
     );
@@ -3574,7 +3230,12 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
         resumed["data"]["details"]["source"]["snapshot"]["source_id"],
         "SRC-001"
     );
-    assert_eq!(resumed["data"]["next_action"], "preview_task");
+    assert!(
+        resumed["data"]["status"]
+            .as_str()
+            .unwrap()
+            .starts_with("task_")
+    );
     for relative in [
         "outputs/work/tasks/example/index.json",
         "outputs/work/tasks/example/tasks/TASK-001.json",
@@ -3586,15 +3247,15 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
     }
     rebind_current_diagnostics_fixture(&project);
     fs::write(project.join("src.txt"), b"original\n").unwrap();
-    let formal = run("next", &[]);
+    let formal = run("status", &[]);
     assert!(
         formal.status.success(),
         "{}",
         String::from_utf8_lossy(&formal.stdout)
     );
     let formal: Value = serde_json::from_slice(&formal.stdout).unwrap();
-    assert_eq!(formal["data"]["next_action"], "select_task_for_execution");
-    assert_eq!(formal["data"]["command"], "execute preflight");
+    assert_eq!(formal["data"]["status"], "execution_pending");
+    assert!(formal["data"].get("command").is_none());
     assert_eq!(fs::read(&source_path).unwrap(), source_raw);
     assert!(!project.join("outputs/work/plans").exists());
     fs::write(&source_path, b"drifted immutable source").unwrap();
@@ -4534,59 +4195,25 @@ fn reconciliation_public_commands_complete_both_approved_paths_and_recover() {
 }
 
 #[test]
-fn all_four_public_modes_preserve_both_origins_and_reach_current_commands() {
-    let root = std::env::temp_dir().join(format!(
-        "work-four-mode-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    let input = root.join("invocation-input");
-    for (mode, command, action) in [
-        ("task", "task", "preview"),
-        ("revise", "specification", "prepare"),
-        ("migration", "migration", "analyze"),
-        ("execute", "execute", "preflight"),
+fn all_four_public_modes_retain_formal_command_entrypoints() {
+    for (command, action) in [
+        ("task", "preview"),
+        ("specification", "prepare"),
+        ("migration", "analyze"),
+        ("execute", "preflight"),
     ] {
-        let request = " Confirmed full request e\u{0301}\n";
-        for origin in ["explicit", "implicit_confirmed"] {
-            let operation = if origin == "explicit" {
-                fs::write(&input, format!("$work {mode} --{request}")).unwrap();
-                "parse"
-            } else {
-                fs::write(&input, serde_json::to_vec(&json!({"mode":mode,"request":request,"confirmation":{"mode":mode,"request":request,"confirmed":true,"evidence":"User confirmed this complete request and mode."}})).unwrap()).unwrap();
-                "confirm"
-            };
-            let output = run(&[
-                "--project-root".into(),
-                root.to_string_lossy().into_owned(),
-                "--verbose".into(),
-                "invocation".into(),
-                operation.into(),
-                "--input-file".into(),
-                input.to_string_lossy().into_owned(),
-            ]);
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stdout)
-            );
-            let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(response["data"]["mode"], mode);
-            assert_eq!(response["data"]["origin"], origin);
-            assert_eq!(response["data"]["request"], request);
-        }
         let output = run(&[
             "--project-root".into(),
-            root.to_string_lossy().into_owned(),
+            project_root(),
             command.into(),
             action.into(),
             "--help".into(),
         ]);
-        assert!(output.status.success());
+        assert!(
+            output.status.success(),
+            "{command}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
         let response: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert!(
             response["data"]["help"]
@@ -4595,20 +4222,6 @@ fn all_four_public_modes_preserve_both_origins_and_reach_current_commands() {
                 .contains(&format!("work {command} {action}"))
         );
     }
-    fs::write(&input, "$work plan -- Removed mode").unwrap();
-    let output = run(&[
-        "--project-root".into(),
-        root.to_string_lossy().into_owned(),
-        "invocation".into(),
-        "parse".into(),
-        "--input-file".into(),
-        input.to_string_lossy().into_owned(),
-    ]);
-    assert_eq!(
-        serde_json::from_slice::<Value>(&output.stdout).unwrap()["reason_code"],
-        "work_invocation_mode_invalid"
-    );
-    assert!(!root.join("outputs").exists());
 }
 
 #[test]
@@ -5131,6 +4744,9 @@ mod discussion_process_cases {
             json!({"kind":"init","session":session}),
             0,
         );
+        let committed = current(&root);
+        assert!(committed.get("next_action").is_none());
+        assert!(committed["content_sha256"].as_str().is_some());
         // Confirm D001–D007 through public processes; none are seeded as confirmed.
         for number in 1..=7 {
             let view = current(&root);

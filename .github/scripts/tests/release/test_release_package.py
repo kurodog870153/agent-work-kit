@@ -23,8 +23,9 @@ class ReleasePackageTests(unittest.TestCase):
         self.assertIn(Path("skills/tooling/references/instruction-loading.md"), paths)
         self.assertNotIn(Path("skills/tooling/references/instructions/interfaces/repl/instructions.md"), paths)
         self.assertFalse(any(path.name == ".DS_Store" for path in paths))
+        self.assertNotIn(Path("skills/work/references/instruction-loading/handoff.md"), paths)
 
-        with patch("release_package.subprocess.run", return_value=SimpleNamespace(stdout=b"skills/work/SKILL.md\0")):
+        with patch("release_package.subprocess.run", side_effect=[SimpleNamespace(stdout=b"skills/work/SKILL.md\0"), SimpleNamespace(stdout=b"")]):
             with self.assertRaisesRegex(ValueError, "Tooling skill entry is missing"):
                 tracked_skill_files(repository)
 
@@ -81,10 +82,18 @@ class ReleasePackageTests(unittest.TestCase):
                 "os_version": "15.7",
                 "os_build": "24G207",
             }
+            skill_files = [
+                "skills/work/SKILL.md", "skills/work/references/instruction-loading.md",
+                "skills/tooling/SKILL.md", "skills/tooling/references/instruction-loading.md",
+            ]
+            for name in skill_files:
+                path = repository / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(name, encoding="utf-8")
             with patch("release_package.checked_version", return_value="1.2.3"), patch(
                 "release_package.checked_workspace_version", return_value=workspace_version
             ), patch(
-                "release_package.tracked_skill_files", return_value=[]
+                "release_package.tracked_skill_files", return_value=[Path(name) for name in skill_files]
             ), patch("release_package.subprocess.run") as run:
                 def compile_helper(command, check):
                     self.assertTrue(check)
@@ -96,6 +105,8 @@ class ReleasePackageTests(unittest.TestCase):
                 self.assertEqual(archive.read("bin/work-install-lock"), b"native lock helper")
                 self.assertEqual(archive.read("bin/work"), b"binary")
                 self.assertEqual(archive.read("bin/tooling"), b"tooling binary")
+                for name in skill_files:
+                    self.assertEqual(archive.read(name), name.encode())
                 self.assertEqual(archive.read("installer/cli/options.tsv"), b"os-scripts/common/installer/options.tsv")
                 self.assertEqual(archive.read("installer/state/install-state.json"),
                                  b"os-scripts/common/installer/install-state.json")

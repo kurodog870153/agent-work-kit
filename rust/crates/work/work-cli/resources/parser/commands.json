@@ -199,7 +199,7 @@
         "children": [
           {
             "name": "catalog",
-            "help": "usage: work instructions catalog [-h] --mode {task,execute,all}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --mode {task,execute,all}\n",
+            "help": "usage: work instructions catalog --mode {task,execute,all}\n\nRetired: Host discovery is required; Work validates explicit formal instruction selections.",
             "arguments": [
               {
                 "name": "mode",
@@ -421,7 +421,7 @@
         "children": [
           {
             "name": "catalog",
-            "help": "usage: work skills catalog [-h] --root ROOT\n                              [--disabled-source DISABLED_SOURCE]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --root ROOT\n  --disabled-source DISABLED_SOURCE\n",
+            "help": "usage: work skills catalog --root ROOT\n\nRetired: Host discovery is required; Work validates explicit formal skill selections.",
             "arguments": [
               {
                 "name": "root",
@@ -2253,7 +2253,7 @@
           },
           {
             "name": "next",
-            "help": "usage: work workflow next [-h] --requirement-id REQUIREMENT_ID\n                             [--task-path TASK_PATH]\n                             --user-config-root USER_CONFIG_ROOT\n                             [--skill-root SKILL_ROOT]\n                             [--instruction-maintenance]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n  --task-path TASK_PATH\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --instruction-maintenance\n",
+            "help": "usage: work workflow next [legacy options]\n\nRetired: workflow next returns workflow_next_retired. Use workflow status for formal state; the Host chooses the next action.",
             "arguments": [
               {
                 "name": "requirement_id",
@@ -2363,10 +2363,170 @@
       },
       {
         "name": "execute",
-        "help": "usage: work execute [-h]\n                       {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore} ...\n\npositional arguments:\n  {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+        "help": "usage: work execute [-h]\n                       {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,command-binding,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore,file-binding,file-record} ...\n\npositional arguments:\n  {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,command-binding,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore,file-binding,file-record}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
         "arguments": [],
         "exclusive_groups": [],
         "children": [
+          {
+            "name": "file-binding",
+            "help": "usage: work execute file-binding [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+            "arguments": [
+              {
+                "name": "user_config_root",
+                "flags": [
+                  "--user-config-root"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_path",
+                "flags": [
+                  "--task-path"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "execution_dir",
+                "flags": [
+                  "--execution-dir"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_id",
+                "flags": [
+                  "--task-id"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "skill_root",
+                "flags": [
+                  "--skill-root"
+                ],
+                "required": false,
+                "nargs": null,
+                "append": true,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "input_file",
+                "flags": [
+                  "--input-file"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              }
+            ],
+            "exclusive_groups": [],
+            "children": []
+          },
+          {
+            "name": "file-record",
+            "help": "usage: work execute file-record [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+            "arguments": [
+              {
+                "name": "user_config_root",
+                "flags": [
+                  "--user-config-root"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_path",
+                "flags": [
+                  "--task-path"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "execution_dir",
+                "flags": [
+                  "--execution-dir"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_id",
+                "flags": [
+                  "--task-id"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "skill_root",
+                "flags": [
+                  "--skill-root"
+                ],
+                "required": false,
+                "nargs": null,
+                "append": true,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "input_file",
+                "flags": [
+                  "--input-file"
+                ],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              }
+            ],
+            "exclusive_groups": [],
+            "children": []
+          },
           {
             "name": "file-prepare",
             "help": "usage: work execute file-prepare [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
@@ -3696,6 +3856,64 @@
             "children": []
           },
           {
+            "name": "command-binding",
+            "help": "usage: work execute command-binding --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT]\n\nRead and validate the reserved formal CMD binding for Host execution.",
+            "arguments": [
+              {
+                "name": "user_config_root",
+                "flags": ["--user-config-root"],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_path",
+                "flags": ["--task-path"],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "execution_dir",
+                "flags": ["--execution-dir"],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "task_id",
+                "flags": ["--task-id"],
+                "required": true,
+                "nargs": null,
+                "append": false,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              },
+              {
+                "name": "skill_root",
+                "flags": ["--skill-root"],
+                "required": false,
+                "nargs": null,
+                "append": true,
+                "boolean": false,
+                "choices": null,
+                "help": null
+              }
+            ],
+            "exclusive_groups": [],
+            "children": []
+          },
+          {
             "name": "command-prepare",
             "help": "usage: work execute command-prepare [-h]\n                                       --user-config-root USER_CONFIG_ROOT\n                                       --task-path TASK_PATH\n                                       --execution-dir EXECUTION_DIR\n                                       --task-id TASK_ID\n                                       [--skill-root SKILL_ROOT]\n                                       --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
             "arguments": [
@@ -4055,13 +4273,13 @@
       },
       {
         "name": "invocation",
-        "help": "usage: work invocation [-h] {parse,confirm} ...\n\npositional arguments:\n  {parse,confirm}\n    parse     Parse an explicit Work invocation from a UTF-8 text file.\n    confirm   Validate user confirmation of an implicit Work invocation.\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+        "help": "usage: work invocation {parse,confirm} ...\n\nRetired: invocation parse/confirm return invocation_command_retired. The Host selects the Work mode.",
         "arguments": [],
         "exclusive_groups": [],
         "children": [
           {
             "name": "parse",
-            "help": "usage: work invocation parse [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+            "help": "usage: work invocation parse --input-file INPUT_FILE\n\nRetired: invocation parse returns invocation_command_retired.",
             "arguments": [
               {
                 "name": "input_file",
@@ -4081,7 +4299,7 @@
           },
           {
             "name": "confirm",
-            "help": "usage: work invocation confirm [-h] --input-file INPUT_FILE\n\nConfirm an implicit Work invocation using exact mode/request user evidence.\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+            "help": "usage: work invocation confirm --input-file INPUT_FILE\n\nRetired: invocation confirm returns invocation_command_retired.",
             "arguments": [
               {
                 "name": "input_file",

@@ -32,6 +32,7 @@ pub struct HostExecutionReport {
     pub command_sha256: String,
     pub result_origin: HostResultOrigin,
     pub result_reference: String,
+    pub result_sha256: String,
     pub status: HostResultStatus,
     pub exit_code: Option<i64>,
     pub output_complete: bool,
@@ -53,6 +54,7 @@ impl HostExecutionReport {
                 &self.task_collection_sha256,
                 &self.authorization_sha256,
                 &self.command_sha256,
+                &self.result_sha256,
             ]
             .iter()
             .all(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
@@ -81,6 +83,7 @@ mod tests {
             command_sha256: "c".repeat(64),
             result_origin: HostResultOrigin::HostReported,
             result_reference: "host-command-1".into(),
+            result_sha256: "d".repeat(64),
             status: HostResultStatus::Exited,
             exit_code: Some(0),
             output_complete: true,

@@ -73,7 +73,7 @@ def verify(version, repository, tag, commit, manifest_sha256, expected_dir, actu
             item = {"check": f"download_url_{channel}", "asset": name, "url": url,
                     "expected_sha256": expected}
             try:
-                request = urllib.request.Request(url, headers={"User-Agent": "codex-workflow-kit-release-check"})
+                request = urllib.request.Request(url, headers={"User-Agent": "agent-work-kit-release-check"})
                 with fetcher(request, timeout=30) as response:
                     actual = hashlib.sha256(response.read()).hexdigest()
                 item["actual_sha256"] = actual

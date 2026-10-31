@@ -6,13 +6,16 @@ use serde_json::Value;
 use serde_json::json;
 use work_feature::error::{ExitCode, WorkError};
 use work_feature::execution::{CommandPrepareRepository, ExecutionWriterContext};
+#[cfg(test)]
 use work_feature::ports::CommandOutcome;
 use work_model::execution::command::capture::CommandCapturedEvidence;
 use work_model::execution::command::capture::{
     CommandExecutionEvidence, ValidationCommandEvidence, ValidationExecutionEvidence,
 };
+use work_model::execution::host_report::{HostExecutionReport, HostResultStatus};
 use work_operations::execution::verification::VerifiedCommandResult;
 
+#[cfg(test)]
 pub(in crate::execution) fn freeze(
     root: &Path,
     directory: &str,
@@ -50,6 +53,113 @@ fn document(root: &Path, relative: &str) -> Result<(Value, Vec<u8>), WorkError> 
     let raw = super::super::evidence_file::read(&path, 16 * 1024 * 1024)?;
     let value = work_operations::canonical::parse_json_contract(&raw).map_err(|_| unverified())?;
     Ok((value, raw))
+}
+
+fn host_error(reason: &'static str, stage: &'static str) -> WorkError {
+    WorkError::new(
+        ExitCode::ArtifactIntegrity,
+        reason,
+        "The Host result evidence is missing, changed or incomplete.",
+        json!({"stage":stage}),
+    )
+}
+
+fn verified_host_capture(
+    context: &ExecutionWriterContext,
+    report: &HostExecutionReport,
+    policy: &work_model::execution::command::capture::CommandCapturePolicy,
+) -> Result<VerifiedCommandResult, WorkError> {
+    if !report.valid_shape() || report.status != HostResultStatus::Exited {
+        return Err(host_error("host_result_unknown", "report_shape"));
+    }
+    let relative = &report.result_reference;
+    let identity = work_operations::canonical::portable_path_identity(relative);
+    if identity == "outputs/work" || identity.starts_with("outputs/work/") {
+        return Err(host_error(
+            "host_result_evidence_scope",
+            "formal_artifact_path",
+        ));
+    }
+    let root = &context.writer().canonical_project_root;
+    let path = crate::files::resolve_runtime_path(root, relative)?;
+    let raw = super::super::evidence_file::read(&path, 16 * 1024 * 1024)?;
+    if work_operations::derivation::fingerprint::raw(&raw) != report.result_sha256 {
+        return Err(host_error("host_result_evidence_drift", "result_sha256"));
+    }
+    let captures: CommandCapturedEvidence = serde_json::from_slice(&raw)
+        .map_err(|_| host_error("host_result_evidence_invalid", "capture_document"))?;
+    let directory = Path::new(relative)
+        .parent()
+        .and_then(Path::to_str)
+        .filter(|parent| !parent.is_empty())
+        .ok_or_else(|| host_error("host_result_evidence_scope", "result_parent"))?;
+    let verified =
+        super::super::host_evidence::verify_captures(root, directory, &captures, policy)?;
+    let stdout = verified
+        .stdout
+        .ok_or_else(|| host_error("host_result_incomplete", "stdout"))?;
+    let stderr = verified
+        .stderr
+        .ok_or_else(|| host_error("host_result_incomplete", "stderr"))?;
+    Ok(VerifiedCommandResult {
+        exit_code: report
+            .exit_code
+            .ok_or_else(|| host_error("host_result_unknown", "exit_code"))?,
+        stdout,
+        stderr,
+        reports: verified.reports,
+    })
+}
+
+fn verified_host_record(
+    context: &ExecutionWriterContext,
+    attempt: &Value,
+    record: &Value,
+    require_current_files: bool,
+) -> Result<(HostExecutionReport, VerifiedCommandResult), WorkError> {
+    let report: HostExecutionReport = serde_json::from_value(record["host_report"].clone())
+        .map_err(|_| host_error("host_result_invalid", "stored_report"))?;
+    let binding = &record["host_binding"];
+    let exit = work_operations::execution::host_report::validate_frozen_binding(binding, &report)
+        .map_err(|issue| {
+        WorkError::new(
+            ExitCode::ArtifactIntegrity,
+            issue.reason_code,
+            issue.message,
+            issue.details,
+        )
+    })?;
+    if record["id"] != report.record_id
+        || attempt["task_id"] != report.task_id
+        || attempt["attempt_id"] != report.attempt_id
+        || attempt["task_collection_sha256"] != report.task_collection_sha256
+        || attempt["authorization_sha256"] != report.authorization_sha256
+        || record["exit_code"] != exit
+    {
+        return Err(host_error("host_result_binding_mismatch", "stored_record"));
+    }
+    let attempt_id = attempt["attempt_id"].as_str().ok_or_else(unverified)?;
+    super::super::file_transaction::storage::version_snapshot(
+        context,
+        attempt_id,
+        &report.file_version,
+    )?;
+    if require_current_files
+        && super::super::file_transaction::storage::current_version(context, attempt_id)?
+            != report.file_version
+    {
+        return Err(host_error("host_result_evidence_drift", "file_version"));
+    }
+    if require_current_files && binding["input_files"] != super::input_files(context)? {
+        return Err(host_error(
+            "host_result_evidence_drift",
+            "command_input_version",
+        ));
+    }
+    let policy = serde_json::from_value(binding["capture"].clone())
+        .map_err(|_| host_error("host_result_binding_invalid", "capture_policy"))?;
+    let result = verified_host_capture(context, &report, &policy)?;
+    Ok((report, result))
 }
 
 fn verified_command(
@@ -210,7 +320,7 @@ fn verified_command(
         return Err(unverified());
     }
     expected_settings["capture"] = saved_settings["capture"].clone();
-    expected_settings["host"] = super::runner::host_environment();
+    expected_settings["host"] = super::host_environment();
     expected_settings["file_version"] = json!(saved_version);
     if let Some(inputs) = saved_settings.get("input_files") {
         expected_settings["input_files"] = inputs.clone();
@@ -381,36 +491,57 @@ fn validation_result_with_current(
         if record["status"] == "skipped" || record["kind"] != "command" {
             return Err(unverified());
         }
-        let (proof, finished, result) = verified_command(
-            context,
-            task,
-            &owner,
-            id,
-            record.get("correction"),
-            require_current,
-        )
-        .map_err(|mut error| {
-            error.details["record_id"] = json!(id);
-            if error.details.get("evidence_stage").is_none() {
-                error.details["evidence_stage"] = json!("command_reverification");
+        let (proof, result) = if record.get("host_report").is_some() {
+            let (report, result) = verified_host_record(context, &owner, &record, require_current)?;
+            (
+                ValidationCommandEvidence {
+                    selected_from_attempt_id: selected_from.into(),
+                    execution: None,
+                    host_report: Some(report),
+                },
+                result,
+            )
+        } else {
+            let (legacy, finished, result) = verified_command(
+                context,
+                task,
+                &owner,
+                id,
+                record.get("correction"),
+                require_current,
+            )
+            .map_err(|mut error| {
+                error.details["record_id"] = json!(id);
+                if error.details.get("evidence_stage").is_none() {
+                    error.details["evidence_stage"] = json!("command_reverification");
+                }
+                error
+            })?;
+            if record["execution_evidence"]
+                != serde_json::to_value(&legacy).map_err(|_| unverified())?
+                || record["exit_code"] != legacy.exit_code
+            {
+                return Err(evidence_error("stored_command_proof", id));
             }
-            error
-        })?;
-        if record["execution_evidence"] != serde_json::to_value(&proof).map_err(|_| unverified())?
-            || record["exit_code"] != proof.exit_code
-        {
-            return Err(evidence_error("stored_command_proof", id));
-        }
-        let result = result.ok_or_else(|| {
-            let mut error = evidence_error("capture_incomplete", id);
-            for stream in ["stdout", "stderr"] {
-                error.details[stream] = json!({
-                    "complete":finished["captures"][stream]["complete"],
-                    "size_bytes":finished["captures"][stream]["size_bytes"]
-                });
-            }
-            error
-        })?;
+            let result = result.ok_or_else(|| {
+                let mut error = evidence_error("capture_incomplete", id);
+                for stream in ["stdout", "stderr"] {
+                    error.details[stream] = json!({
+                        "complete":finished["captures"][stream]["complete"],
+                        "size_bytes":finished["captures"][stream]["size_bytes"]
+                    });
+                }
+                error
+            })?;
+            (
+                ValidationCommandEvidence {
+                    selected_from_attempt_id: selected_from.into(),
+                    execution: Some(legacy),
+                    host_report: None,
+                },
+                result,
+            )
+        };
         let size = result.reports.values().flatten().try_fold(
             (result.stdout.len() as u64)
                 .checked_add(result.stderr.len() as u64)
@@ -419,13 +550,7 @@ fn validation_result_with_current(
         )?;
         remaining = remaining.checked_sub(size).ok_or_else(unverified)?;
         results.insert(command.into(), result);
-        commands.insert(
-            command.into(),
-            ValidationCommandEvidence {
-                selected_from_attempt_id: selected_from.into(),
-                execution: proof,
-            },
-        );
+        commands.insert(command.into(), proof);
     }
     let passed = work_operations::execution::verification::evaluate(
         &condition,
@@ -485,18 +610,25 @@ fn verify_review_references(
                 if record["kind"] != "command" || record["status"] == "skipped" {
                     return Err(unverified());
                 }
-                let (proof, _, _) = verified_command(
-                    context,
-                    task,
-                    &owner,
-                    record_id,
-                    record.get("correction"),
-                    true,
-                )?;
-                if proof.finished_sha256 != *finished_sha256
-                    || record["execution_evidence"] != json!(proof)
-                {
-                    return Err(unverified());
+                if record.get("host_report").is_some() {
+                    let (report, _) = verified_host_record(context, &owner, &record, true)?;
+                    if report.result_sha256 != *finished_sha256 {
+                        return Err(unverified());
+                    }
+                } else {
+                    let (proof, _, _) = verified_command(
+                        context,
+                        task,
+                        &owner,
+                        record_id,
+                        record.get("correction"),
+                        true,
+                    )?;
+                    if proof.finished_sha256 != *finished_sha256
+                        || record["execution_evidence"] != json!(proof)
+                    {
+                        return Err(unverified());
+                    }
                 }
             }
             Change {
@@ -537,6 +669,7 @@ pub(in crate::execution) fn finalize(
         .map_err(|_| unverified())?;
     let has_proof = request["record"].get("execution_evidence").is_some()
         || request["record"].get("verification_evidence").is_some()
+        || request["record"].get("host_binding").is_some()
         || request["record"].get("file_version").is_some()
         || ["source", "review_evidence", "confirmation_evidence"]
             .iter()
@@ -552,28 +685,86 @@ pub(in crate::execution) fn finalize(
         {
             return Err(unverified());
         }
-        let selected = work_operations::execution::command::run::select_reserved_argv_command(
-            task,
-            attempt,
-            index,
-            context.target().task_id,
-        )
-        .map_err(|_| unverified())?;
-        if selected.record_id != record_id {
-            return Err(unverified());
+        if let Some(raw) = request["record"].get("host_report") {
+            let report: HostExecutionReport = serde_json::from_value(raw.clone())
+                .map_err(|_| host_error("host_result_invalid", "report"))?;
+            let version = super::super::file_transaction::storage::current_version(
+                context,
+                attempt["attempt_id"].as_str().ok_or_else(unverified)?,
+            )?;
+            let input_files = super::input_files(context)?;
+            let expected = work_operations::execution::host_report::binding(
+                task,
+                attempt,
+                index,
+                &context.task_context().collection,
+                &version,
+                &input_files,
+            )
+            .map_err(|issue| {
+                WorkError::new(
+                    ExitCode::Contract,
+                    issue.reason_code,
+                    issue.message,
+                    issue.details,
+                )
+            })?;
+            let exit = work_operations::execution::host_report::validate_frozen_binding(
+                &expected, &report,
+            )
+            .map_err(|issue| {
+                WorkError::new(
+                    ExitCode::Contract,
+                    issue.reason_code,
+                    issue.message,
+                    issue.details,
+                )
+            })?;
+            if request["record"]
+                .get("exit_code")
+                .is_some_and(|value| *value != exit)
+            {
+                return Err(host_error("host_result_binding_mismatch", "exit_code"));
+            }
+            let effective =
+                work_operations::execution::authorization::effective_task(task, attempt)
+                    .map_err(|_| unverified())?;
+            let policy = work_operations::execution::command::capture::policy(
+                &effective,
+                record_id.split('#').next().ok_or_else(unverified)?,
+            )
+            .map_err(|_| unverified())?;
+            verified_host_capture(context, &report, &policy)?;
+            result["record"] = json!({
+                "exit_code":exit,
+                "result":format!("Host-reported command exited with code {exit}; see bound Host evidence."),
+                "host_report":report,
+                "host_binding":expected,
+            });
+        } else {
+            let selected = work_operations::execution::command::run::select_reserved_argv_command(
+                task,
+                attempt,
+                index,
+                context.target().task_id,
+            )
+            .map_err(|_| unverified())?;
+            if selected.record_id != record_id {
+                return Err(unverified());
+            }
+            let (proof, _, _) = verified_command(
+                context,
+                task,
+                attempt,
+                record_id,
+                index["lock"].get("command_correction"),
+                false,
+            )?;
+            if request["record"]["exit_code"] != proof.exit_code {
+                return Err(unverified());
+            }
+            result["record"] = json!({"exit_code":proof.exit_code,"result":format!("Actual command exited with code {}; inspect frozen execution receipts.", proof.exit_code),"execution_evidence":proof});
         }
-        let (proof, _, _) = verified_command(
-            context,
-            task,
-            attempt,
-            record_id,
-            index["lock"].get("command_correction"),
-            false,
-        )?;
-        if request["record"]["exit_code"] != proof.exit_code {
-            return Err(unverified());
-        }
-        result["record"] = json!({"exit_code":proof.exit_code,"result":format!("Actual command exited with code {}; inspect frozen execution receipts.", proof.exit_code),"execution_evidence":proof});
     } else if kind == "validation" && request["record"]["status"] != "skipped" {
         let validation = effective["validations"]
             .as_array()
@@ -797,16 +988,24 @@ pub(in crate::execution) fn finalize_carried(
             if let Some(latest) = latest {
                 let id = latest["record_id"].as_str().ok_or_else(unverified)?;
                 let (command_owner, command_record) = owned_record(context, attempt, id, 0)?;
-                let (execution, _, _) = verified_command(
-                    context,
-                    task,
-                    &command_owner,
-                    id,
-                    command_record.get("correction"),
-                    false,
-                )?;
-                if execution != selected.execution {
-                    return Err(unverified());
+                if command_record.get("host_report").is_some() {
+                    let (report, _) =
+                        verified_host_record(context, &command_owner, &command_record, false)?;
+                    if Some(report) != selected.host_report {
+                        return Err(unverified());
+                    }
+                } else {
+                    let (execution, _, _) = verified_command(
+                        context,
+                        task,
+                        &command_owner,
+                        id,
+                        command_record.get("correction"),
+                        false,
+                    )?;
+                    if Some(execution) != selected.execution {
+                        return Err(unverified());
+                    }
                 }
             }
         }
@@ -895,13 +1094,17 @@ pub(in crate::execution) fn verify_completed_attempt(
             if record["status"] == "skipped" {
                 continue;
             }
-            let (proof, _, _) =
-                verified_command(context, task, &owner, id, record.get("correction"), false)?;
-            if record["execution_evidence"]
-                != serde_json::to_value(&proof).map_err(|_| unverified())?
-                || record["exit_code"] != proof.exit_code
-            {
-                return Err(unverified());
+            if record.get("host_report").is_some() {
+                verified_host_record(context, &owner, &record, false)?;
+            } else {
+                let (proof, _, _) =
+                    verified_command(context, task, &owner, id, record.get("correction"), false)?;
+                if record["execution_evidence"]
+                    != serde_json::to_value(&proof).map_err(|_| unverified())?
+                    || record["exit_code"] != proof.exit_code
+                {
+                    return Err(unverified());
+                }
             }
         } else if record["kind"] == "validation" {
             if record["status"] != "skipped"
