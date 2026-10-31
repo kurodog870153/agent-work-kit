@@ -33,10 +33,15 @@ mod native {
     use super::*;
     use std::collections::BTreeMap;
     use std::ffi::{CString, c_char, c_void};
-    use std::fs::{File, OpenOptions};
+    use std::fs::File;
+    #[cfg(test)]
+    use std::fs::OpenOptions;
     use std::os::fd::AsRawFd;
     use std::os::macos::fs::MetadataExt as MacMetadataExt;
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::os::unix::fs::MetadataExt;
+    #[cfg(test)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(test)]
     use std::path::Path;
 
     #[repr(C)]
@@ -56,6 +61,7 @@ mod native {
             position: u32,
             options: i32,
         ) -> isize;
+        #[cfg(test)]
         fn fsetxattr(
             fd: i32,
             name: *const c_char,
@@ -66,6 +72,7 @@ mod native {
         ) -> i32;
         fn acl_get_fd_np(fd: i32, kind: i32) -> *mut c_void;
         fn acl_free(acl: *mut c_void) -> i32;
+        #[cfg(test)]
         fn fchown(fd: i32, uid: u32, gid: u32) -> i32;
         fn mbr_uid_to_uuid(uid: u32, uuid: *mut u8) -> i32;
         fn mbr_gid_to_uuid(gid: u32, uuid: *mut u8) -> i32;
@@ -240,6 +247,7 @@ mod native {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn write(path: &Path, snapshot: &FileMetadata) -> Result<(), WorkError> {
         let (uid, gid) = ownership(snapshot)?;
         let expected = snapshot
@@ -310,7 +318,9 @@ mod native {
     }
 }
 #[cfg(target_os = "macos")]
-pub(in crate::execution) use native::{read, read_xattrs, write};
+pub(in crate::execution) use native::{read, read_xattrs};
+#[cfg(test)]
+use native::write;
 
 #[cfg(test)]
 mod tests {

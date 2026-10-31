@@ -164,6 +164,24 @@
 
 進度與驗證：2026-10-31 macOS ARM64、Codex 工作環境中 `cargo +1.99.1 fmt --all -- --check`、`check --workspace --locked`、`clippy --workspace --all-targets --locked -- -D warnings`、`test --workspace --locked` 與 `git diff --check` 通過；Workspace 內 `work-infrastructure` 285 項通過、1 項既有忽略；舊寫入器專屬測試已退出現行套件。`cargo build --release --locked -p work-cli -p tooling-cli` 通過；本次 Release `work --help` 與獨立 `tooling policy discover --skill-root skills/tooling --node .` 實際回報成功，後者列出 Capability／Family／Interface 三分支。Windows／PowerShell 與 Claude Code 執行檔未安裝；其實機 Skill、Shell、編輯及原生 Subagent 驗收未執行，不以 Codex 或靜態審查代填。
 
+## 後續驗收順序（2026-10-31 補充）
+
+以下按相依關係執行；每項須依實際證據勾選，Task 18／19 的總驗收仍以各項完成為準。
+
+1. C06 — [x] 移除正式 Library 的舊專案寫入鏈，保留唯讀 file-binding／file-record 與 Artifact Recovery；一般建置、Release 建置及測試均不得包含舊寫入入口。
+2. E02 — [x] 核對 Rust 公開 API、Contract Catalog、Scaffold、有效 Skill、現行測試與發行封裝；退役功能不得有可執行引用，歷史 Fixture 原文保留。
+3. F03／F08 — [ ] 先驗證同版 Shared／Work／Tooling Bootstrap 與三種啟用模式，再補 Policy 缺失／衝突、未知 Host 授權、部分成功及矛盾結果的整合正反案例。
+4. A07 — [ ] 以實際 Host 驗證 Work-only、Tooling-only、共同啟用及各 Runtime 的獨立性。
+5. B06／E05 — [ ] 依序實測主 Agent 的 Task→Execute→Revise、原生 Subagent 委派、跨對話續接、Policy Drift、失敗與 Recovery；每條路徑保存正反證據。
+6. E06／E07 — [ ] 分別在 Claude Code 與 Windows／PowerShell 實機完成 Skill、Shell、編輯、Subagent、兩套 CLI，以及安裝／升級／清理、Release Package／Checksum 驗收。
+7. E08 — [ ] 匯總 macOS／Windows、Codex／Claude Code、Release 與 CI 的實際結果；未執行的平台或未觸發的 CI 不標為通過。
+
+本地驗證命令：`cargo +1.99.1 fmt --all -- --check`、`cargo +1.99.1 check --workspace --locked`、`cargo +1.99.1 clippy --workspace --all-targets --locked -- -D warnings`、`cargo +1.99.1 test --workspace --locked`、`cargo +1.99.1 build --release --locked -p work-cli -p tooling-cli`，以及退役入口靜態搜尋和 `git diff --check`。Host／Windows／Claude／CI 僅以對應實機或實際執行紀錄驗收。
+
+C06／E02 驗證：`interrupt_file_transaction_fixture`、`fixture_publish`、`publish_scoped`／`publish_tracked`、`set_state` 與其專案 metadata 寫入呼叫已不在一般 Library 的可執行路徑；macOS／Windows metadata 寫入 helper 僅在 `cfg(test)` 編譯。靜態搜尋確認現行 Rust／Scaffold／Skill 無舊寫入呼叫；CLI parser 保留四個退役命令名稱以回傳固定拒絕，Routing Catalog 只在 `cfg(test)` 模組引用。歷史 Fixture 未修改。macOS ARM64 本地 Workspace check、Clippy、fmt、tests 與 Release Work／Tooling CLI 建置通過；現行 2 項檔案安全測試和正式 Artifact Recovery 測試通過。此處不宣稱 Host、Windows 或 CI 驗收完成。
+
+後續環境盤點：本機為 Darwin；`claude`、`pwsh` 與已安裝的 `work`／`tooling` 均不在 PATH（本地 Release CLI 已建置）。GitHub `refactor/issue-103-host-integration` 分支的 Actions 執行紀錄唯讀查詢為空。E06／E07／E08 對應實機或 CI 項目維持未完成；F03／F08、A07、B06、E05 的跨 Host 整合證據亦維持未完成。
+
 ## 執行約束與風險
 
 2026-10-31 補查與修正：B04 的 Workflow 狀態決策已移除 `next_action`，狀態查詢不再接受 Router，CLI 操作不再產生 Operation Envelope 或動態選取 Agent／Prompt。舊 `routing_catalog.json` 及 Operation Envelope／Result 原始契約以相同 SHA 移至歷史 Fixture；動態 RoutingRequest 只在測試編譯。正式資料重建只重讀已保存 Manifest 的來源、路徑、SHA 與 Artifact 身份，並拒絕篡改或越界來源。C02 已移除 Work Runtime Tool Policy Gate，正式 TASK／Attempt／Scope 驗證獨立位於 Execution 模組。C06 的預設 Runtime 與 Release 均不編譯舊 `run_file_transaction`、`apply/restore` 或專案原始碼 Rollback；舊寫入器專屬測試已退出現行套件，原檔以 SHA-256 `8b2e789590b8071f252d9e09b14c33bc24221f9aab7dd38b7832f34eec139990` 保存在 `work-cli/fixtures/historical/tests/`；現行 2 項測試保留 Host 檔案證據與公開舊命令拒絕驗證。`file-binding`、`file-record`、正式 Artifact Recovery 保留。E02 的 `operation_effects.json` 移至歷史 Fixture，已無呼叫者的 Rust 路由 API 退役，現行 Contract Catalog／Scaffold 與有效 Skill 引用已核對；`issue-101-baseline` 等歷史 Fixture 保留。驗證：預設 `cargo +1.99.1 test --workspace --locked`、Workspace `cargo check`／Clippy、Release Work＋Tooling CLI 建置、Release Python 45 項（1 項既有跳過）及 `git diff --check` 通過。重複測試曾因 Skill Bundle 測試暫存目錄名稱碰撞失敗，加入同程序唯一序號後重跑 Workspace 通過。

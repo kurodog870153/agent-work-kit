@@ -1461,54 +1461,6 @@ pub fn file_changes_fixture(
     ])
 }
 
-/// Preserve an actual interrupted native transaction in a caller-owned synthetic CLI fixture.
-pub fn interrupt_file_transaction_fixture(
-    context: &work_feature::execution::ExecutionWriterContext,
-    skill_root: &std::path::Path,
-    position: usize,
-) -> Result<String, String> {
-    use work_feature::ports::with_runtime_writer;
-    let root = &context.writer().canonical_project_root;
-    if !root
-        .file_name()
-        .and_then(|s| s.to_str())
-        .is_some_and(|s| s.starts_with("work-file-cli-"))
-        || !root.starts_with(
-            std::env::temp_dir()
-                .canonicalize()
-                .map_err(|e| e.to_string())?,
-        )
-    {
-        return Err("Fault fixture must be an isolated Work CLI temporary project".into());
-    }
-    let changes = file_changes_fixture(root)?;
-    let store = crate::execution::file_transaction::storage::LocalFileTransactions::for_project(
-        root.clone(),
-        skill_root.into(),
-    );
-    let preview = work_feature::execution::file_transaction::prepare(
-        &store,
-        context,
-        "ATTEMPT-001",
-        &changes,
-        None,
-    )
-    .map_err(|e| e.reason_code)?;
-    let result = with_runtime_writer(
-        &crate::writer_lock::LocalWriterLock,
-        context.writer(),
-        work_model::runtime::LockClass::Execution,
-        |_| store.fixture_publish(context, &preview, position),
-    );
-    match result {
-        Err(e) if e.reason_code == "fixture_interruption" => {
-            Ok(preview.manifest.transaction_identity)
-        }
-        Err(e) => Err(e.reason_code),
-        Ok(_) => Err("Fault fixture did not interrupt publication".into()),
-    }
-}
-
 #[cfg(test)]
 mod file_dependency_tests {
     use super::*;
