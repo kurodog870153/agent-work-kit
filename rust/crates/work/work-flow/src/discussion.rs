@@ -28,13 +28,6 @@ pub fn verify_context(
     work_feature::discussion::request::verify_context(repository, request, context)
 }
 
-pub fn resume(
-    repository: &impl DiscussionRepository,
-    requirement: &str,
-) -> Result<serde_json::Value, WorkError> {
-    work_feature::discussion::request::resume(repository, requirement)
-}
-
 pub fn command_definition(name: &str) -> Option<serde_json::Value> {
     work_feature::discussion::request::command_definition(name)
 }

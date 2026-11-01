@@ -22,25 +22,17 @@ impl Git for LocalGit {
                 json!({}),
             ));
         }
-        self.run(root, args, true)
-    }
-
-    fn mutate(&self, root: &Path, args: &[String]) -> Result<Vec<u8>, WorkError> {
-        self.run(root, args, false)
+        self.run(root, args)
     }
 }
 
 impl LocalGit {
-    fn run(&self, root: &Path, args: &[String], read_only: bool) -> Result<Vec<u8>, WorkError> {
+    fn run(&self, root: &Path, args: &[String]) -> Result<Vec<u8>, WorkError> {
         let argv: Vec<String> = std::iter::once("git".to_owned())
             .chain(args.iter().cloned())
             .collect();
         let result = run_argv(&argv, root, Duration::from_secs(30));
-        let prefix = if read_only {
-            "execute_worktree_git"
-        } else {
-            "execute_git"
-        };
+        let prefix = "execute_worktree_git";
         if result.status == CommandStatus::Exited && !result.stdout_complete {
             return Err(WorkError::new(
                 ExitCode::IoFailure,
@@ -65,21 +57,13 @@ impl LocalGit {
             CommandStatus::TimedOut => Err(WorkError::new(
                 ExitCode::IoFailure,
                 format!("{prefix}_timeout"),
-                if read_only {
-                    "The read-only Git command timed out."
-                } else {
-                    "The Git command timed out."
-                },
+                "The read-only Git command timed out.",
                 json!({}),
             )),
             CommandStatus::Exited if result.exit_code != Some(0) => Err(WorkError::new(
                 ExitCode::IoFailure,
                 format!("{prefix}_failed"),
-                if read_only {
-                    "The read-only Git command failed."
-                } else {
-                    "The Git command failed."
-                },
+                "The read-only Git command failed.",
                 json!({"exit_code": result.exit_code}),
             )),
             CommandStatus::Exited => Ok(result.stdout),
@@ -88,14 +72,32 @@ impl LocalGit {
 }
 
 fn is_read_only(args: &[String]) -> bool {
-    let mut index = 0;
-    while args.get(index).is_some_and(|argument| argument == "-c") {
-        index += 2;
-    }
-    matches!(
-        args.get(index).map(String::as_str),
-        Some("rev-parse" | "status" | "diff" | "ls-files")
-    )
+    let args: Vec<_> = args.iter().map(String::as_str).collect();
+    args == ["rev-parse", "--show-toplevel"]
+        || args
+            == [
+                "-c",
+                "core.quotepath=false",
+                "-c",
+                "status.relativePaths=false",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+                "--ignore-submodules=none",
+            ]
+}
+
+#[cfg(test)]
+pub(crate) fn initialize_fixture(root: &Path) {
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(root)
+            .status()
+            .expect("fixture Git is available")
+            .success()
+    );
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,7 +213,7 @@ mod tests {
     fn temporary_repo_success_rejection_and_failure() {
         let root = root();
         let git = LocalGit;
-        git.mutate(&root, &["init".into(), "-q".into()]).unwrap();
+        initialize_fixture(&root);
         fs::write(root.join("some 中文 file.txt"), b"contents\n").unwrap();
         let raw = git
             .read_only(
@@ -219,10 +221,13 @@ mod tests {
                 &[
                     "-c".into(),
                     "core.quotepath=false".into(),
+                    "-c".into(),
+                    "status.relativePaths=false".into(),
                     "status".into(),
                     "--porcelain=v1".into(),
                     "-z".into(),
                     "--untracked-files=all".into(),
+                    "--ignore-submodules=none".into(),
                 ],
             )
             .unwrap();
@@ -243,6 +248,13 @@ mod tests {
             )
             .unwrap_err()
             .reason_code,
+            "execute_worktree_git_invalid_command"
+        );
+        let outside = self::root();
+        assert_eq!(
+            git.read_only(&outside, &["rev-parse".into(), "--show-toplevel".into()])
+                .unwrap_err()
+                .reason_code,
             "execute_worktree_git_failed"
         );
     }

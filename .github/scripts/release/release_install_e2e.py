@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -91,16 +92,45 @@ def run_installer(script, home, options=(), answers=None, extra_env=None, stream
     started = time.monotonic()
     print(f"Installer E2E started: {script.name}, case={home.name}, "
           f"options={ascii(list(options))}", flush=True)
-    try:
-        result = subprocess.run(command, cwd=home, env=environment,
-                                capture_output=not stream_output, timeout=600, **kwargs)
-    except BaseException as error:
-        print(f"Installer E2E interrupted: {script.name}, case={home.name}, "
-              f"elapsed={time.monotonic() - started:.1f}s, reason={type(error).__name__}", flush=True)
-        raise
+    stopped = threading.Event()
+
+    def log_wait():
+        while not stopped.wait(30):
+            print(f"Installer E2E still running: {script.name}, case={home.name}, "
+                  f"elapsed={time.monotonic() - started:.1f}s", flush=True)
+
+    reporter = threading.Thread(target=log_wait, daemon=True)
+    with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+        reporter.start()
+        try:
+            result = subprocess.run(command, cwd=home, env=environment,
+                                    stdout=None if stream_output else stdout_file,
+                                    stderr=None if stream_output else stderr_file,
+                                    timeout=600, **kwargs)
+        except BaseException as error:
+            print(f"Installer E2E interrupted: {script.name}, case={home.name}, "
+                  f"elapsed={time.monotonic() - started:.1f}s, reason={type(error).__name__}", flush=True)
+            if not stream_output:
+                for label, output in (("stdout", stdout_file), ("stderr", stderr_file)):
+                    output.seek(0)
+                    tail = output.read()[-4096:]
+                    if tail:
+                        print(f"Installer E2E {label} tail: {tail.decode('utf-8', errors='replace')}",
+                              flush=True)
+            raise
+        finally:
+            stopped.set()
+            reporter.join()
+        if stream_output:
+            stdout = stderr = None
+        else:
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout = stdout_file.read()
+            stderr = stderr_file.read()
     print(f"Installer E2E finished: {script.name}, case={home.name}, "
           f"elapsed={time.monotonic() - started:.1f}s, exit={result.returncode}", flush=True)
-    return result.returncode, result.stdout, result.stderr
+    return result.returncode, stdout, stderr
 
 
 def assert_success(result):
@@ -368,16 +398,19 @@ def exercise_package(package, root, platform, source_install=False):
         case_home = root / f"invalid state {name}"
         case_home.mkdir()
         case_work = case_home / ".agents/skills/work"
-        shutil.copytree(work, case_work)
-        state_file = case_work / "install-state.json"
+        case_work.mkdir(parents=True)
+        marker = case_work / "SKILL.md"
+        marker.write_bytes(b"existing Work\n")
+        state_file = case_work.parent / "install-state.json"
+        shutil.copyfile(work.parent / "install-state.json", state_file)
         state_file.write_bytes(raw)
         assert_failed(run_installer(script, case_home, common))
-        if state_file.read_bytes() != raw:
+        if state_file.read_bytes() != raw or marker.read_bytes() != b"existing Work\n":
             raise AssertionError(f"{name} state changed on noninteractive rejection")
         assert_failed(run_installer(script, case_home,
             ["--no-global-agent", "--skills-install-dir", str(case_work.parent)],
             answers="YES\ny\n"))
-        if state_file.read_bytes() != raw:
+        if state_file.read_bytes() != raw or marker.read_bytes() != b"existing Work\n":
             raise AssertionError(f"{name} state changed on interactive rejection")
 
     unknown_home = root / "unknown contents"

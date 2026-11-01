@@ -2,9 +2,9 @@
 
 use crate::error::{ExitCode, WorkError};
 use crate::instruction::{
-    InstructionSourceRepository, load, migration_manifest, task_document_selection,
+    InstructionSourceRepository, LegacyManifestSources, load, refresh_legacy_manifest,
+    task_document_selection,
 };
-use crate::workflow::WorkflowRoutingRepository;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
@@ -22,9 +22,7 @@ pub trait ImpactSnapshotRepository {
     fn read(&self, relative: &str) -> Result<Vec<u8>, WorkError>;
 }
 
-pub trait ImpactRoutingRepository: WorkflowRoutingRepository {
-    fn recheck_sources(&self) -> Result<(), WorkError>;
-}
+pub trait ImpactManifestSourceRepository: LegacyManifestSources {}
 
 fn failure(reason: &str, message: &str) -> WorkError {
     WorkError::new(ExitCode::ArtifactIntegrity, reason, message, json!({}))
@@ -81,7 +79,7 @@ fn current_selection(
 pub fn inspect_source_impact(
     repository: &impl ImpactSnapshotRepository,
     source: &impl InstructionSourceRepository,
-    routing: &mut impl ImpactRoutingRepository,
+    routing: &mut impl ImpactManifestSourceRepository,
     requirement_id: &str,
 ) -> Result<(Value, BTreeSet<String>), WorkError> {
     let id = RequirementId::from_str(requirement_id)
@@ -126,8 +124,9 @@ pub fn inspect_source_impact(
         }
         let stored = &item["instruction_selection"];
         let (mut current, loaded) = current_selection(source, "task", stored, &mut snapshots)?;
-        current["routing_manifest"] =
-            migration_manifest(routing, "task", "task_confirmed", "choose_task", &item)?;
+        if let Some(manifest) = stored.get("routing_manifest") {
+            current["routing_manifest"] = refresh_legacy_manifest(routing, manifest, &item)?;
+        }
         if *stored != current {
             files.push(json!({"path":relative,"status":"stale","required_action":"revise"}));
             for row in current["sources"].as_array().expect("current sources") {
@@ -148,8 +147,9 @@ pub fn inspect_source_impact(
         sets.push(loaded);
     }
     let mut current = task_document_selection(&sets)?;
-    current["routing_manifest"] =
-        migration_manifest(routing, "task", "task_confirmed", "confirm_review", &index)?;
+    if let Some(manifest) = index["instruction_selection"].get("routing_manifest") {
+        current["routing_manifest"] = refresh_legacy_manifest(routing, manifest, &index)?;
+    }
     if index["instruction_selection"] != current {
         files.push(json!({"path":path,"status":"stale","required_action":"revise"}));
     }
@@ -161,15 +161,17 @@ pub fn inspect_source_impact(
         let (execution_raw, execution) = read(repository, &execution_path)?;
         validate_execution_index(&execution, &execution_raw)
             .map_err(|issue| failure(issue.reason_code, issue.message))?;
-        let manifest = migration_manifest(
-            routing,
-            "execute",
-            "execution_bound",
-            "select_task_for_execution",
-            &execution,
-        )?;
-        if execution["instruction_selection_manifest"] != manifest {
-            files.push(json!({"path":execution_path,"status":"stale","required_action":"revise"}));
+        if !execution["instruction_selection_manifest"].is_null() {
+            let manifest = refresh_legacy_manifest(
+                routing,
+                &execution["instruction_selection_manifest"],
+                &execution,
+            )?;
+            if execution["instruction_selection_manifest"] != manifest {
+                files.push(
+                    json!({"path":execution_path,"status":"stale","required_action":"revise"}),
+                );
+            }
         }
     }
     if repository.source_evidence(&index)? != proof {

@@ -12,7 +12,9 @@ use work_feature::instruction::{
 use work_feature::ports::ArtifactStore;
 use work_feature::skill::SkillRoot;
 use work_feature::specification::{SpecificationBaseline, preview_update};
-use work_feature::task::{load_collection_with_file_state, load_revision_baseline};
+use work_feature::task::{
+    load_collection_with_file_state, load_completed_revision_baseline, load_revision_baseline,
+};
 use work_operations::canonical::parse_json_contract;
 use work_operations::derivation::fingerprint;
 use work_operations::derivation::graph::{ArtifactNode, reconcile_artifact_bindings};
@@ -424,31 +426,6 @@ fn sources(
     let repository = LocalTaskStorage {
         project_root: root.to_path_buf(),
     };
-    let collection = load_revision_baseline(
-        &instructions,
-        &skills,
-        &paths,
-        &repository,
-        &roots,
-        task_path,
-    )
-    .map_err(with_migration_route)?;
-    let source_sha256 = collection["source_sha256"]
-        .as_str()
-        .ok_or_else(|| {
-            fail(
-                "invalid_task_source",
-                "The validated Source fingerprint is missing.",
-            )
-        })?
-        .to_owned();
-    let mut source_evidence = BTreeMap::new();
-    for path in work_feature::task::source::evidence_paths(&index)? {
-        source_evidence.insert(
-            path.clone(),
-            LocalFiles.read_raw(&storage_path(root, &path)?)?,
-        );
-    }
     let execution_raw = LocalFiles
         .read_raw(&storage_path(root, &execution_path)?)
         .map_err(with_migration_route)?;
@@ -472,6 +449,66 @@ fn sources(
         .map(|(path, raw)| (path.clone(), fingerprint::history(raw)))
         .collect();
     validate_specification_history(root, &execution_value, execution, &history_sha256)?;
+    let create_tasks = items.iter().filter(|(_, raw)| {
+        serde_json::from_slice::<Value>(raw).is_ok_and(|item| {
+            item["files"]
+                .as_array()
+                .is_some_and(|files| files.iter().any(|file| file["action"] == "create"))
+        })
+    });
+    let mut has_create = false;
+    let mut all_created = true;
+    for (task_id, _) in create_tasks {
+        has_create = true;
+        let completed = execution_value["tasks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|row| row["id"] == task_id.as_str())
+            .and_then(|row| row["latest_attempt"].as_str())
+            .and_then(|attempt_id| {
+                history.get(&format!("{execution}/{task_id}/{attempt_id}/attempt.json"))
+            })
+            .and_then(|raw| serde_json::from_slice::<Value>(raw).ok())
+            .is_some_and(|attempt| attempt["status"] == "completed");
+        all_created &= completed;
+    }
+    let collection = (if has_create && all_created {
+        load_completed_revision_baseline(
+            &instructions,
+            &skills,
+            &paths,
+            &repository,
+            &roots,
+            task_path,
+        )
+    } else {
+        load_revision_baseline(
+            &instructions,
+            &skills,
+            &paths,
+            &repository,
+            &roots,
+            task_path,
+        )
+    })
+    .map_err(with_migration_route)?;
+    let source_sha256 = collection["source_sha256"]
+        .as_str()
+        .ok_or_else(|| {
+            fail(
+                "invalid_task_source",
+                "The validated Source fingerprint is missing.",
+            )
+        })?
+        .to_owned();
+    let mut source_evidence = BTreeMap::new();
+    for path in work_feature::task::source::evidence_paths(&index)? {
+        source_evidence.insert(
+            path.clone(),
+            LocalFiles.read_raw(&storage_path(root, &path)?)?,
+        );
+    }
     Ok(OwnedBaseline {
         task_path: task_path.into(),
         execution_path,
@@ -1078,26 +1115,33 @@ fn prepare_simple_update_scoped(
     index["spec_id"] = json!(spec_id);
     index["readiness"]["spec_id"] = json!(spec_id);
     if semantic.get("source_update").is_some() {
-        let mut routing =
-            crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+        let mut routing = crate::legacy_manifest_sources::LegacyManifestSourceSession::new(
+            skill_root.to_path_buf(),
+        );
         for item in items.values_mut() {
-            item["instruction_selection"]["routing_manifest"] =
-                work_feature::instruction::migration_manifest(
+            if let Some(manifest) = item["instruction_selection"]
+                .get("routing_manifest")
+                .cloned()
+            {
+                item["instruction_selection"]["routing_manifest"] =
+                    work_feature::instruction::refresh_legacy_manifest(
+                        &mut routing,
+                        &manifest,
+                        item,
+                    )?;
+            }
+        }
+        if let Some(manifest) = index["instruction_selection"]
+            .get("routing_manifest")
+            .cloned()
+        {
+            index["instruction_selection"]["routing_manifest"] =
+                work_feature::instruction::refresh_legacy_manifest(
                     &mut routing,
-                    "task",
-                    "task_confirmed",
-                    "choose_task",
-                    item,
+                    &manifest,
+                    &index,
                 )?;
         }
-        index["instruction_selection"]["routing_manifest"] =
-            work_feature::instruction::migration_manifest(
-                &mut routing,
-                "task",
-                "task_confirmed",
-                "confirm_review",
-                &index,
-            )?;
         routing.recheck()?;
     }
     let mut updated_references = Vec::new();
@@ -1216,7 +1260,8 @@ fn prepare_simple_update_scoped(
     let paths = crate::artifact_paths::LocalArtifactPaths {
         project_root: root.to_path_buf(),
     };
-    let mut routing = crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+    let mut routing =
+        crate::legacy_manifest_sources::LegacyManifestSourceSession::new(skill_root.to_path_buf());
     let preview = preview_update(
         &instructions,
         &skills,
@@ -1522,8 +1567,9 @@ fn update_from_project_scoped(
         let paths = crate::artifact_paths::LocalArtifactPaths {
             project_root: root.to_path_buf(),
         };
-        let mut routing =
-            crate::routing_sources::RoutingSourceSession::new(skill_root.to_path_buf());
+        let mut routing = crate::legacy_manifest_sources::LegacyManifestSourceSession::new(
+            skill_root.to_path_buf(),
+        );
         let preview = preview_update(
             &instructions,
             &skills,
@@ -1776,7 +1822,10 @@ pub fn verify_from_project(
         &repository,
         &roots,
         &baseline.task_path,
-        true,
+        // Verification runs after publication and prior Execute may have
+        // created the declared target. sources() already checked the formal
+        // Execution index and retained history before this collection read.
+        false,
     )?;
     Ok(work_model::specification::verified::<
         work_model::specification::SpecVerification,

@@ -21,7 +21,8 @@ class WorkflowActionTests(unittest.TestCase):
     def test_approved_reusable_workflow(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workflow.yml"
-            path.write_text("jobs: { rust: { uses: ./.github/workflows/rust-validation.yml } }\n",
+            path.write_text("jobs: { rust: { uses: ./.github/workflows/rust-validation.yml }, "
+                            "package: { uses: ./.github/workflows/build-and-verify-packages.yml } }\n",
                             encoding="utf-8")
             self.assertEqual(check_workflow(path), [])
 

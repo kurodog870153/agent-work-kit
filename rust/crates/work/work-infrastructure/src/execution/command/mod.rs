@@ -1,11 +1,17 @@
 //! Host command execution and verification of retained command evidence.
 pub(super) mod evidence;
+#[cfg(test)]
 pub(super) mod runner;
 
 use serde_json::{Value, json};
 use work_feature::error::{ExitCode, WorkError};
 use work_feature::execution::ExecutionWriterContext;
 use work_operations::derivation::fingerprint;
+
+pub(in crate::execution) fn host_environment() -> Value {
+    json!({"mode":"inherited","os":std::env::consts::OS,
+        "architecture":std::env::consts::ARCH,"work_version":env!("CARGO_PKG_VERSION")})
+}
 
 /// Declared project inputs are distinct from immutable requirement Sources and
 /// from this Attempt's modification history. Directories are ranges, not trees.

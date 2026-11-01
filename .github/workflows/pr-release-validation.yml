@@ -1,0 +1,70 @@
+name: pr release validation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-preflight:
+    name: validate release preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch current main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+      - name: Test version guard
+        run: python3 -B -m unittest discover -s .github/scripts/tests/version-guard -p test_version_guard.py
+      - name: Validate pull request version
+        run: python3 -B .github/scripts/version-guard/version_guard.py
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+      - name: Check workflow YAML syntax
+        run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { YAML.parse_file(it) }'
+      - name: Check approved workflow actions
+        run: python3 -B .github/scripts/release/check_workflow_actions.py
+      - name: Test release scripts
+        run: python3 -B -m unittest discover -s .github/scripts/tests/release -p 'test_*.py'
+      - name: Check proposed release version is unused
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B .github/scripts/release/release_version_availability.py
+
+  rust-ci:
+    name: rust validation
+    needs: validate-release-preflight
+    uses: ./.github/workflows/rust-validation.yml
+    permissions:
+      contents: read
+      actions: read
+
+  package-ci:
+    name: build and verify packages
+    needs: validate-release-preflight
+    uses: ./.github/workflows/build-and-verify-packages.yml
+    permissions:
+      contents: read
+      actions: read
+
+  confirm-release-validation:
+    name: confirm release validation
+    if: always()
+    needs: [package-ci, rust-ci]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release check to pass
+        env:
+          RUST_VALIDATION: ${{ needs.rust-ci.result }}
+          PACKAGE_VALIDATION: ${{ needs.package-ci.result }}
+        run: |
+          for result in "$RUST_VALIDATION" "$PACKAGE_VALIDATION"; do
+            if [[ "$result" != success ]]; then
+              echo "A release check did not pass: $result"
+              exit 1
+            fi
+          done

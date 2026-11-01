@@ -174,7 +174,7 @@ fn discover(matches: &ArgMatches) -> Result<Value, CliError> {
     }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct SemanticReview {
     reviewed: bool,
@@ -187,7 +187,8 @@ struct PolicyLoadRequest {
     selected_paths: Vec<String>,
     applicable_references: Vec<String>,
     previous: Option<PolicySummary>,
-    semantic_review: SemanticReview,
+    #[serde(default)]
+    semantic_review: Option<SemanticReview>,
 }
 
 fn read_request<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T, CliError> {
@@ -244,22 +245,6 @@ fn load(matches: &ArgMatches) -> Result<Value, CliError> {
             json!({"error":format!("{error:?}")}),
         )
     })?;
-    if !request.semantic_review.reviewed {
-        return Err(CliError::new(
-            4,
-            "semantic_review_missing",
-            "The Host has not reviewed the selected policy.",
-            json!({}),
-        ));
-    }
-    if !request.semantic_review.compatible {
-        return Err(CliError::new(
-            4,
-            "policy_conflict",
-            "The Host found a mandatory policy conflict.",
-            json!({}),
-        ));
-    }
     let requested: HashSet<_> = request.applicable_references.iter().cloned().collect();
     if requested.len() != request.applicable_references.len() {
         return Err(CliError::new(
@@ -317,25 +302,64 @@ fn load(matches: &ArgMatches) -> Result<Value, CliError> {
         "raw_sha256":source.raw_sha256,
         "canonical_sha256":source.canonical_sha256,
         "content":String::from_utf8_lossy(&source.canonical_content),
-    })).collect::<Vec<_>>(), "summary":loaded.summary, "change": {
+    })).collect::<Vec<_>>(), "semantic_review": {
+        "origin":"host_reported",
+        "claim":request.semantic_review
+    }, "summary":loaded.summary, "change": {
         "added_or_invalidated":loaded.change.added_or_invalidated.iter().map(|source| source.relative_path.clone()).collect::<Vec<_>>(),
         "removed":loaded.change.removed,
     }}))
 }
 
 fn evaluate_operation(matches: &ArgMatches) -> Result<(Value, &'static str), CliError> {
-    let request: operation::EvaluateRequest = read_request(option(matches, "input-file"))?;
+    let raw: Value = read_request(option(matches, "input-file"))?;
+    if raw.as_object().is_some_and(|value| {
+        [
+            "policy_state",
+            "semantic_review",
+            "observed_tools",
+            "need",
+            "effects",
+            "authorization",
+            "outcome",
+            "reconciliation",
+            "alternative",
+        ]
+        .iter()
+        .any(|key| value.contains_key(*key))
+    }) {
+        return Err(CliError::new(
+            4,
+            "operation_contract_retired",
+            "Host tool selection, authorization, outcome and fallback claims are no longer evaluated by Tooling CLI.",
+            json!({}),
+        ));
+    }
+    let request: operation::EvaluateRequest = serde_json::from_value(raw).map_err(|_| {
+        CliError::new(
+            3,
+            "invalid_request_json",
+            "The operation target request is invalid.",
+            json!({}),
+        )
+    })?;
     let assessment = operation::evaluate(request).map_err(|reason| {
         CliError::new(
             4,
             reason,
-            "The operation evidence combination is invalid.",
+            "The operation target is unavailable or outside the project root.",
             json!({}),
         )
     })?;
     Ok((
-        json!({"decision":assessment.decision}),
-        assessment.reason_code,
+        json!({
+            "target_valid":true,
+            "canonical_target":assessment.canonical_target,
+            "authorization_verified":false,
+            "tool_fit_verified":false,
+            "outcome_verified":false
+        }),
+        "target_valid",
     ))
 }
 

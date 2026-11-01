@@ -1,18 +1,50 @@
 """Tests for the README download and metadata checks before installation."""
 
 import hashlib
+import io
 import json
 import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import verify_readme_download
+from release_install_e2e import run_installer, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
+    def test_installer_output_is_retained_for_assertions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            if sys.platform == "win32":
+                script = home / "installer.bat"
+                script.write_bytes(b"@echo off\r\necho Version: test\r\necho diagnostic 1>&2\r\n")
+            else:
+                script = home / "installer.sh"
+                script.write_bytes(b"printf 'Version: test\\n'\nprintf 'diagnostic\\n' >&2\n")
+            code, stdout, stderr = run_installer(script, home, answers="y\n")
+            self.assertEqual(code, 0)
+            self.assertIn(b"Version: test", stdout)
+            self.assertIn(b"diagnostic", stderr)
+
+    def test_interrupted_installer_logs_captured_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def interrupt(*_args, **kwargs):
+                kwargs["stdout"].write(b"Replace Global AGENTS.md? (y/n)\n")
+                kwargs["stderr"].write(b"installer diagnostic\n")
+                raise KeyboardInterrupt
+
+            log = io.StringIO()
+            with patch("release_install_e2e.subprocess.run", side_effect=interrupt):
+                with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
+                    run_installer(Path("installer"), Path(directory))
+            self.assertIn("reason=KeyboardInterrupt", log.getvalue())
+            self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
+            self.assertIn("installer diagnostic", log.getvalue())
+
     def test_outer_digest_and_runner_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

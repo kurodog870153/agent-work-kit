@@ -1,6 +1,6 @@
 # Execute Workflow
 
-1. Use this entry only when it appears in the CLI-produced canonical selection manifest.
-2. Load only the same-mode operation modules listed after this entry in `source_order`; do not scan this workflow directory or follow Markdown links to discover rules.
-3. Treat one `next_action` as one isolated operation context. End the context on state, lifecycle, selection, authorization, role, event, success, failure, blocked, or interrupted change.
-4. Return only structured results and evidence to the main flow. Do not carry full instruction text into the next operation.
+1. Use this entry when the Host has selected Execute from the user's request and verified current formal records.
+2. Load only applicable same-mode operation modules for the current work. Validate each instruction source and fingerprint before formal operations.
+3. Recheck state, selection and authorization after each operation or interruption. A status query does not choose the next Host action.
+4. Return structured results and evidence to the main flow. Do not carry full instruction text into an unrelated operation.

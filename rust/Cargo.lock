@@ -454,7 +454,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "skill-api"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -466,14 +466,14 @@ dependencies = [
 
 [[package]]
 name = "skill-feature"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "skill-infrastructure"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -484,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "skill-model"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -492,7 +492,7 @@ dependencies = [
 
 [[package]]
 name = "skill-operations"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde_json",
  "sha2",
@@ -536,7 +536,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tooling-cli"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "clap",
  "serde",
@@ -546,39 +546,34 @@ dependencies = [
 
 [[package]]
 name = "tooling-feature"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "skill-api",
- "tooling-infrastructure",
- "tooling-model",
- "tooling-operations",
 ]
 
 [[package]]
 name = "tooling-flow"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "skill-api",
  "tooling-feature",
  "tooling-infrastructure",
- "tooling-model",
- "tooling-operations",
 ]
 
 [[package]]
 name = "tooling-infrastructure"
-version = "2.0.0"
+version = "2.1.0"
 
 [[package]]
 name = "tooling-model"
-version = "2.0.0"
+version = "2.1.0"
 
 [[package]]
 name = "tooling-operations"
-version = "2.0.0"
+version = "2.1.0"
 
 [[package]]
 name = "typenum"
@@ -722,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "work-cli"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "clap",
  "serde",
@@ -734,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "work-feature"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -745,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "work-flow"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde_json",
  "work-feature",
@@ -754,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "work-infrastructure"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chrono",
  "fs4",
@@ -770,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "work-model"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -779,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "work-operations"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "base64",
  "caseless",

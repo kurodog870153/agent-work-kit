@@ -15,7 +15,6 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 prepare_work() {
     local prepared="$1" relative
     for relative in SKILL.md agents/openai.yaml references/instruction-loading.md \
-        references/instruction-loading/invocation.md \
         references/instructions/task/general/instructions.md \
         references/instructions/execute/general/instructions.md; do
         mkdir -p -- "$prepared/$(dirname -- "$relative")"

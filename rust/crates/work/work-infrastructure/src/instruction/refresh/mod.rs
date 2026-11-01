@@ -4,7 +4,7 @@ pub mod storage;
 
 use crate::hierarchy_catalog::LocalHierarchyCatalog;
 use crate::instruction::refresh::storage::discover_requirements;
-use crate::routing_sources::RoutingSourceSession;
+use crate::legacy_manifest_sources::LegacyManifestSourceSession;
 use crate::specification::storage::storage_path;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ use std::path::Path;
 use work_feature::artifact_paths::default_artifact_paths;
 use work_feature::error::{ExitCode, WorkError};
 use work_feature::instruction::refresh::build::{
-    ImpactRoutingRepository, ImpactSnapshotRepository,
+    ImpactManifestSourceRepository, ImpactSnapshotRepository,
 };
 use work_feature::instruction::refresh::{
     SourceImpactRepository, source_impact as build_source_impact,
@@ -68,11 +68,7 @@ impl ImpactSnapshotRepository for LocalImpactSnapshot<'_> {
             .map_err(|_| failure("file_read_failed", "A formal artifact could not be read."))
     }
 }
-impl ImpactRoutingRepository for RoutingSourceSession {
-    fn recheck_sources(&self) -> Result<(), WorkError> {
-        RoutingSourceSession::recheck(self)
-    }
-}
+impl ImpactManifestSourceRepository for LegacyManifestSourceSession {}
 fn failure(reason: &str, message: &str) -> WorkError {
     WorkError::new(ExitCode::ArtifactIntegrity, reason, message, json!({}))
 }
@@ -102,7 +98,7 @@ impl SourceImpactRepository for LocalSourceImpact<'_> {
         let source = LocalHierarchyCatalog {
             skill_root: self.skill_root.to_path_buf(),
         };
-        let mut routing = RoutingSourceSession::new(self.skill_root.to_path_buf());
+        let mut routing = LegacyManifestSourceSession::new(self.skill_root.to_path_buf());
         match work_feature::instruction::refresh::build::inspect_source_impact(
             &LocalImpactSnapshot {
                 project_root: self.project_root,

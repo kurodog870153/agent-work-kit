@@ -10,6 +10,18 @@ function Test-InstallerManagedRelative {
         $Relative -clike 'references/instructions/execute/*')
 }
 
+function Test-InstallerRetiredRelative {
+    param([string] $Relative)
+    return ($Relative -in @(
+        'references/instruction-loading/handoff.md', 'references/instruction-loading/internal-envelope.md',
+        'references/instruction-loading/invocation.md', 'references/instruction-loading/private-roles.md',
+        'references/subagents', 'references/subagents/artifact-editor.md', 'references/subagents/execute.md',
+        'references/subagents/task-coordinator.md', 'references/subagents/task-skill.md',
+        'references/workflows/execute/use-deterministic-handoffs.md',
+        'references/workflows/task/use-deterministic-handoffs.md'
+    ))
+}
+
 function Test-InstallerLegacyWorkIdentity {
     param([string] $Target)
     $binary = Join-Path $Target 'scripts/work.exe'
@@ -31,7 +43,6 @@ function Test-InstallerLegacyWorkIdentity {
             'SKILL.md' = '(?m)^name: work\r?$'
             'agents/openai.yaml' = '(?m)^  display_name: "Work"\r?$'
             'references/instruction-loading.md' = '(?m)^# Work Instruction Loading Bootstrap\r?$'
-            'references/instruction-loading/invocation.md' = '(?m)^# Invocation contract\r?$'
             'references/instructions/task/general/instructions.md' = '(?m)^# (任務規劃指令|Task planning)\r?$'
             'references/instructions/execute/general/instructions.md' = '(?m)^# (任務執行指令|Task execution)\r?$'
         }
@@ -73,6 +84,7 @@ function Inspect-InstallerTarget {
         if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return (& $unsafe "unsafe entry: $relative") }
         if (-not (Test-InstallerManagedRelative $relative)) { return (& $unsafe "unknown entry: $relative") }
         if ($relative -notin @('scripts', 'scripts/work.exe', 'install-state.json') -and
+            -not (Test-InstallerRetiredRelative $relative) -and
             -not (Test-Path -LiteralPath (Join-Path $SourceWork $relative))) {
             return (& $unsafe "unrecognized Work entry: $relative")
         }
@@ -80,7 +92,7 @@ function Inspect-InstallerTarget {
             foreach ($child in @(Get-ChildItem -LiteralPath $entry.FullName -Force)) { $stack.Push($child) }
         }
     }
-    foreach ($relative in @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md', 'references/instruction-loading/invocation.md', 'references/instructions/task/general/instructions.md', 'references/instructions/execute/general/instructions.md', 'scripts/work.exe')) {
+    foreach ($relative in @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md', 'references/instructions/task/general/instructions.md', 'references/instructions/execute/general/instructions.md', 'scripts/work.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $Target $relative) -PathType Leaf)) {
             return (& $unsafe "required Work file is missing: $relative")
         }

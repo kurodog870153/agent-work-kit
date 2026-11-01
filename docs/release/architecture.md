@@ -50,4 +50,4 @@ Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。
 | Tooling 交易 | `installer/transaction/tooling.sh` | `installer/transaction/tooling.ps1` |
 | 路徑遷移清理 | `installer/install/migration-cleanup.sh` | `installer/install/migration-cleanup.ps1` |
 
-表內路徑分別相對於 `os-scripts/mac/` 與 `os-scripts/windows/`。`.github/scripts/release/` 負責產生與驗證 Release 資產，不參與使用者電腦上的安裝交易。正式入口的引數與退出碼細節保留在 [Issue #95 CLI 契約](../issue-95/cli-contract.md)。
+表內路徑分別相對於 `os-scripts/mac/` 與 `os-scripts/windows/`。`.github/scripts/release/` 負責產生與驗證 Release 資產，不參與使用者電腦上的安裝交易。

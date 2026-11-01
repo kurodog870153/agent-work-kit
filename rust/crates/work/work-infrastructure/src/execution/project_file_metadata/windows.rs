@@ -50,7 +50,7 @@ fn canonical_descriptor(descriptor: &[u8]) -> Result<Vec<u8>, work_feature::erro
 }
 
 /// Translate readback flags into low-level setter commands on a private copy.
-#[cfg(any(windows, test))]
+#[cfg(test)]
 fn descriptor_for_set(descriptor: &[u8]) -> Result<Vec<u8>, work_feature::error::WorkError> {
     let mut setter = canonical_descriptor(descriptor)?;
     let control = u16::from_le_bytes([setter[2], setter[3]]);
@@ -63,7 +63,9 @@ fn descriptor_for_set(descriptor: &[u8]) -> Result<Vec<u8>, work_feature::error:
 
 #[cfg(windows)]
 mod native {
-    use super::{canonical_descriptor, descriptor_for_set};
+    use super::canonical_descriptor;
+    #[cfg(test)]
+    use super::descriptor_for_set;
     use std::ffi::c_void;
     use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
@@ -95,6 +97,7 @@ mod native {
             length: u32,
             needed: *mut u32,
         ) -> i32;
+        #[cfg(test)]
         fn SetFileSecurityW(name: *const u16, information: u32, descriptor: *const c_void) -> i32;
     }
     fn wide(path: &Path) -> Vec<u16> {
@@ -160,6 +163,7 @@ mod native {
             result
         }
     }
+    #[cfg(test)]
     pub fn write(path: &Path, descriptor: &[u8]) -> Result<(), WorkError> {
         let canonical = canonical_descriptor(descriptor)?;
         let descriptor = canonical.as_slice();
@@ -260,7 +264,9 @@ mod native {
     }
 }
 #[cfg(windows)]
-pub(in crate::execution) use native::{read, write};
+pub(in crate::execution) use native::read;
+#[cfg(all(test, windows))]
+use native::write;
 
 #[cfg(test)]
 mod tests {

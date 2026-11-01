@@ -1,7 +1,6 @@
 name: rust validation
 
 on:
-  pull_request:
   workflow_call:
 
 jobs:
@@ -102,6 +101,15 @@ jobs:
         run: |
           target/release/work --help
           target/release/tooling --help
+      - name: Verify three Host activation modes
+        run: python3 -B ../.github/scripts/tests/release/test_host_activation_modes.py --work target/release/work --tooling target/release/tooling --evidence .ci-perf/host-activation.json
+      - name: Upload Host activation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-activation-macos
+          path: rust/.ci-perf/host-activation.json
+          if-no-files-found: warn
 
   validate-and-build-rust-windows:
     name: validate and build rust (Windows)
@@ -230,3 +238,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & ".\target\release\tooling.exe" --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify three Host activation modes
+        run: |
+          python -B ../.github/scripts/tests/release/test_host_activation_modes.py --work target/release/work.exe --tooling target/release/tooling.exe --evidence .ci-perf/host-activation.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Host activation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: host-activation-windows
+          path: rust/.ci-perf/host-activation.json
+          if-no-files-found: warn

@@ -4,7 +4,7 @@
 
 ## 1. 下載
 
-從同一個 [GitHub Release](https://github.com/kurodog870153/codex-workflow-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
+從同一個 [GitHub Release](https://github.com/kurodog870153/agent-work-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
 
 1. Windows x64 使用 `work-v<版本>-windows-x64-msvc.zip`
 2. macOS ARM64 使用 `work-v<版本>-macos-arm64.zip`
@@ -19,7 +19,7 @@
 
 找不到項目、ZIP 或雜湊不符時，不要解壓或執行安裝器。
 
-如有 Artifact Attestation，也應核對資產的來源與 digest。
+正式 Release 發佈流程會為兩個 ZIP、兩個下載器及 `SHA256SUMS.txt` 建立 Artifact Attestation。下載後也應核對資產的來源與 digest。
 
 ### Windows x64：在 PowerShell 執行
 

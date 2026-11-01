@@ -7,7 +7,7 @@ function Copy-InstallerWorkPayload {
         New-Item -ItemType Directory -Path (Split-Path -Path $to -Parent) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $SourceWork $relative) -Destination $to -ErrorAction Stop
     }
-    foreach ($relative in @('references/instruction-loading', 'references/workflows', 'references/subagents')) {
+    foreach ($relative in @('references/instruction-loading', 'references/workflows')) {
         $to = Join-Path $Destination $relative
         New-Item -ItemType Directory -Path $to -Force | Out-Null
         Copy-Item -Path (Join-Path $SourceWork "$relative/*") -Destination $to -Recurse -Force -ErrorAction Stop
