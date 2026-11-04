@@ -10,10 +10,24 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package, checked_workspace_version, tracked_skill_files
+from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package, checked_version, checked_workspace_version, tracked_skill_files
 
 
 class ReleasePackageTests(unittest.TestCase):
+    def test_release_version_is_independent_of_workspace_version(self):
+        release_version = (Path(__file__).resolve().parents[4] / "VERSION").read_text(encoding="ascii").strip()
+        workspace_version = "0.0.0" if release_version != "0.0.0" else "0.0.1"
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            rust = repository / "rust"
+            rust.mkdir()
+            (repository / "VERSION").write_text(f"{release_version}\n", encoding="ascii")
+            (rust / "Cargo.toml").write_text(
+                f'[workspace.package]\nversion = "{workspace_version}"\n', encoding="utf-8"
+            )
+            with patch("release_package.validate_lock", return_value=workspace_version):
+                self.assertEqual(checked_version(repository), release_version)
+
     def test_both_skills_and_new_instruction_modules_are_packaged(self):
         repository = Path(__file__).resolve().parents[4]
         paths = tracked_skill_files(repository)
