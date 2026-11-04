@@ -4,7 +4,7 @@
 
 本文件規範 `skills/work/references/instructions/` 的節點分類、指令歸屬與路徑組合方式，供新增及調整指令時遵循。
 
-Work 的 Task／Execute Hierarchy 與正式 Instruction Selection 由 Work CLI 決定；通用 Skill Bootstrap／Source 驗證遵循 [共用契約](../../bootstrap-contract.md)。Tooling 的 Runtime Policy 透過 Work 受控通道按需組合，不改 Work 的 `source_order`、TASK Fingerprint 或歷史選取權威。
+Host 依工作需求選擇 Task／Execute 指令與適用階層；Work CLI 驗證正式 Hierarchy／Instruction Selection、來源及指紋，不替 Host 決定語意適用性。通用 Skill Bootstrap／Source 驗證遵循 [共用契約](../../bootstrap-contract.md)。Tooling 是獨立 Skill，由 Host 按操作啟用並透過 Tooling CLI 驗證政策來源；其 Policy 不改 Work 的 `source_order`、TASK Fingerprint 或歷史選取權威。
 
 ## 2. 指令歸屬
 
@@ -92,11 +92,11 @@ metadata:
 
 1. 指令來源只保存目前的 kind、logical name 與 canonical SHA；frontmatter、routing manifest 與 instruction selection 不以 compatibility revision 或 router revision 判斷相容性。
 2. 路徑、實際 canonical bytes、載入順序與 SHA drift 仍是必要驗證。明確變更有效集合的指令或選擇須經 Revise 審查與核准；不相容或損毀 artifact 以 Migration 保留原始證據並建立 current candidate，不提供舊格式 parser 或自動 refresh。
-3. 安裝器的 active tree 僅包含 current base、本次選取 hierarchy 與 binary。重新安裝不沿用未選分支或舊 Python 檔案；完整舊 tree 保留於 recovery directory 的 previous，發布失敗依原交易回復。
+3. 安裝器的 Work active tree 包含 current Bootstrap、workflow、完整 Task／Execute 指令樹、binary 與安裝狀態；執行時仍按需求探索並載入選定階層，不因檔案已安裝就預載全部正文。重新安裝不沿用舊 Python 檔案；完整舊 tree 在交易期間保留於 recovery directory 的 previous，發布失敗依原交易回復。
 
-## 傳輸及保留證據
+## 工作區及保留證據
 
-1. Host 與 private role 共用 `transaction-workspace.md` 的 allocator returned paths：原始附件在 `inputs/`，semantic／prepared requests 在 `requests/`，完整 CLI 結果在 `responses/`，role envelope 在 `envelopes/`。JSON 步驟採 `001-<command|role>.json` 並 exclusive create；成功／失敗都保留，不能把回應 envelope 當下一步 request。
-2. pending invocation 也位於 `outputs/work/transactions/pending/`；需求確認後配置新需求工作區，舊 pending path／bytes 不搬移。原始 PDF 或文字維持實際檔名、格式與 bytes，UTF-8 JSON transport 規則不套用到原始二進位附件。
-3. Transport 與正式 Source／TASK／Attempt／Correction／receipt／journal 不混用。Recovery 使用相同 approved request／完整 inventory，另存新 response 步驟；runtime 清理不刪 transport 或正式證據。Readiness／discovery 不將 runtime/staging 或 transactions 內的 TASK-like JSON 視為正式集合。
+1. Host 使用 `transaction-workspace.md` 配置的路徑：原始附件在 `inputs/`，semantic／prepared requests 在 `requests/`，完整 CLI 結果在 `responses/`。JSON 步驟採 `001-<command>.json` 並 exclusive create；成功／失敗都保留，不能把回應當下一步 request。
+2. 原始 PDF 或文字維持實際檔名、格式與 bytes，UTF-8 JSON transport 規則不套用到原始二進位附件。
+3. 工作區資料與正式 Source／TASK／Attempt／Correction／receipt／journal 不混用。Recovery 使用相同 approved request／完整 inventory，另存新 response 步驟；runtime 清理不刪工作區資料或正式證據。Readiness／discovery 不將 runtime/staging 或 transactions 內的 TASK-like JSON 視為正式集合。
 4. 調整 current 指令文件後，重建受影響的 current routing／selection SHA 並驗證衍生鏈。歷史 Snapshot、approval 與 historical fixture 保持原 bytes；舊指紋需明確重新審查，不藉更新 fixture 假造原核准仍有效。

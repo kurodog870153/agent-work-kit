@@ -118,7 +118,7 @@ mod tests {
         assert!(
             files
                 .iter()
-                .any(|file| file["path"] == "references/instruction-loading/invocation.md")
+                .any(|file| file["path"] == "references/instruction-loading/source-loading.md")
         );
         assert!(work_operations::protocol::valid_sha256(
             bundle["bundle_sha256"].as_str().unwrap()

@@ -95,7 +95,6 @@ mod tests {
         record_deviation_from_project, start_attempt_from_project,
     };
     use work_feature::instruction::{load, select, task_document_selection};
-    use work_feature::ports::Git;
     use work_feature::task::{
         CollectionInput, load_collection, load_task_execution_context,
         recheck_task_execution_context, validate_collection,
@@ -116,7 +115,6 @@ mod tests {
     use crate::execution::storage::{
         AttemptStartRecoveryRequest, CorrectionRecoveryInput, LocalExecutionStorage,
     };
-    use crate::git::LocalGit;
     use crate::hierarchy_catalog::LocalHierarchyCatalog;
     use crate::skill_catalog::LocalSkillCatalog;
     use crate::writer_lock::LocalWriterLock;
@@ -536,9 +534,7 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(&root).unwrap();
-        LocalGit
-            .mutate(&root, &["init".into(), "-q".into()])
-            .unwrap();
+        crate::git::initialize_fixture(&root);
         let work = LocalHierarchyCatalog {
             skill_root: crate::fixture_support::historical_task_skill_root(&PathBuf::from(
                 concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../skills/work"),

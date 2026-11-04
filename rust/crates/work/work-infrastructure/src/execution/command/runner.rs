@@ -1,4 +1,5 @@
 //! Execute one bound invocation in the inherited host environment; never install a policy.
+use super::host_environment;
 use crate::process::host;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -14,10 +15,6 @@ use work_feature::ports::{CommandOutcome, CommandRequest, CommandRunner, Command
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 static INTERRUPT_OWNER: Mutex<()> = Mutex::new(());
 
-pub(in crate::execution) fn host_environment() -> Value {
-    json!({"mode":"inherited","os":std::env::consts::OS,
-        "architecture":std::env::consts::ARCH,"work_version":env!("CARGO_PKG_VERSION")})
-}
 fn invalid() -> WorkError {
     WorkError::new(
         ExitCode::ArtifactIntegrity,

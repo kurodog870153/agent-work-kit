@@ -179,6 +179,10 @@ pub struct CommandRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_evidence: Option<Box<super::command::capture::CommandExecutionEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_report: Option<Box<super::host_report::HostExecutionReport>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_binding: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correction: Option<CommandCorrection>,
 }
 

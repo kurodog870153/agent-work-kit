@@ -91,7 +91,15 @@ def tracked_skill_files(repository):
         check=True,
         capture_output=True,
     )
+    deleted = subprocess.run(
+        ["git", "ls-files", "-z", "--deleted", "--", "skills/work", "skills/tooling"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+    )
+    deleted_paths = {Path(name.decode("utf-8")) for name in deleted.stdout.split(b"\0") if name}
     paths = [Path(name.decode("utf-8")) for name in result.stdout.split(b"\0") if name]
+    paths = [path for path in paths if path not in deleted_paths]
     paths = [path for path in paths if path.suffix in {".md", ".yaml", ".yml"}]
     if not any(path == Path("skills/work/SKILL.md") for path in paths):
         raise ValueError("Work skill entry is missing")

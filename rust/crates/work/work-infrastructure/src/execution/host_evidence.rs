@@ -1,10 +1,12 @@
 //! Capture and verify actual command evidence independently of host policy.
 use super::evidence_file::read;
+#[cfg(test)]
 use crate::files::LocalFiles;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use work_feature::error::{ExitCode, WorkError};
+#[cfg(test)]
 use work_feature::ports::{ArtifactStore, CommandOutputCapture};
 use work_model::execution::command::capture::{
     CapturedArtifact, CapturedReport, CommandCapturePolicy, CommandCapturedEvidence,
@@ -15,10 +17,11 @@ fn invalid(stage: &str) -> WorkError {
     WorkError::new(
         ExitCode::ArtifactIntegrity,
         "command_capture_unverified",
-        "Command evidence is missing, changed or incomplete; preserve the started receipt and do not rerun.",
+        "Command evidence is missing, changed or incomplete; preserve the original evidence and do not rerun automatically.",
         json!({"stage":stage}),
     )
 }
+#[cfg(test)]
 fn save(
     root: &Path,
     directory: &str,
@@ -39,6 +42,7 @@ fn save(
     })
 }
 
+#[cfg(test)]
 pub(super) fn freeze(
     root: &Path,
     directory: &str,

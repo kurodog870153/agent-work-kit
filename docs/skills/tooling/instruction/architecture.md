@@ -35,14 +35,14 @@ instructions/
 
 1. 依目前操作、目標及 Host 實際可用工具，逐層讀取直接子節點的 Metadata，選出所有適用路徑；不預先掃描完整樹或載入未選取的正文。
 2. 載入每條選定路徑的完整祖先鏈與適用 Reference，按來源身分去重。各維度的規則合併適用；載入順序不構成優先權，不能用後載入的規則覆寫既有要求。
-3. 操作需求、目標、工具能力或來源變更時，只重新讀取新增或失效的來源；切換政策前須驗證完整合併集合及衝突。必要規則衝突或來源無效時，停止受影響的操作。
+3. 操作需求、目標、工具能力或來源變更時，Host 只將新增或失效的指令正文重新載入有效政策；Tooling CLI 的 `policy load` 仍核對完整選取來源集合，切換前須驗證完整合併集合及衝突。必要規則衝突或來源無效時，停止受影響的操作。
 4. Tooling 的選取不取代 Host 對實際副作用、目標綁定、授權及結果的查核。工具名稱或宣稱能力不能單獨證明適用性。
 
 ## 4. 來源格式與 Reference
 
 1. 每個階層 `instructions.md` 與節點 `references/*.md` 都須從第一行開始使用有效 YAML frontmatter，只包含非空的 `name`、`description` 與 `metadata.tags`。Tags 須為不重複的小寫 kebab-case 字串。
 2. 節點的 `## References` 只在有適用參考指令時使用，表格欄位為 `Reference | Load condition`，且只指向同節點一層 `references/*.md`。Reference 以實際路徑識別，不透過另一份 Reference 遞迴路由。
-3. 使用來源前須驗證一般檔案、嚴格 UTF-8、frontmatter、路徑與 symlink 邊界、來源身分、raw SHA 及適用指紋。無效的 Root 或祖先阻擋所有相依選擇；無效分支阻擋其相依操作。
+3. 使用來源前須驗證一般檔案、嚴格 UTF-8（最多一個前導 BOM）、frontmatter、路徑與 symlink 邊界、來源身分、raw SHA 及適用指紋。無效的 Root 或祖先阻擋所有相依選擇；無效分支阻擋其相依操作。
 
 ## 5. 變更要求
 

@@ -185,18 +185,10 @@ mod tests {
             items["work-instructions"]["description"]["example"]["hierarchy"]["work_directory"],
             "task"
         );
-        assert_eq!(
-            items["work-delegation-validation"]["description"]["example"]["role"],
-            "task-coordinator"
-        );
         let route = &items["work-instruction-selection-manifest"]["description"]["example"]["routing_input"];
         assert_eq!(route["mode"], "task");
         assert_eq!(route["status"], "source_required");
         assert_eq!(route["operation"], "capture_source");
-        assert_eq!(
-            items["work-operation-envelope"]["description"]["example"]["operation"],
-            route["operation"]
-        );
         for publication in [
             &items["work-spec-migration-publication"]["description"]["example"],
             &items["work-spec-reconciliation-publication"]["description"]["example"]["publication"],

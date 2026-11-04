@@ -1,18 +1,28 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
 
 fn fixture() -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "tooling-cli-policy-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+    let root = loop {
+        let candidate = std::env::temp_dir().join(format!(
+            "tooling-cli-policy-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+        ));
+        match fs::create_dir(&candidate) {
+            Ok(()) => break candidate,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("cannot create policy fixture: {error}"),
+        }
+    };
     fs::create_dir_all(root.join("references/instructions/capabilities/deep")).unwrap();
     fs::write(
         root.join("SKILL.md"),
@@ -105,6 +115,11 @@ fn policy_commands_return_one_envelope_and_only_direct_metadata() {
     ]);
     assert_eq!(code, 0);
     assert_eq!(loaded["data"]["sources"].as_array().unwrap().len(), 3);
+    assert_eq!(loaded["data"]["semantic_review"]["origin"], "host_reported");
+    assert_eq!(
+        loaded["data"]["semantic_review"]["claim"]["compatible"],
+        true
+    );
     assert_eq!(
         loaded["data"]["change"]["added_or_invalidated"]
             .as_array()
@@ -131,6 +146,48 @@ fn policy_commands_return_one_envelope_and_only_direct_metadata() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+    let mut source_only: Value = serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+    source_only
+        .as_object_mut()
+        .unwrap()
+        .remove("semantic_review");
+    fs::write(&request_path, serde_json::to_vec(&source_only).unwrap()).unwrap();
+    let (code, without_host_review) = invoke(&[
+        "policy",
+        "load",
+        "--skill-root",
+        root_arg,
+        "--input-file",
+        request_arg,
+    ]);
+    assert_eq!(code, 0);
+    assert!(without_host_review["data"]["semantic_review"]["claim"].is_null());
+    let mut incompatible: Value =
+        serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+    incompatible["semantic_review"] = json!({"reviewed":true,"compatible":false});
+    fs::write(&request_path, serde_json::to_vec(&incompatible).unwrap()).unwrap();
+    let (code, conflicting) = invoke(&[
+        "policy",
+        "load",
+        "--skill-root",
+        root_arg,
+        "--input-file",
+        request_arg,
+    ]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        conflicting["data"]["semantic_review"]["origin"],
+        "host_reported"
+    );
+    assert_eq!(
+        conflicting["data"]["semantic_review"]["claim"]["compatible"],
+        false
+    );
+    request(
+        &request_path,
+        json!(["capabilities/deep"]),
+        loaded["data"]["summary"].clone(),
     );
     node(
         &root.join("references/instructions/capabilities/deep"),
@@ -236,7 +293,16 @@ fn policy_commands_reject_missing_escape_invalid_source_and_bad_requests() {
     assert_eq!(code, 4);
     assert_eq!(escaped["reason_code"], "invalid_node");
     let request_path = root.join("request.json");
-    request(&request_path, json!(["missing"]), Value::Null);
+    let missing_name = format!("absent-{}", std::process::id());
+    assert!(
+        !root
+            .join("references/instructions")
+            .join(&missing_name)
+            .exists()
+    );
+    request(&request_path, json!([missing_name]), Value::Null);
+    let written: Value = serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+    assert_eq!(written["selected_paths"], json!([missing_name]));
     let request_arg = request_path.to_str().unwrap();
     let (code, missing_source) = invoke(&[
         "policy",
@@ -246,7 +312,7 @@ fn policy_commands_reject_missing_escape_invalid_source_and_bad_requests() {
         "--input-file",
         request_arg,
     ]);
-    assert_eq!(code, 5);
+    assert_eq!(code, 5, "{missing_source}");
     assert_eq!(missing_source["reason_code"], "policy_source_invalid");
     request(&request_path, json!(["../outside"]), Value::Null);
     let (code, bad_selection) = invoke(&[

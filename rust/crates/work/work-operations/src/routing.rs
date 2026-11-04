@@ -3,7 +3,7 @@
 use crate::canonical::canonical_json_sha256;
 use serde_json::{Value, json};
 
-const CATALOG: &str = include_str!("../resources/routing_catalog.json");
+const CATALOG: &str = include_str!("../fixtures/historical/routing_catalog.json");
 const BOOTSTRAP: &str = "work.instruction-loading";
 
 #[derive(Debug, Clone)]
@@ -207,12 +207,6 @@ mod tests {
         ] {
             assert_eq!(infer_mode(operation), mode);
         }
-        assert_eq!(
-            crate::operation::routing_identity("migration", "preview", None)
-                .unwrap()
-                .mode,
-            "migration"
-        );
     }
 
     use crate::canonical::canonical_sha256;
@@ -392,7 +386,6 @@ mod tests {
             plan["required_instruction_sources"],
             json!([
                 "work.instruction-loading",
-                "work.shared.invocation",
                 "work.shared.source-loading",
                 "work.shared.artifact-paths",
                 "work.shared.fingerprints",
@@ -436,10 +429,11 @@ mod tests {
         .unwrap();
         assert_ne!(base["selection_sha256"], delegated["selection_sha256"]);
         assert!(
-            delegated["required_instruction_sources"]
+            !delegated["required_instruction_sources"]
                 .as_array()
                 .unwrap()
-                .contains(&json!("work.shared.internal-envelope"))
+                .iter()
+                .any(|source| source == "work.shared.internal-envelope")
         );
         for (mode, events, role) in [
             (Some("execute"), vec!["handoff", "recovery"], "main"),
@@ -461,7 +455,7 @@ mod tests {
                 "main",
                 false,
                 None,
-                Some("work.shared.invocation")
+                Some("work.shared.source-loading")
             )
             .unwrap_err(),
             "missing source"
@@ -483,7 +477,7 @@ mod tests {
             &[],
             "main",
             false,
-            Some("work.shared.invocation"),
+            Some("work.shared.source-loading"),
             None,
         )
         .unwrap();

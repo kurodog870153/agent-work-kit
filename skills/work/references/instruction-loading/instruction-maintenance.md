@@ -4,7 +4,7 @@
 
 1. [Required] Every `instructions.md` and `references/*.md` under `skills/work/references/instructions/` must begin with YAML frontmatter containing only nonempty string `name` and `description`, and `metadata` containing only `tags`. Tags must be a nonempty array of unique lowercase kebab-case strings.
 2. [Required] The `description` must state when the file applies and does not apply in the shortest sufficient wording. Tags identify distinctive technologies or capabilities and must not repeat the hierarchy path.
-3. [Required] Instruction catalog discovery exposes only normalized frontmatter summaries; it must not load or return body text. Sources with missing or unknown fields, invalid UTF-8, invalid YAML or invalid tags must not enter the catalog.
+3. [Required] The Host discovers Instruction files using normalized frontmatter summaries; discovery must not load or return body text. Sources with missing or unknown fields, invalid UTF-8, invalid YAML or invalid tags must not enter a formal selection.
 4. [Required] Every normative numbered item and nested item must start with `[Required]`, `[Default]` or `[Recommended]`. Examples, code, templates and metadata do not need strength markers.
 5. [Required] `[Required]` requires stopping unless satisfied; `[Default]` applies when evidence is insufficient and may be departed from with confirmation; `[Recommended]` does not block but requires explaining the effect of not following it.
 6. [Required] Task and Execute node bodies must begin with `Instruction boundary:` to state their unique responsibility. Place new rules according to the architecture, not merely the current file location.

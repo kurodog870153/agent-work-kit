@@ -30,42 +30,14 @@
           "discriminator": "kind",
           "unknown_fields": "reject",
           "variants": {
-            "apply": {
-              "authorization": "active Attempt boundary; no separate publication approval",
-              "expected_before": "Exact initial path map: SHA-256 of bytes read before composing changes, or null for absence; includes move sources and destinations",
-              "optional": [
-                "baseline_confirmation"
-              ],
-              "required": [
-                "kind",
-                "attempt_id",
-                "changes",
-                "expected_before"
-              ]
+            "bind": {
+              "required": ["kind", "attempt_id", "changes"],
+              "optional": ["baseline_confirmation"],
+              "effect": "Freeze complete before and after candidate before Host edits project files"
             },
-            "prepare": {
-              "optional": [
-                "baseline_confirmation"
-              ],
-              "required": [
-                "kind",
-                "attempt_id",
-                "changes"
-              ]
-            },
-            "recovery-prepare": {
-              "required": [
-                "kind",
-                "transaction_identity"
-              ]
-            },
-            "restore": {
-              "required": [
-                "kind",
-                "transaction_identity",
-                "approved_sha256",
-                "authorization_evidence"
-              ]
+            "record": {
+              "required": ["kind", "report"],
+              "effect": "Verify Host evidence and current complete target set before recording formal history"
             }
           }
         }
@@ -84,7 +56,7 @@
             "path": "result.txt"
           }
         ],
-        "kind": "prepare"
+        "kind": "bind"
       },
       "schema": "work-file-transaction-request"
     }
@@ -109,7 +81,7 @@
             "path": "result.txt"
           }
         ],
-        "kind": "prepare"
+        "kind": "bind"
       },
       "schema": "work-file-transaction-request"
     },
@@ -126,7 +98,7 @@
             "path": "result.txt"
           }
         ],
-        "kind": "prepare"
+        "kind": "bind"
       },
       "schema": "work-file-transaction-request"
     }

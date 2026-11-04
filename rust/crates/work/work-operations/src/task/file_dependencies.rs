@@ -206,6 +206,55 @@ pub fn matches_reviewed_ancestry(contract: &Value, records: &[Value], task_id: &
     true
 }
 
+/// Match the original Discussion after reversing exact, recorded Specification
+/// field replacements. Every reverse step must match its published after value.
+pub fn matches_reviewed_ancestry_after_changes(
+    contract: &Value,
+    records: &[Value],
+    task_id: &str,
+    changes: &Value,
+) -> bool {
+    let Some(changes) = changes.as_array() else {
+        return changes.is_null() && matches_reviewed_ancestry(contract, records, task_id);
+    };
+    let mut original = contract.clone();
+    for change in changes.iter().rev() {
+        let Some(edits) = change["edits"].as_array() else {
+            return false;
+        };
+        for edit in edits.iter().rev() {
+            if edit["artifact"] == "task_index" {
+                continue;
+            }
+            let (Some(id), Some(field)) = (
+                edit["task_id"].as_str(),
+                edit["path"]
+                    .as_str()
+                    .and_then(|path| path.strip_prefix('/')),
+            ) else {
+                return false;
+            };
+            if edit["artifact"] != "task_item"
+                || edit["operation"] != "replace"
+                || field.contains('/')
+            {
+                return false;
+            }
+            let Some(task) = original["tasks"]
+                .as_array_mut()
+                .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == id))
+            else {
+                return false;
+            };
+            if task.get(field) != edit.get("after") {
+                return false;
+            }
+            task[field] = edit["before"].clone();
+        }
+    }
+    matches_reviewed_ancestry(&original, records, task_id)
+}
+
 pub fn matches_reviewed_source(session: &DiscussionSession, contract: &Value) -> bool {
     // Partial pure-rule inputs omit context; formal Feature boundaries supply the complete collection.
     if contract.get("source").is_none() {
@@ -357,5 +406,39 @@ mod tests {
         }
         let collection = json!({"tasks":[actual,child]});
         assert!(matches_reviewed_ancestry(&collection, &records, "TASK-002"));
+    }
+
+    #[test]
+    fn recorded_specification_replacement_preserves_reviewed_ancestry_only_at_exact_after() {
+        let reviewed = json!({"id":"TASK-001","goal":"cart","steps":[{"action":"twelve"}],
+            "instruction_selection":{"selected_paths":[],"references":[],"instructions_sha256":"same"}});
+        let mut current = reviewed.clone();
+        current["steps"] = json!([{"action":"thirteen"}]);
+        let collection = json!({"tasks":[current]});
+        let changes = json!([{"edits":[{"artifact":"task_item","task_id":"TASK-001",
+            "operation":"replace","path":"/steps","before":reviewed["steps"],
+            "after":[{"action":"thirteen"}]}]}]);
+        assert!(matches_reviewed_ancestry_after_changes(
+            &collection,
+            std::slice::from_ref(&reviewed),
+            "TASK-001",
+            &changes
+        ));
+        let mut tampered = collection.clone();
+        tampered["tasks"][0]["steps"] = json!([{"action":"fourteen"}]);
+        assert!(!matches_reviewed_ancestry_after_changes(
+            &tampered,
+            std::slice::from_ref(&reviewed),
+            "TASK-001",
+            &changes
+        ));
+        tampered = collection;
+        tampered["tasks"][0]["goal"] = json!("changed without a formal edit");
+        assert!(!matches_reviewed_ancestry_after_changes(
+            &tampered,
+            &[reviewed],
+            "TASK-001",
+            &changes
+        ));
     }
 }

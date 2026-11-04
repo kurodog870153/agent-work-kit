@@ -9,6 +9,7 @@ use crate::writer_lock::WriterLock;
 use serde_json::{Value, json};
 use work_feature::artifact_paths::ArtifactPathRepository;
 use work_feature::error::{ExitCode, WorkError};
+#[cfg(test)]
 use work_feature::execution::command_publication::build_command_request;
 #[cfg(test)]
 use work_feature::execution::command_publication::{approved_receipt, command_completion};
@@ -19,16 +20,20 @@ use work_feature::execution::recovery::{
 use work_feature::execution::{
     AttemptClosePublication, AttemptCloseRepository, AttemptStartPublication,
     AttemptStartRepository, CommandCorrectionPublication, CommandCorrectionRepository,
-    CommandPrepareRepository, CommandProjectRequest, CommandProjectSources, CorrectionPublication,
-    CorrectionRepository, DeviationRecordPublication, DeviationRecordRepository,
-    ExecutionIndexRepository, ExecutionProjectTarget, ExecutionWorktreeRepository,
-    RecordBeginPublication, RecordBeginRepository, RecordFinishPublication, RecordFinishRepository,
+    CommandPrepareRepository, CommandProjectSources, CorrectionPublication, CorrectionRepository,
+    DeviationRecordPublication, DeviationRecordRepository, ExecutionIndexRepository,
+    ExecutionProjectTarget, ExecutionWorktreeRepository, RecordBeginPublication,
+    RecordBeginRepository, RecordFinishPublication, RecordFinishRepository,
     RecoveryPrepareRepository, RuntimeExecutionReadiness, inspect_worktree,
-    prepare_execute_preflight_from_project, recheck_command_from_project,
+    prepare_execute_preflight_from_project,
 };
+#[cfg(test)]
+use work_feature::execution::{CommandProjectRequest, recheck_command_from_project};
 use work_feature::instruction::InstructionSourceRepository;
+#[cfg(test)]
+use work_feature::ports::CommandRunner;
 use work_feature::ports::SourceSnapshotReader;
-use work_feature::ports::{ArtifactStore, CommandRunner, Git};
+use work_feature::ports::{ArtifactStore, Git};
 #[cfg(test)]
 use work_feature::ports::{CommandRequest, CommandStatus};
 use work_feature::skill::SkillSnapshotRepository;
@@ -40,6 +45,7 @@ use work_operations::execution::attempt::start::{
 };
 #[cfg(windows)]
 use work_operations::execution::command::run::windows_batch_command_line;
+#[cfg(test)]
 use work_operations::execution::command::run::{build_command_started, command_json_bytes};
 use work_operations::execution::correction::{build_correction_candidates, render_correction};
 use work_operations::execution::preflight::FileState;
@@ -70,6 +76,7 @@ pub struct LocalExecutionStorage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
 enum CommandReceiptStage {
     StartedWritten,
     StartedVerified,
@@ -2213,6 +2220,7 @@ impl LocalExecutionStorage {
         })
     }
 
+    #[cfg(test)]
     fn run_receipts_scoped(
         &self,
         context: &work_feature::execution::ExecutionWriterContext,
@@ -4955,6 +4963,34 @@ impl RuntimeExecutionStorage<'_> {
         let index = parse_json_contract(raw).map_err(|_| transaction_conflict())?;
         self.context.check_execution_index(&index, raw)
     }
+    #[cfg(test)]
+    pub fn run_command_from_project<H, S, P, T>(
+        &self,
+        sources: &CommandProjectSources<'_, H, S, P, T>,
+        input: CommandProjectRequest<'_>,
+        approved_sha256: &str,
+    ) -> Result<Value, WorkError>
+    where
+        H: InstructionSourceRepository,
+        S: SkillSnapshotRepository,
+        P: ArtifactPathRepository + SourceSnapshotReader,
+        T: TaskCollectionRepository,
+    {
+        let runner = super::command::runner::HostCommandRunner::for_task(self.context);
+        self.write(input.execution_dir, || {
+            self.storage.run_receipts_scoped(
+                self.context,
+                approved_sha256,
+                || {
+                    let (preview, evidence) = recheck_command_from_project(sources, self, input)?;
+                    runner.bind(&preview)?;
+                    Ok((preview, evidence))
+                },
+                &runner,
+                |_| Ok(()),
+            )
+        })
+    }
 
     fn write<T>(
         &self,
@@ -5018,18 +5054,6 @@ impl RuntimeExecutionStorage<'_> {
         self.write(input.execution_dir, || {
             self.check_index(input.index_before)?;
             self.storage.recover_command_correction_scoped(input, true)
-        })
-    }
-    fn run_prepared_command(
-        &self,
-        execution_dir: &str,
-        approved_sha256: &str,
-        recheck: impl FnOnce() -> Result<(Value, String), WorkError>,
-        runner: &super::command::runner::HostCommandRunner<'_>,
-    ) -> Result<Value, WorkError> {
-        self.write(execution_dir, || {
-            self.storage
-                .run_receipts_scoped(self.context, approved_sha256, recheck, runner, |_| Ok(()))
         })
     }
     pub fn recover_attempt_close(
@@ -5108,31 +5132,6 @@ impl RuntimeExecutionStorage<'_> {
                 )),
             }
         })
-    }
-
-    pub fn run_command_from_project<H, S, P, T>(
-        &self,
-        sources: &CommandProjectSources<'_, H, S, P, T>,
-        input: CommandProjectRequest<'_>,
-        approved_sha256: &str,
-    ) -> Result<Value, WorkError>
-    where
-        H: InstructionSourceRepository,
-        S: SkillSnapshotRepository,
-        P: ArtifactPathRepository + SourceSnapshotReader,
-        T: TaskCollectionRepository,
-    {
-        let runner = super::command::runner::HostCommandRunner::for_task(self.context);
-        self.run_prepared_command(
-            input.execution_dir,
-            approved_sha256,
-            || {
-                let (preview, evidence) = recheck_command_from_project(sources, self, input)?;
-                runner.bind(&preview)?;
-                Ok((preview, evidence))
-            },
-            &runner,
-        )
     }
 }
 
@@ -5504,7 +5503,7 @@ impl CommandPrepareRepository for RuntimeExecutionStorage<'_> {
     ) -> Result<Value, WorkError> {
         let _ = (receipt, record);
         let mut settings = settings.clone();
-        settings["host"] = super::command::runner::host_environment();
+        settings["host"] = super::command::host_environment();
         let index: Value = serde_json::from_slice(&self.storage.read_source(&format!(
             "{}/index.json",
             self.context.target().execution_dir
@@ -5629,6 +5628,100 @@ impl RuntimeExecutionSession<'_> {
         };
         action(&adapter)
     }
+
+    #[cfg(test)]
+    pub fn run_command_from_project<H, S, P, T>(
+        &self,
+        sources: &CommandProjectSources<'_, H, S, P, T>,
+        input: CommandProjectRequest<'_>,
+        approved_sha256: &str,
+    ) -> Result<Value, WorkError>
+    where
+        H: InstructionSourceRepository,
+        S: SkillSnapshotRepository,
+        P: ArtifactPathRepository + SourceSnapshotReader,
+        T: TaskCollectionRepository,
+    {
+        work_operations::execution::command::run::validate_command_run_request(input.request)
+            .map_err(recovery_rule)?;
+        self.with_context(|adapter| {
+            adapter.run_command_from_project(sources, input, approved_sha256)
+        })
+    }
+
+    pub fn host_command_binding(&self) -> Result<Value, WorkError> {
+        self.with_context(|adapter| {
+            let context = adapter.context;
+            let target = context.target();
+            let index_path = format!("{}/index.json", target.execution_dir);
+            let index_raw = adapter.storage.read_index(&index_path)?;
+            let index = parse_json_contract(&index_raw).map_err(|_| {
+                WorkError::new(
+                    ExitCode::ArtifactIntegrity,
+                    "execution_index_invalid",
+                    "The execution index is invalid.",
+                    json!({}),
+                )
+            })?;
+            context.check_execution_index(&index, &index_raw)?;
+            let attempt_id = index["lock"]["attempt_id"].as_str().ok_or_else(|| {
+                WorkError::new(
+                    ExitCode::WorkflowState,
+                    "host_command_not_reserved",
+                    "The active lock must reserve a CMD.",
+                    json!({}),
+                )
+            })?;
+            let attempt_path = format!(
+                "{}/{}/{attempt_id}/attempt.json",
+                target.execution_dir, target.task_id
+            );
+            let attempt_raw = adapter.storage.read_attempt(&attempt_path)?;
+            let attempt = parse_json_contract(&attempt_raw).map_err(|_| {
+                WorkError::new(
+                    ExitCode::ArtifactIntegrity,
+                    "attempt_invalid",
+                    "The current Attempt is invalid.",
+                    json!({}),
+                )
+            })?;
+            work_operations::execution::attempt::validate_attempt_bytes(&attempt, &attempt_raw)
+                .map_err(recovery_rule)?;
+            let task_context = context.task_context();
+            validate_execution_identity(
+                &task_context.collection,
+                &task_context.validation,
+                &index,
+                &attempt,
+                target.task_id,
+            )
+            .map_err(recovery_rule)?;
+            let task = task_context.contract["tasks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|item| item["id"] == target.task_id)
+                .ok_or_else(|| {
+                    WorkError::new(
+                        ExitCode::ArtifactIntegrity,
+                        "host_command_missing",
+                        "The reserved CMD TASK is missing.",
+                        json!({}),
+                    )
+                })?;
+            let version = super::file_transaction::storage::current_version(context, attempt_id)?;
+            let input_files = super::command::input_files(context)?;
+            work_operations::execution::host_report::binding(
+                task,
+                &attempt,
+                &index,
+                &task_context.collection,
+                &version,
+                &input_files,
+            )
+            .map_err(recovery_rule)
+        })
+    }
     pub fn recover_attempt_start_from_project<H, S, P, T>(
         &self,
         sources: &CommandProjectSources<'_, H, S, P, T>,
@@ -5658,24 +5751,6 @@ impl RuntimeExecutionSession<'_> {
         validate_recovery_request(request, false).map_err(recovery_rule)?;
         self.with_context(|adapter| {
             adapter.recover_execution_from_project(sources, target, request)
-        })
-    }
-    pub fn run_command_from_project<H, S, P, T>(
-        &self,
-        sources: &CommandProjectSources<'_, H, S, P, T>,
-        input: CommandProjectRequest<'_>,
-        approved_sha256: &str,
-    ) -> Result<Value, WorkError>
-    where
-        H: InstructionSourceRepository,
-        S: SkillSnapshotRepository,
-        P: ArtifactPathRepository + SourceSnapshotReader,
-        T: TaskCollectionRepository,
-    {
-        work_operations::execution::command::run::validate_command_run_request(input.request)
-            .map_err(recovery_rule)?;
-        self.with_context(|adapter| {
-            adapter.run_command_from_project(sources, input, approved_sha256)
         })
     }
 }
@@ -6473,6 +6548,7 @@ fn transaction_conflict() -> WorkError {
     )
 }
 
+#[cfg(test)]
 fn command_interrupted(receipt: &str) -> WorkError {
     WorkError::new(
         ExitCode::IoFailure,
@@ -8199,149 +8275,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn completed_close_recovery_refuses_project_file_drift_and_preserves_record_evidence() {
-        use work_feature::execution::file_transaction::FileTransactionRepository;
-        let root = std::env::temp_dir().join(format!(
-            "work-close-project-files-{}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-            NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&root).unwrap();
-        let root = root.canonicalize().unwrap();
-        let skill = PathBuf::from(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../../skills/work"
-        ));
-        let context = crate::fixture_support::file_transaction_fixture(&root, &skill).unwrap();
-        let files = super::super::file_transaction::storage::LocalFileTransactions::for_project(
-            root.clone(),
-            skill,
-        );
-        let changes = crate::fixture_support::file_changes_fixture(&root).unwrap();
-        let preview = work_feature::execution::file_transaction::prepare(
-            &files,
-            &context,
-            "ATTEMPT-001",
-            &changes,
-            None,
-        )
-        .unwrap();
-        files
-            .apply(&context, &preview, "Approve complete native publication")
-            .unwrap();
-        let storage = LocalExecutionStorage {
-            project_root: root.clone(),
-        };
-        let execution = context.target().execution_dir;
-        let index_path = format!("{execution}/index.json");
-        let attempt_path = format!("{execution}/TASK-001/ATTEMPT-001/attempt.json");
-        let index = parse_json_contract(&fs::read(root.join(&index_path)).unwrap()).unwrap();
-        let attempt = parse_json_contract(&fs::read(root.join(&attempt_path)).unwrap()).unwrap();
-        let task = &context.task_context().contract["tasks"][0];
-        let (reserved, _, _) = work_operations::execution::record_begin_candidate(
-            task, &attempt, &index, "TASK-001", "VAL-001", None,
-        )
-        .unwrap();
-        let adapter = RuntimeExecutionStorage {
-            storage: &storage,
-            context: &context,
-        };
-        let validation_context = RecordBeginRepository::validation_context(
-            &adapter,
-            task,
-            &attempt,
-            reserved["lock"]["record_id"].as_str().unwrap(),
-        )
-        .unwrap()
-        .unwrap();
-        let finish = crate::fixture_support::user_confirmation_fixture(
-            &root,
-            &validation_context,
-            work_model::execution::attempt::ValidationOutcome::Passed,
-            "Verified complete synthetic project-file outcome",
-        )
-        .unwrap();
-        let finish = super::super::command::evidence::finalize(
-            &context, task, &attempt, &reserved, &finish, false,
-        )
-        .unwrap();
-        let accepted = work_operations::execution::record_finish::build_record_finish_candidates(
-            task, &attempt, &reserved, "TASK-001", &finish,
-        )
-        .unwrap();
-        let before_index = crate::fixture_support::render_execution_index(&accepted.index).unwrap();
-        let before_attempt =
-            work_operations::execution::attempt::render_attempt(&accepted.attempt).unwrap();
-        fs::write(root.join(&index_path), &before_index).unwrap();
-        fs::write(root.join(&attempt_path), &before_attempt).unwrap();
-        let (closed, index) = work_operations::execution::attempt::close::build_close_candidates(
-            task,
-            &accepted.index,
-            &accepted.attempt,
-            &json!({"schema":"work-attempt-close-request","status":"completed"}),
-            &crate::clock_workspace::local_timestamp(),
-        )
-        .unwrap();
-        let after_attempt = work_operations::execution::attempt::render_attempt(&closed).unwrap();
-        let after_index = crate::fixture_support::render_execution_index(&index).unwrap();
-        let publication = AttemptClosePublication {
-            execution_dir: execution,
-            task_id: "TASK-001",
-            attempt_id: "ATTEMPT-001",
-            index_before: &before_index,
-            index_after: &after_index,
-            attempt_before: &before_attempt,
-            attempt_after: &after_attempt,
-        };
-        let plan = storage
-            .attempt_close_staging_plan(&context, &publication)
-            .unwrap();
-        storage
-            .with_runtime_execution_writer(&context, |_| {
-                storage.run_execution_staging_scoped(&context, &plan, false, &LocalFiles, |stage| {
-                    if stage == RuntimeExecutionStage::StepWritten(0) {
-                        Err(runtime_scan_error("injected_close", execution))
-                    } else {
-                        Ok(())
-                    }
-                })
-            })
-            .unwrap_err();
-        let request = reviewed_staging_request(&storage, &context, "attempt_close");
-        let retained_index = fs::read(root.join(&index_path)).unwrap();
-        let retained_attempt = fs::read(root.join(&attempt_path)).unwrap();
-        let target = root.join("c-existing.txt");
-        let published = fs::read(&target).unwrap();
-        fs::write(&target, b"external actor changed output").unwrap();
-        let failure = storage
-            .with_runtime_execution_writer(&context, |_| {
-                storage.recover_attempt_close_staging_scoped(&context, &request)
-            })
-            .unwrap_err();
-        assert_eq!(failure.reason_code, "file_transaction_target_drift");
-        assert_eq!(fs::read(root.join(&index_path)).unwrap(), retained_index);
-        assert_eq!(
-            fs::read(root.join(&attempt_path)).unwrap(),
-            retained_attempt
-        );
-        assert_eq!(fs::read(&target).unwrap(), b"external actor changed output");
-        // Only this synthetic actor restores its own bytes, then the original record
-        // transaction may complete forward after its retained publication is reverified.
-        fs::write(&target, published).unwrap();
-        storage
-            .with_runtime_execution_writer(&context, |_| {
-                storage.recover_attempt_close_staging_scoped(&context, &request)
-            })
-            .unwrap();
-        assert_eq!(fs::read(root.join(index_path)).unwrap(), after_index);
-        assert_eq!(fs::read(root.join(attempt_path)).unwrap(), after_attempt);
     }
 
     #[test]
@@ -10367,9 +10300,7 @@ mod tests {
             NEXT_TEST_ROOT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join("execution")).unwrap();
-        LocalGit
-            .mutate(&root, &["init".into(), "-q".into()])
-            .unwrap();
+        crate::git::initialize_fixture(&root);
         root
     }
 

@@ -72,7 +72,6 @@ def validate_workspace(root, baseline_version):
 
 def validate_lock(root, manifest):
     rust = root / "rust"
-    version = project_version(root)
     cargo_version = workspace_version(manifest)
     parse_version(cargo_version)
 
@@ -97,7 +96,7 @@ def validate_lock(root, manifest):
     locked = {package["name"]: package["version"] for package in lock["package"] if package["name"] in names}
     if set(locked) != names or any(value != expected_versions[name] for name, value in locked.items()):
         raise ValueError("Cargo.lock workspace versions do not match their package versions")
-    return version
+    return cargo_version
 
 
 def baseline_version(root, base_ref):

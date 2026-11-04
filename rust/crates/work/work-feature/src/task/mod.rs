@@ -426,6 +426,36 @@ where
     )
 }
 
+/// Read a completed TASK for Revise after the caller has verified its formal
+/// Execution index and retained history. Its create targets now exist by design.
+pub fn load_completed_revision_baseline<H, S, P, R>(
+    instructions: &H,
+    skills: &S,
+    paths: &P,
+    repository: &R,
+    skill_roots: &[SkillRoot],
+    index_path: &str,
+) -> Result<Value, WorkError>
+where
+    H: InstructionSourceRepository,
+    S: SkillSnapshotRepository,
+    P: ArtifactPathRepository + SourceSnapshotReader,
+    R: TaskCollectionRepository,
+{
+    load_collection_with_policy(
+        instructions,
+        skills,
+        paths,
+        repository,
+        skill_roots,
+        index_path,
+        CollectionPolicy {
+            file_state: false,
+            revision_baseline: true,
+        },
+    )
+}
+
 #[derive(Clone, Copy)]
 struct CollectionPolicy {
     file_state: bool,

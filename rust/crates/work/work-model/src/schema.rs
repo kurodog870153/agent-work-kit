@@ -59,6 +59,10 @@ pub enum PublicSchema {
     WorkCommandRunRequest,
     #[serde(rename = "work-command-started")]
     WorkCommandStarted,
+    #[serde(rename = "work-host-execution-report")]
+    WorkHostExecutionReport,
+    #[serde(rename = "work-host-file-report")]
+    WorkHostFileReport,
     #[serde(rename = "work-contract-catalog")]
     WorkContractCatalog,
     #[serde(rename = "work-contract-description")]
@@ -71,16 +75,6 @@ pub enum PublicSchema {
     WorkCorrectionCreate,
     #[serde(rename = "work-correction")]
     WorkCorrection,
-    #[serde(rename = "work-delegation-build-request")]
-    WorkDelegationBuildRequest,
-    #[serde(rename = "work-delegation-envelope")]
-    WorkDelegationEnvelope,
-    #[serde(rename = "work-delegation-validation")]
-    WorkDelegationValidation,
-    #[serde(rename = "work-discussion-handoff-request")]
-    WorkDiscussionHandoffRequest,
-    #[serde(rename = "work-discussion-handoff")]
-    WorkDiscussionHandoff,
     #[serde(rename = "work-error")]
     WorkError,
     #[serde(rename = "work-execute-preflight")]
@@ -111,12 +105,6 @@ pub enum PublicSchema {
     WorkExecutionRecoveryRequest,
     #[serde(rename = "work-execution-recovery")]
     WorkExecutionRecovery,
-    #[serde(rename = "work-handoff-source-validation")]
-    WorkHandoffSourceValidation,
-    #[serde(rename = "work-handoff-validation")]
-    WorkHandoffValidation,
-    #[serde(rename = "work-handoff")]
-    WorkHandoff,
     #[serde(rename = "work-hierarchy-selection-validation")]
     WorkHierarchySelectionValidation,
     #[serde(rename = "work-hierarchy-selection")]
@@ -131,12 +119,6 @@ pub enum PublicSchema {
     WorkInstructionSelection,
     #[serde(rename = "work-instructions")]
     WorkInstructions,
-    #[serde(rename = "work-invocation")]
-    WorkInvocation,
-    #[serde(rename = "work-operation-envelope")]
-    WorkOperationEnvelope,
-    #[serde(rename = "work-operation-result")]
-    WorkOperationResult,
     #[serde(rename = "work-record-begin")]
     WorkRecordBegin,
     #[serde(rename = "work-record-finish-request")]
@@ -208,7 +190,7 @@ pub enum PublicSchema {
 }
 
 impl PublicSchema {
-    pub const ALL: [Self; 100] = [
+    pub const ALL: [Self; 91] = [
         Self::WorkFileTransactionRequest,
         Self::WorkFileTransactionPreview,
         Self::WorkFileRecoveryPreview,
@@ -236,17 +218,14 @@ impl PublicSchema {
         Self::WorkCommandResult,
         Self::WorkCommandRunRequest,
         Self::WorkCommandStarted,
+        Self::WorkHostExecutionReport,
+        Self::WorkHostFileReport,
         Self::WorkContractCatalog,
         Self::WorkContractDescription,
         Self::WorkContractScaffold,
         Self::WorkCorrectionCreateRequest,
         Self::WorkCorrectionCreate,
         Self::WorkCorrection,
-        Self::WorkDelegationBuildRequest,
-        Self::WorkDelegationEnvelope,
-        Self::WorkDelegationValidation,
-        Self::WorkDiscussionHandoffRequest,
-        Self::WorkDiscussionHandoff,
         Self::WorkError,
         Self::WorkExecutePreflight,
         Self::WorkExecuteWorktreeSnapshot,
@@ -262,9 +241,6 @@ impl PublicSchema {
         Self::WorkExecutionRecoveryPrepare,
         Self::WorkExecutionRecoveryRequest,
         Self::WorkExecutionRecovery,
-        Self::WorkHandoffSourceValidation,
-        Self::WorkHandoffValidation,
-        Self::WorkHandoff,
         Self::WorkHierarchySelectionValidation,
         Self::WorkHierarchySelection,
         Self::WorkHierarchy,
@@ -272,9 +248,6 @@ impl PublicSchema {
         Self::WorkInstructionSelectionManifest,
         Self::WorkInstructionSelection,
         Self::WorkInstructions,
-        Self::WorkInvocation,
-        Self::WorkOperationEnvelope,
-        Self::WorkOperationResult,
         Self::WorkRecordBegin,
         Self::WorkRecordFinishRequest,
         Self::WorkRecordFinish,
@@ -341,17 +314,14 @@ impl PublicSchema {
             Self::WorkCommandResult => "work-command-result",
             Self::WorkCommandRunRequest => "work-command-run-request",
             Self::WorkCommandStarted => "work-command-started",
+            Self::WorkHostExecutionReport => "work-host-execution-report",
+            Self::WorkHostFileReport => "work-host-file-report",
             Self::WorkContractCatalog => "work-contract-catalog",
             Self::WorkContractDescription => "work-contract-description",
             Self::WorkContractScaffold => "work-contract-scaffold",
             Self::WorkCorrectionCreateRequest => "work-correction-create-request",
             Self::WorkCorrectionCreate => "work-correction-create",
             Self::WorkCorrection => "work-correction",
-            Self::WorkDelegationBuildRequest => "work-delegation-build-request",
-            Self::WorkDelegationEnvelope => "work-delegation-envelope",
-            Self::WorkDelegationValidation => "work-delegation-validation",
-            Self::WorkDiscussionHandoffRequest => "work-discussion-handoff-request",
-            Self::WorkDiscussionHandoff => "work-discussion-handoff",
             Self::WorkError => "work-error",
             Self::WorkExecutePreflight => "work-execute-preflight",
             Self::WorkExecuteWorktreeSnapshot => "work-execute-worktree-snapshot",
@@ -369,9 +339,6 @@ impl PublicSchema {
             Self::WorkExecutionRecoveryPrepare => "work-execution-recovery-prepare",
             Self::WorkExecutionRecoveryRequest => "work-execution-recovery-request",
             Self::WorkExecutionRecovery => "work-execution-recovery",
-            Self::WorkHandoffSourceValidation => "work-handoff-source-validation",
-            Self::WorkHandoffValidation => "work-handoff-validation",
-            Self::WorkHandoff => "work-handoff",
             Self::WorkHierarchySelectionValidation => "work-hierarchy-selection-validation",
             Self::WorkHierarchySelection => "work-hierarchy-selection",
             Self::WorkHierarchy => "work-hierarchy",
@@ -379,9 +346,6 @@ impl PublicSchema {
             Self::WorkInstructionSelectionManifest => "work-instruction-selection-manifest",
             Self::WorkInstructionSelection => "work-instruction-selection",
             Self::WorkInstructions => "work-instructions",
-            Self::WorkInvocation => "work-invocation",
-            Self::WorkOperationEnvelope => "work-operation-envelope",
-            Self::WorkOperationResult => "work-operation-result",
             Self::WorkRecordBegin => "work-record-begin",
             Self::WorkRecordFinishRequest => "work-record-finish-request",
             Self::WorkRecordFinish => "work-record-finish",
@@ -591,36 +555,9 @@ mod tests {
     }
 
     #[test]
-    fn current_invocation_ids_reject_versioned_aliases() {
+    fn retired_invocation_schema_is_not_public() {
         assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-invocation/v1"))
-                .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-invocation"))
-                .unwrap()
-                .as_str(),
-            "work-invocation"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-operation-envelope/v1"))
-                .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-operation-envelope"))
-                .unwrap()
-                .as_str(),
-            "work-operation-envelope"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-operation-result/v1"))
-                .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-operation-result"))
-                .unwrap()
-                .as_str(),
-            "work-operation-result"
+            serde_json::from_value::<PublicSchema>(serde_json::json!("work-invocation")).is_err()
         );
     }
 
@@ -965,106 +902,27 @@ mod tests {
     }
 
     #[test]
-    fn current_discussion_handoff_request_ids_reject_versioned_aliases() {
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-discussion-handoff-request/v1"
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-discussion-handoff-request"
-            ))
-            .unwrap()
-            .as_str(),
-            "work-discussion-handoff-request"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-discussion-handoff/v1"))
-                .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-discussion-handoff"))
-                .unwrap()
-                .as_str(),
-            "work-discussion-handoff"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-handoff-source-validation/v1"
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-handoff-source-validation"
-            ))
-            .unwrap()
-            .as_str(),
-            "work-handoff-source-validation"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-handoff-validation/v1"))
-                .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-handoff-validation"))
-                .unwrap()
-                .as_str(),
-            "work-handoff-validation"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-handoff/v1")).is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-handoff"))
-                .unwrap()
-                .as_str(),
-            "work-handoff"
-        );
+    fn retired_handoff_schemas_are_not_public() {
+        for id in [
+            "work-discussion-handoff-request",
+            "work-discussion-handoff",
+            "work-handoff-source-validation",
+            "work-handoff-validation",
+            "work-handoff",
+        ] {
+            assert!(serde_json::from_value::<PublicSchema>(serde_json::json!(id)).is_err());
+        }
     }
 
     #[test]
-    fn current_delegation_build_request_ids_reject_versioned_aliases() {
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-delegation-build-request/v1"
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-delegation-build-request"
-            ))
-            .unwrap()
-            .as_str(),
-            "work-delegation-build-request"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-delegation-envelope/v1"
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-delegation-envelope"))
-                .unwrap()
-                .as_str(),
-            "work-delegation-envelope"
-        );
-        assert!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!(
-                "work-delegation-validation/v1"
-            ))
-            .is_err()
-        );
-        assert_eq!(
-            serde_json::from_value::<PublicSchema>(serde_json::json!("work-delegation-validation"))
-                .unwrap()
-                .as_str(),
-            "work-delegation-validation"
-        );
+    fn retired_delegation_schemas_are_not_public() {
+        for id in [
+            "work-delegation-build-request",
+            "work-delegation-envelope",
+            "work-delegation-validation",
+        ] {
+            assert!(serde_json::from_value::<PublicSchema>(serde_json::json!(id)).is_err());
+        }
     }
 
     #[test]

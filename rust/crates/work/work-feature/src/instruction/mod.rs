@@ -10,11 +10,9 @@ use work_operations::instruction::{
     InstructionSelection, ModeCatalog, SourceSet, SourceSummary, selection as source_selection,
 };
 use work_operations::protocol::{INVALID_SHA256_ERROR_CODE, WORKFLOW_MODES, valid_sha256};
-use work_operations::routing::RoutingRequest;
 
 use crate::error::{ExitCode, WorkError};
 use crate::hierarchy::HierarchyCatalogRepository;
-use crate::workflow::WorkflowRoutingRepository;
 
 pub trait InstructionCatalogRepository: HierarchyCatalogRepository {
     fn scan_mode_metadata(&self, mode: &str) -> Result<BTreeMap<String, Value>, WorkError>;
@@ -141,13 +139,39 @@ pub trait InstructionSourceRepository: HierarchyCatalogRepository {
     ) -> Result<SourceSet, WorkError>;
 }
 
-pub fn migration_manifest(
-    routing: &mut impl WorkflowRoutingRepository,
-    mode: &str,
-    status: &str,
-    operation: &str,
+/// Recheck only the sources named by a retained historical manifest.
+/// The stored selection is evidence; it does not select a new Agent or prompt.
+pub trait LegacyManifestSources {
+    fn canonical_source_sha256(&mut self, name: &str, path: &str) -> Result<String, WorkError>;
+    fn recheck_sources(&self) -> Result<(), WorkError>;
+}
+
+pub fn refresh_legacy_manifest(
+    sources: &mut impl LegacyManifestSources,
+    stored: &Value,
     artifact: &Value,
 ) -> Result<Value, WorkError> {
+    serde_json::from_value::<work_model::instruction::InstructionSelectionManifest>(stored.clone())
+        .map_err(|_| {
+            error(
+                ExitCode::Contract,
+                "invalid_instruction_routing_manifest",
+                "Stored instruction selection evidence is invalid.",
+                json!({}),
+            )
+        })?;
+    let mut signed = stored.clone();
+    let recorded_sha = signed
+        .as_object_mut()
+        .and_then(|value| value.remove("selection_sha256"));
+    if recorded_sha != fingerprint::structured(&signed).ok().map(Value::String) {
+        return Err(error(
+            ExitCode::ArtifactIntegrity,
+            "instruction_selection_manifest_drift",
+            "Stored instruction selection evidence has changed.",
+            json!({}),
+        ));
+    }
     let mut state = serde_json::Map::new();
     for field in [
         "schema",
@@ -163,34 +187,56 @@ pub fn migration_manifest(
         }
     }
     let state_sha = fingerprint::structured(&Value::Object(state)).map_err(|_| {
-        WorkError::new(
+        error(
             ExitCode::Contract,
             "instruction_migration_state_invalid",
-            "The migration routing state is invalid.",
+            "Stored instruction selection state is invalid.",
             json!({}),
         )
     })?;
-    let request = RoutingRequest {
-        status,
-        operation,
-        confirmation: false,
-        mode: Some(mode),
-        artifact_lifecycle: "confirmed",
-        formal_events: &[],
-        role: "main",
-        authorization_state: Some("authorized"),
-        verified_state_sha256: &state_sha,
-    };
-    let selected = routing.route(&request)?;
-    if selected["routing_status"] != "VALID" {
-        return Err(WorkError::new(
-            ExitCode::ArtifactIntegrity,
-            "instruction_migration_routing_review_required",
-            "The new router could not build a valid manifest.",
-            json!({"status":status,"operation":operation}),
-        ));
+    let mut current = stored.clone();
+    current["routing_input"]["verified_state_sha256"] = json!(state_sha);
+    for row in current["sources"].as_array_mut().ok_or_else(|| {
+        error(
+            ExitCode::Contract,
+            "invalid_instruction_routing_manifest",
+            "Stored instruction sources are invalid.",
+            json!({}),
+        )
+    })? {
+        let name = row["logical_name"]
+            .as_str()
+            .ok_or_else(|| {
+                error(
+                    ExitCode::Contract,
+                    "invalid_instruction_routing_manifest",
+                    "Stored instruction source name is invalid.",
+                    json!({}),
+                )
+            })?
+            .to_owned();
+        let path = row["path"]
+            .as_str()
+            .ok_or_else(|| {
+                error(
+                    ExitCode::Contract,
+                    "invalid_instruction_routing_manifest",
+                    "Stored instruction source path is invalid.",
+                    json!({}),
+                )
+            })?
+            .to_owned();
+        row["canonical_sha256"] = json!(sources.canonical_source_sha256(&name, &path)?);
     }
-    Ok(selected["selection_manifest"].clone())
+    sources.recheck_sources()?;
+    current.as_object_mut().unwrap().remove("selection_sha256");
+    current["selection_sha256"] = json!(fingerprint::structured(&current).map_err(|_| error(
+        ExitCode::Contract,
+        "invalid_instruction_routing_manifest",
+        "Stored instruction selection cannot be fingerprinted.",
+        json!({})
+    ))?);
+    Ok(current)
 }
 
 fn error(code: ExitCode, reason: &str, message: &str, details: Value) -> WorkError {

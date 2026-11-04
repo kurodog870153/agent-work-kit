@@ -14,8 +14,8 @@ from release_publication_checks import expected_assets
 
 STAGE_JOBS = {
     "validate": "validate release publication",
-    "macos_e2e": "build and test macOS release ZIP",
-    "windows_e2e": "build and test Windows release ZIP",
+    "macos_e2e": "build macOS package",
+    "windows_e2e": "build Windows package",
     "attest": "verify and attest release assets",
 }
 
@@ -36,7 +36,9 @@ def workflow_stage_statuses(repository, run_id):
         name, separator, conclusion = line.partition("\t")
         if separator:
             jobs[name] = conclusion
-    return {stage: jobs.get(name) or "unknown" for stage, name in STAGE_JOBS.items()}
+    return {stage: next((status for job, status in jobs.items()
+                         if job == name or job.endswith(f" / {name}")), None) or "unknown"
+            for stage, name in STAGE_JOBS.items()}
 
 
 def digest(path):

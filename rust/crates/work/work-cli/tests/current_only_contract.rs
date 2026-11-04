@@ -26,6 +26,15 @@ const MARKERS: &[&str] = &[
 ];
 const RETIRED_SCHEMAS: &[&str] = &[
     "work-discussion-progress",
+    "work-delegation-build-request",
+    "work-delegation-envelope",
+    "work-delegation-validation",
+    "work-discussion-handoff-request",
+    "work-discussion-handoff",
+    "work-handoff-source-validation",
+    "work-handoff-validation",
+    "work-handoff",
+    "work-invocation",
     "work-progress-prepare",
     "work-progress-preview",
     "work-progress-read",
@@ -42,6 +51,58 @@ const RETIRED_SCHEMAS: &[&str] = &[
     "work-task-semantic-request",
 ];
 const RETIRED_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-blocked/expected/execute-to-plan-result.json",
+        "a11b8388075e118304b0178cc6ba8bbb1f4080500e10ebab897c902a1c1bd30a",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-blocked/expected/execute-to-task-result.json",
+        "9a385e83134de49e49c12dd6e85697621ebe34b30e91379652693b77fe76e80d",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/expected/execute-to-plan-result.json",
+        "94fdde3e23015af2edb16ccda5893f2bff3d0357c830c730563f511b733c65a2",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/expected/execute-to-task-result.json",
+        "94dd40022ac28e186ad69eb272e73b3b4bdb74569d0d1fe2486602e78187a104",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-blocked/input/execute-to-plan-request.json",
+        "126ce843df17048a8a4b551f007d3c30c1219cb42e5104461935047e369583b3",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-blocked/input/execute-to-task-request.json",
+        "de70b5e9659566b8b5e223a2fe955102455f377175dfe194a16b0cd86c3c593a",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/input/execute-to-plan-request.json",
+        "93342951a83ce54936ab35fb7b0f4d61d198b365b188016f7d362eac75309304",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/input/execute-to-task-request.json",
+        "3ad7624ff6422220f30b33064e8e5117178d1c26df2b56b414b8a46c9079f435",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/artifact-editor-formal/expected/result.json",
+        "a8b9e473bb7fc22b51ed6d09dc80ecf4c55de3ad7b9d66d18093325937a8127a",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/artifact-editor/expected/result.json",
+        "a8b9e473bb7fc22b51ed6d09dc80ecf4c55de3ad7b9d66d18093325937a8127a",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/execute/expected/result.json",
+        "8217f9374965595ae0d2277832689bb295a21e4aaeb93e6c10349c125ab608fe",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/task-coordinator/expected/result.json",
+        "62be91037bd96c8093f2886a56b17875789fc0439658dbe2a0a35dec05e6553a",
+    ),
+    (
+        "rust/crates/work/work-infrastructure/fixtures/cases/delegation/role/task-skill/expected/result.json",
+        "000d2a451e342441e5482a37afa3b78ad79ed2afb964b9e9618cd87dd2558b69",
+    ),
     (
         "rust/crates/work/work-cli/fixtures/process/legacy-plan.json",
         "6bf49a6521bc9c1bfce0e85023f192b0095018cd408448092632df3905d8ab8e",
@@ -664,13 +725,6 @@ fn retired_discussion_lifecycles_have_no_public_schema_or_private_role() {
         let registry = serde_json::to_value(work_model::contract::data::registry()).unwrap();
         assert!(registry["items"].get(*id).is_none(), "{id}");
     }
-    let storage = work_infrastructure::delegation_storage::LocalDelegationStorage {
-        project_root: root(),
-        skill_root: root().join("skills/work"),
-        skill_configs: vec![],
-    };
-    let rejected = work_flow::delegation::build(&storage, &json!({"schema":"work-delegation-build-request","role":"progress-saver","request":"Retired role"})).unwrap_err();
-    assert_eq!(rejected.reason_code, "delegation_boundary_mismatch");
 }
 
 #[test]

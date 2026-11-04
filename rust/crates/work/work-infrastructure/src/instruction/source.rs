@@ -1214,14 +1214,13 @@ mod tests {
             &references.join("instruction-loading"),
         )
         .unwrap();
-        assert_eq!(routes.len(), 20);
+        assert_eq!(routes.len(), 15);
         assert!(
             routes
                 .iter()
                 .any(|(name, _)| name == "tool-policy-integration.md")
         );
         assert!(bootstrap.contains("source_order"));
-        assert!(bootstrap.contains("REVIEW_REQUIRED"));
 
         let markdown_files = |directory: &std::path::Path| {
             let mut paths: Vec<_> = fs::read_dir(directory)
@@ -1240,7 +1239,7 @@ mod tests {
             })
         };
         let common = markdown_files(&references.join("instruction-loading"));
-        assert_eq!(common.len(), 20);
+        assert_eq!(common.len(), 16);
         for path in common {
             let content = fs::read_to_string(&path).unwrap();
             assert_eq!(

@@ -72,14 +72,17 @@ class VersionGuardTests(unittest.TestCase):
                 '[workspace]\nmembers = ["crates/sample"]\n[workspace.package]\nversion = "0.2.0"\n',
                 encoding="utf-8",
             )
-            with self.assertRaises(ValueError):
+            lock.write_text('[[package]]\nname = "sample"\nversion = "0.2.0"\n', encoding="utf-8")
+            self.assertEqual(guard.validate_workspace(root, baseline), "0.2.0")
+            lock.write_text('[[package]]\nname = "sample"\nversion = "0.1.0"\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Cargo.lock workspace versions"):
                 guard.validate_workspace(root, baseline)
             (rust / "Cargo.toml").write_text(
                 '[workspace]\nmembers = ["crates/sample"]\n[workspace.package]\nversion = "0.1.0"\n',
                 encoding="utf-8",
             )
             lock.write_text('[[package]]\nname = "sample"\nversion = "0.2.0"\n', encoding="utf-8")
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, "Cargo.lock workspace versions"):
                 guard.validate_workspace(root, baseline)
 
     def test_tooling_inherits_workspace_version(self):

@@ -21,8 +21,8 @@ class ReleaseVerificationReportTests(unittest.TestCase):
     def test_stage_statuses_read_only_current_run_jobs(self):
         lines = (
             "validate release publication\tsuccess\n"
-            "build and test macOS release ZIP\tsuccess\n"
-            "build and test Windows release ZIP\tfailure\n"
+            "build and verify packages / build macOS package\tsuccess\n"
+            "build and verify packages / build Windows package\tfailure\n"
             "verify and attest release assets\tskipped\n"
         )
         result = type("Result", (), {"stdout": lines})()

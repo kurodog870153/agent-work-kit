@@ -48,7 +48,9 @@ where
         repository,
         skill_roots,
         index_path,
-        true,
+        // A published TASK may already have created its declared files. Creation and
+        // Execute preflight validate the live file lifecycle at their own boundaries.
+        false,
     )
 }
 

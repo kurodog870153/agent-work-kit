@@ -6,7 +6,7 @@ installer_prepare_payload() {
         mkdir -p -- "$prepared/$(dirname -- "$relative")" || return 1
         cp -- "$source_work/$relative" "$prepared/$relative" || return 1
     done
-    for relative in references/instruction-loading references/workflows references/subagents; do
+    for relative in references/instruction-loading references/workflows; do
         mkdir -p -- "$prepared/$relative" || return 1
         cp -R -- "$source_work/$relative/." "$prepared/$relative/" || return 1
     done
