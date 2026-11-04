@@ -16,7 +16,7 @@ APPROVED = {
     "taiki-e/install-action@v2",
     "ruby/setup-ruby@v1",
     "./.github/workflows/rust-validation.yml",
-    "./.github/workflows/build-and-verify-packages.yml",
+    "./.github/workflows/build-and-validate-packages.yml",
     "./.github/actions/verify-release-package-checksums",
     "./.github/actions/select-release-rust-toolchain",
     "./.github/actions/verify-windows-batch-line-endings",

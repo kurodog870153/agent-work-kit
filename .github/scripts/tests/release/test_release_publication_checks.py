@@ -19,14 +19,18 @@ class ReleaseGateTests(unittest.TestCase):
             root = Path(directory)
             (root / "rust").mkdir()
             (root / "rust/Cargo.toml").write_text("[workspace]\n", encoding="utf-8")
+            (root / "VERSION").write_text("1.0.4\n", encoding="utf-8")
             def api(path, *_):
                 if "/git/ref/tags/" in path:
                     return {"object": {"sha": sha}}
                 return {"commit": {"sha": "b" * 40}}
-            with patch("version_guard.validate_lock", return_value="1.0.4"), \
+            with patch("version_guard.validate_lock", return_value="1.0.0") as validate_lock, \
                  patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=sha)), \
                  patch("release_publication_checks.api", side_effect=api):
                 self.assertEqual(check_identity(root, "owner/repo", "v1.0.4", sha, require_latest_main=False), "1.0.4")
+                validate_lock.assert_called()
+                with self.assertRaisesRegex(ValueError, "tag v1.0.0 does not match project version 1.0.4"):
+                    check_identity(root, "owner/repo", "v1.0.0", sha, require_latest_main=False)
                 with self.assertRaisesRegex(ValueError, "latest main"):
                     check_identity(root, "owner/repo", "v1.0.4", sha)
 

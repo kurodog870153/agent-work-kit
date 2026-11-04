@@ -76,9 +76,9 @@ jobs:
         run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   package-ci:
-    name: build and verify packages
+    name: build and validate packages
     needs: validate-release-publication
-    uses: ./.github/workflows/build-and-verify-packages.yml
+    uses: ./.github/workflows/build-and-validate-packages.yml
     with:
       release: true
       tag: ${{ needs.validate-release-publication.outputs.tag }}

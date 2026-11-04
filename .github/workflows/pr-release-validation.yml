@@ -44,9 +44,9 @@ jobs:
       actions: read
 
   package-ci:
-    name: build and verify packages
+    name: build and validate packages
     needs: validate-release-preflight
-    uses: ./.github/workflows/build-and-verify-packages.yml
+    uses: ./.github/workflows/build-and-validate-packages.yml
     permissions:
       contents: read
       actions: read

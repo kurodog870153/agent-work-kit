@@ -25,7 +25,7 @@ class ReleasePackageTests(unittest.TestCase):
             (rust / "Cargo.toml").write_text(
                 f'[workspace.package]\nversion = "{workspace_version}"\n', encoding="utf-8"
             )
-            with patch("release_package.validate_lock", return_value=workspace_version):
+            with patch("version_guard.validate_lock", return_value=workspace_version):
                 self.assertEqual(checked_version(repository), release_version)
 
     def test_both_skills_and_new_instruction_modules_are_packaged(self):
