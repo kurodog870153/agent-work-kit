@@ -19,6 +19,7 @@ jobs:
     runs-on: macos-latest
     env:
       TAG: ${{ inputs.tag }}
+      RELEASE_MODE: ${{ inputs.release }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,22 +30,18 @@ jobs:
           target: aarch64-apple-darwin
       - name: Require native ARM64 runner
         run: test "$(uname -m)" = arm64 && test "$RUNNER_ARCH" = ARM64
-      - name: Verify native macOS installation lock
-        if: ${{ !inputs.release }}
-        run: bash .github/scripts/tests/release/mac/lock/test_native_lock.sh
-      - name: Verify macOS installer modules
-        if: ${{ !inputs.release }}
+      - name: Verify macOS installer prerequisites
         run: |
-          bash .github/scripts/tests/release/mac/cli/test_parse_options.sh
-          node .github/scripts/tests/release/mac/state/test_install_state.js
-          bash .github/scripts/tests/release/mac/transaction/test_work.sh
-          bash .github/scripts/tests/release/mac/transaction/test_tooling.sh
-          bash .github/scripts/tests/release/mac/global-agents/test_policy.sh
-          bash .github/scripts/tests/release/mac/global-agents/test_transaction.sh
+          if [[ "$RELEASE_MODE" == false ]]; then
+            bash .github/scripts/tests/release/mac/lock/test_native_lock.sh
+            bash .github/scripts/tests/release/mac/cli/test_parse_options.sh
+            node .github/scripts/tests/release/mac/state/test_install_state.js
+            bash .github/scripts/tests/release/mac/transaction/test_work.sh
+            bash .github/scripts/tests/release/mac/transaction/test_tooling.sh
+            bash .github/scripts/tests/release/mac/global-agents/test_policy.sh
+            bash .github/scripts/tests/release/mac/global-agents/test_transaction.sh
+          fi
           python3 -B .github/scripts/tests/release/test_downloader_entry.py
-      - name: Verify macOS downloader against loopback fixture
-        if: inputs.release
-        run: python3 -B .github/scripts/tests/release/test_downloader_entry.py
       - name: Install Rust toolchain
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
@@ -52,26 +49,22 @@ jobs:
         run: |
           cargo build --release --locked -p work-cli
           cargo build --release --locked -p tooling-cli
-      - name: Verify macOS target identity
-        if: ${{ !inputs.release }}
-        run: |
-          bash .github/scripts/tests/release/mac/target/test_preflight.sh
-          bash .github/scripts/tests/release/mac/install/test_install.sh
       - name: Package and verify macOS ZIP
-        if: ${{ !inputs.release }}
         run: |
+          if [[ "$RELEASE_MODE" == false ]]; then
+            bash .github/scripts/tests/release/mac/target/test_preflight.sh
+            bash .github/scripts/tests/release/mac/install/test_install.sh
+            version="$(cat VERSION)"
+          else
+            version="${TAG#v}"
+          fi
+          zip="dist/work-v${version}-macos-arm64.zip"
           python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
-          (cd dist && shasum -a 256 "work-v$(cat ../VERSION)-macos-arm64.zip" > SHA256SUMS.txt)
-          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v$(cat VERSION)-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
-      - name: Package and verify final macOS ZIP
-        if: inputs.release
-        env:
-          COMMIT: ${{ github.sha }}
-        run: |
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$COMMIT" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
-          python3 .github/scripts/release/release_package_integrity.py verify-zip "dist/work-v${TAG#v}-macos-arm64.zip"
-          (cd dist && shasum -a 256 "work-v${TAG#v}-macos-arm64.zip" > SHA256SUMS.txt)
-          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "dist/work-v${TAG#v}-macos-arm64.zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+          if [[ "$RELEASE_MODE" == true ]]; then
+            python3 .github/scripts/release/release_package_integrity.py verify-zip "$zip"
+          fi
+          (cd dist && shasum -a 256 "${zip##*/}" > SHA256SUMS.txt)
+          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
       - uses: actions/upload-artifact@v7
@@ -90,19 +83,15 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ inputs.tag }}
+      RELEASE_MODE: ${{ inputs.release }}
     steps:
       - uses: actions/checkout@v7
-        if: ${{ !inputs.release }}
         with:
           persist-credentials: false
         env:
-          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_COUNT: ${{ inputs.release && '0' || '1' }}
           GIT_CONFIG_KEY_0: core.autocrlf
           GIT_CONFIG_VALUE_0: "false"
-      - uses: actions/checkout@v7
-        if: inputs.release
-        with:
-          persist-credentials: false
       - name: Select Rust toolchain
         uses: ./.github/actions/select-release-rust-toolchain
         with:
@@ -110,26 +99,24 @@ jobs:
       - name: Require native x64 runner
         run: |
           if ($env:RUNNER_ARCH -ne 'X64' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Expected Windows x64 runner' }
-      - name: Verify native Windows installation lock
-        if: ${{ !inputs.release }}
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/lock/test_mutex.ps1
-      - name: Verify Windows Release downloader against loopback fixture
-        run: python -B .github/scripts/tests/release/test_downloader_entry.py
-      - name: Verify Windows installer modules
-        if: ${{ !inputs.release }}
+      - name: Verify Windows installer prerequisites
         run: |
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/cli/test_parse_options.ps1
+          if ($env:RELEASE_MODE -eq 'false') {
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/lock/test_mutex.ps1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          python -B .github/scripts/tests/release/test_downloader_entry.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/state/test_install_state.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/transaction/test_work.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/transaction/test_tooling.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_policy.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          powershell.exe -NoProfile -File .github/scripts/tests/release/windows/global-agents/test_transaction.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:RELEASE_MODE -eq 'false') {
+            foreach ($test in @(
+              'cli/test_parse_options.ps1', 'state/test_install_state.ps1',
+              'transaction/test_work.ps1', 'transaction/test_tooling.ps1',
+              'global-agents/test_policy.ps1', 'global-agents/test_transaction.ps1'
+            )) {
+              powershell.exe -NoProfile -File ".github/scripts/tests/release/windows/$test"
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          }
       - name: Verify batch line endings
         uses: ./.github/actions/verify-windows-batch-line-endings
       - name: Install Rust toolchain
@@ -141,39 +128,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --release --locked -p tooling-cli
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify Windows target identity
-        if: ${{ !inputs.release }}
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/target/test_preflight.ps1 -Binary rust/target/release/work.exe
-      - name: Verify Windows installer core
-        if: ${{ !inputs.release }}
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/install/test_install.ps1 -Binary rust/target/release/work.exe
-      - name: Verify Windows offline Package entry
-        if: ${{ !inputs.release }}
-        run: powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe -ToolingBinary rust/target/release/tooling.exe
       - name: Package and verify Windows ZIP
-        if: ${{ !inputs.release }}
         run: |
-          $version = (Get-Content VERSION -Raw).Trim()
+          if ($env:RELEASE_MODE -eq 'false') {
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/target/test_preflight.ps1 -Binary rust/target/release/work.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/install/test_install.ps1 -Binary rust/target/release/work.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe -ToolingBinary rust/target/release/tooling.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $version = (Get-Content VERSION -Raw).Trim()
+          } else {
+            $version = $env:TAG.Substring(1)
+          }
           $os = Get-CimInstance Win32_OperatingSystem
           python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $zip = "work-v${version}-windows-x64-msvc.zip"
-          $hash = (Get-FileHash "dist/$zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $zip`n")
-          python -B .github/scripts/release/release_downloader_e2e.py --zip "dist/$zip" --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Package and verify final Windows ZIP
-        if: inputs.release
-        env:
-          COMMIT: ${{ github.sha }}
-        run: |
-          $version = $env:TAG.Substring(1)
-          $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:COMMIT --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = "dist/work-v${version}-windows-x64-msvc.zip"
-          python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:RELEASE_MODE -eq 'true') {
+            python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $(Split-Path $zip -Leaf)`n")
           python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc

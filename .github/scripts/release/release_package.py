@@ -15,7 +15,7 @@ from pathlib import Path
 from release_package_integrity import create_manifest, verify_tree, verify_zip
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "version-guard"))
-from version_guard import validate_lock
+from version_guard import project_version, validate_lock
 
 
 PLATFORMS = {
@@ -76,7 +76,8 @@ DOWNLOADER_TAG_PLACEHOLDER = b"__WORK_RELEASE_TAG__"
 
 def checked_version(repository):
     with (repository / "rust/Cargo.toml").open("rb") as stream:
-        return validate_lock(repository, tomllib.load(stream))
+        validate_lock(repository, tomllib.load(stream))
+    return project_version(repository)
 
 
 def checked_workspace_version(repository):
