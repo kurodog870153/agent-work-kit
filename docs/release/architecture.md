@@ -1,4 +1,4 @@
-# Work Release 安裝器架構
+# Agent Work Kit Release 安裝器架構
 
 ## 1. 範圍
 
@@ -45,9 +45,11 @@ Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。
 | 父層、Work、Tooling 狀態與目標預檢 | `installer/state/state-core.js`、`installer/state/work-state.js`、`installer/state/tooling-state.js`、`installer/target/preflight.sh` | `installer/state/state-core.ps1`、`installer/state/work-state.ps1`、`installer/state/tooling-state.ps1`、`installer/target/preflight.ps1` |
 | 安裝鎖與核心 | `installer/lock/native-lock.c`、`installer/install/install-core.sh` | `installer/lock/mutex.ps1`、`installer/install/install-core.ps1` |
 | Work 安裝準備與驗證 | `installer/install/work-install.sh` | `installer/install/work-install.ps1` |
-| Work 與 Global AGENTS 交易 | `installer/transaction/work.sh`、`installer/global-agents/transaction.sh` | `installer/transaction/work.ps1`、`installer/global-agents/transaction.ps1` |
+| Work 與 Global Instructions 交易 | `installer/transaction/work.sh`、`installer/global-instructions/transaction.sh` | `installer/transaction/work.ps1`、`installer/global-instructions/transaction.ps1` |
 | Tooling 安裝準備與驗證 | `installer/install/tooling-install.sh` | `installer/install/tooling-install.ps1` |
 | Tooling 交易 | `installer/transaction/tooling.sh` | `installer/transaction/tooling.ps1` |
 | 路徑遷移清理 | `installer/install/migration-cleanup.sh` | `installer/install/migration-cleanup.ps1` |
 
 表內路徑分別相對於 `os-scripts/mac/` 與 `os-scripts/windows/`。`.github/scripts/release/` 負責產生與驗證 Release 資產，不參與使用者電腦上的安裝交易。
+
+`global-instructions` 處理 Codex 的 `AGENTS.md` 與 Claude Code 的 `CLAUDE.md`；兩個 Host 使用相同來源及交易機制。

@@ -13,6 +13,12 @@ try {
         python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
         if ($LASTEXITCODE -ne 0) { throw "Windows release installation E2E failed for $installerHost with exit code $LASTEXITCODE" }
     }
+    Write-Host 'Network isolation active; verifying Windows dual Host coexistence.'
+    python -B .github/scripts/release/release_install_e2e.py `
+        --zip "dist/agent-work-kit-v${version}-codex-windows-x64-msvc.zip" `
+        --peer-zip "dist/agent-work-kit-v${version}-claude-windows-x64-msvc.zip" `
+        --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+    if ($LASTEXITCODE -ne 0) { throw "Windows dual Host coexistence E2E failed with exit code $LASTEXITCODE" }
 } finally {
     Write-Host 'Removing Windows release E2E network isolation rule.'
     Remove-NetFirewallRule -Name $rule -ErrorAction Stop

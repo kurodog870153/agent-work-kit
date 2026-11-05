@@ -12,10 +12,32 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, verify_readme_download
+from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, snapshot_host, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
+    def test_host_snapshot_includes_parent_state_and_instructions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            for host, skills_path, instructions_path in (
+                ("codex", ".agents/skills", ".codex/AGENTS.md"),
+                ("claude", ".claude/skills", ".claude/CLAUDE.md"),
+            ):
+                skills = home / skills_path
+                instructions = home / instructions_path
+                skills.mkdir(parents=True, exist_ok=True)
+                instructions.parent.mkdir(parents=True, exist_ok=True)
+                (skills / "install-state.json").write_text(host, encoding="utf-8")
+                (skills / "work").mkdir()
+                (skills / "work/SKILL.md").write_text(host, encoding="utf-8")
+                instructions.write_text(host, encoding="utf-8")
+                original = snapshot_host(home, host)
+                instructions.write_text(host + " updated", encoding="utf-8")
+                self.assertNotEqual(snapshot_host(home, host), original)
+                instructions.unlink()
+                with self.assertRaisesRegex(AssertionError, "no global instructions"):
+                    snapshot_host(home, host)
+
     def test_both_platforms_pass_zip_host_into_native_installer(self):
         for platform, suffix in (("macos-arm64", ".command"), ("windows-x64-msvc", ".bat")):
             for host in ("codex", "claude"):

@@ -1,4 +1,4 @@
-# Work Release 安裝
+# Agent Work Kit Release 安裝
 
 每個 ZIP 對應一個 Host 與平台，包含預編譯 Work binary、Work 與 Tooling Skill、共用規範及安裝器。Host 可選 Codex 或 Claude Code。
 

@@ -43,8 +43,8 @@ jobs:
             node .github/scripts/tests/release/mac/state/test_install_state.js
             bash .github/scripts/tests/release/mac/transaction/test_work.sh
             bash .github/scripts/tests/release/mac/transaction/test_tooling.sh
-            bash .github/scripts/tests/release/mac/global-agents/test_policy.sh
-            bash .github/scripts/tests/release/mac/global-agents/test_transaction.sh
+            bash .github/scripts/tests/release/mac/global-instructions/test_policy.sh
+            bash .github/scripts/tests/release/mac/global-instructions/test_transaction.sh
           fi
           python3 -B .github/scripts/tests/release/test_downloader_entry.py
       - name: Install Rust toolchain
@@ -119,7 +119,7 @@ jobs:
             foreach ($test in @(
               'cli/test_parse_options.ps1', 'state/test_install_state.ps1',
               'transaction/test_work.ps1', 'transaction/test_tooling.ps1',
-              'global-agents/test_policy.ps1', 'global-agents/test_transaction.ps1'
+              'global-instructions/test_policy.ps1', 'global-instructions/test_transaction.ps1'
             )) {
               powershell.exe -NoProfile -File ".github/scripts/tests/release/windows/$test"
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

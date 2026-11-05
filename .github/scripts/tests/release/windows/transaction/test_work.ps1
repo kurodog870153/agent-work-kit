@@ -3,8 +3,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 . (Join-Path $repoRoot 'os-scripts/windows/installer/target/preflight.ps1')
 function Test-InstallerLegacyWorkIdentity { param([string] $Target) return $true } # Transaction fixtures use text in place of the CLI binary.
 . (Join-Path $repoRoot 'os-scripts/windows/installer/transaction/work.ps1')
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/policy.ps1')
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/transaction.ps1')
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/policy.ps1')
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/transaction.ps1')
 $sourceWork = Join-Path $repoRoot 'skills/work'
 $scratch = Join-Path $repoRoot ('.installer-test-transaction.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null

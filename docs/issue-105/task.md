@@ -9,7 +9,7 @@
 | 共用規範與 Skill | 根目錄 `AGENTS.md`、`skills/work/`、`skills/tooling/`、`rust/Cargo.toml`、`rust/crates/work/`、`rust/crates/tooling/` | 尚無 `instructions/global-instructions.md`；Work、Tooling 與 Rust 須維持單一來源。 |
 | 公開安裝入口 | `os-scripts/mac/install-work-from-{source,package,github-release}.command`、`os-scripts/windows/install-work-from-{source,package,github-release}.bat` | 三種入口均帶舊名稱；Downloader 與 Package 必須共用 Host／Platform 身分契約。 |
 | 共用契約 | `os-scripts/common/installer/options.tsv`、`os-scripts/common/installer/install-state.json` | 選項含 `--global-agent` 等 Codex 語意，狀態尚無 Host 身分。 |
-| 平台安裝器 | `os-scripts/{mac,windows}/installer/{cli,install,state,target,transaction,global-agents,package,lock}/` | 安裝核心、狀態、預檢、交易與復原目前以 Codex 目標及 `AGENTS.md` 為主；須集中 Host 差異並保留平台安全機制。 |
+| 平台安裝器 | `os-scripts/{mac,windows}/installer/{cli,install,state,target,transaction,global-instructions,package,lock}/` | 安裝核心、狀態、預檢、交易與復原目前以 Codex 目標及 `AGENTS.md` 為主；須集中 Host 差異並保留平台安全機制。 |
 | 封裝與下載 | `.github/scripts/release/{release_package.py,release_package_integrity.py,release_install_e2e.py,release_downloader_e2e.py,downloader_fixture.py}` | 套件清單、名稱、內部完整性與端到端測試均需涵蓋四個 Host／Platform 組合。 |
 | 發布驗證 | `.github/scripts/release/{release_publication_checks.py,release_post_publish_checks.py,release_verification_report.py,release_version_availability.py,release_tag_creation.py}`、`.github/scripts/release/{mac,windows}/verify_install.*` | 外部 checksum、Attestation、資產集合及發布報告仍以舊命名與兩個 ZIP 為基礎。 |
 | CI 與測試 | `.github/workflows/{build-and-validate-packages,pr-release-validation,pr-release-credentials-validation,publish-release,rust-validation}.yml`、`.github/scripts/tests/release/`、`rust/crates/{work,tooling}/*/tests/` | 套件建置、安裝器單元與端到端測試、Windows batch 換行及 Rust 回歸檢查須一起更新。 |
@@ -60,7 +60,7 @@
 
 相依：任務 1、2。從同一規範來源安裝 `AGENTS.md` 或 `CLAUDE.md`，保留可選安裝、差異確認、安全交易與 Recovery。搬移根目錄 `AGENTS.md` 時，所有來源讀取及直接測試引用須整組更新，避免留下失效中間狀態。
 
-預計檔案：`AGENTS.md`、`instructions/global-instructions.md`、`os-scripts/{mac,windows}/installer/{install,global-agents,transaction}/`、`.github/scripts/release/release_package.py`、直接引用規範來源的測試。先列出根目錄引用再完整套用。
+預計檔案：`AGENTS.md`、`instructions/global-instructions.md`、`os-scripts/{mac,windows}/installer/{install,global-instructions,transaction}/`、`.github/scripts/release/release_package.py`、直接引用規範來源的測試。先列出根目錄引用再完整套用。
 
 - [x] 唯一共用來源為 `instructions/global-instructions.md`；封裝與安裝不讀根目錄 `AGENTS.md`。規範依使用者後續授權合併重複條文、精簡執行敘述並移除圖片預覽檔名規則。
 - [ ] 兩 Host 的規範檔名、差異確認、停用選擇及失敗復原均有測試並通過。
@@ -180,6 +180,8 @@
 - [ ] 兩平台的雙 Host 共存、獨立更新、狀態隔離與失敗復原有實測證據。
 - [ ] 未知、舊版或不安全狀態被拒絕且既有資料保留。
 
+補充驗證：原生 Release E2E 已加入同一 HOME 的兩個 ZIP 交替安裝與更新、狀態及檔案快照隔離、規範衝突與錯誤 Host 狀態拒絕後復原。需待 macOS ARM64 與 Windows x64 CI 實際跑完，才可勾選。
+
 ### 17. 驗證 Codex 的 Skill 載入與 CLI 操作
 
 相依：任務 12、14、16。在實際 Codex 中載入 Work、Tooling Skill 並操作共用 CLI；不以安裝腳本成功代替 Host 使用驗收。
@@ -219,6 +221,8 @@
 預計檔案：全庫搜尋找到的現行引用。逐項分類、修正並重驗直接相關項目，不順便修改無關內容。
 
 - [ ] 現行引用不再誤導使用者；相關檢查通過，歷史資料未被改寫。
+
+命名盤點：`docs/release/` 標題已改為 Agent Work Kit Release。兩平台安裝器模組及對應測試目錄已改為 `global-instructions`，封裝清單與 CI 引用同步更新。舊 CLI 參數只留在拒絕測試，作為不相容行為的驗證。
 
 ## 執行邊界
 

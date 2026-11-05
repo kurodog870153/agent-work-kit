@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/policy.ps1')
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/transaction.ps1')
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/policy.ps1')
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/transaction.ps1')
 $scratch = Join-Path $repoRoot ('.installer-test-global-transaction.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolved = (Resolve-Path -LiteralPath $scratch).Path

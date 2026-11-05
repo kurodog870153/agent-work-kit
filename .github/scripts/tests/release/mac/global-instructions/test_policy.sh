@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd -P)"
-source "$repo_root/os-scripts/mac/installer/global-agents/policy.sh"
+source "$repo_root/os-scripts/mac/installer/global-instructions/policy.sh"
 scratch="$(mktemp -d "$repo_root/.installer-test-global.XXXXXX")"
 [[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-global.* ]] || exit 1
 trap 'rm -rf -- "$scratch"' EXIT

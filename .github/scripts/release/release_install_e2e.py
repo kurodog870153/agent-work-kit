@@ -192,6 +192,85 @@ def assert_no_work_transactions(work):
         raise AssertionError(f"successful installation retained a transaction under {parent}")
 
 
+def snapshot_host(home, host):
+    skills = home / (".agents/skills" if host == "codex" else ".claude/skills")
+    instructions = home / (".codex/AGENTS.md" if host == "codex" else ".claude/CLAUDE.md")
+    files = {str(path.relative_to(home)): hashlib.sha256(path.read_bytes()).hexdigest()
+             for path in skills.rglob("*") if path.is_file()}
+    state = skills / "install-state.json"
+    if not state.is_file():
+        raise AssertionError(f"{host} has no parent install state")
+    if not instructions.is_file():
+        raise AssertionError(f"{host} has no global instructions")
+    files[str(instructions.relative_to(home))] = hashlib.sha256(instructions.read_bytes()).hexdigest()
+    return files
+
+
+def exercise_coexistence(packages, root, platform):
+    if set(packages) != {"codex", "claude"}:
+        raise AssertionError("coexistence requires both Host packages")
+    home = root / "dual Host coexistence"
+    home.mkdir()
+    suffix = ".bat" if platform == "windows-x64-msvc" else ".command"
+    options = ("--non-interactive", "--global-instructions", "yes")
+    scripts = {host: package / f"install-agent-work-kit-from-package{suffix}"
+               for host, package in packages.items()}
+    def assert_host_installed(host):
+        work = home / (".agents/skills/work" if host == "codex" else ".claude/skills/work")
+        info = json.loads((packages[host] / "release-info.json").read_text(encoding="utf-8"))
+        global_dir = home / (".codex" if host == "codex" else ".claude")
+        assert_state_for_host(work, info["version"], info["work_version"], True, global_dir, host=host)
+        assert_no_work_transactions(work)
+        snapshot_host(home, host)
+
+    for host in ("codex", "claude"):
+        codex_before = snapshot_host(home, "codex") if host == "claude" else None
+        assert_success(run_installer_for_host(scripts[host], home, options, host=host))
+        assert_host_installed(host)
+        if codex_before is not None and snapshot_host(home, "codex") != codex_before:
+            raise AssertionError("installing Claude changed Codex")
+
+    for host, other in (("codex", "claude"), ("claude", "codex"), ("codex", "claude")):
+        other_before = snapshot_host(home, other)
+        assert_success(run_installer_for_host(scripts[host], home, options, host=host))
+        assert_host_installed(host)
+        if snapshot_host(home, other) != other_before:
+            raise AssertionError(f"updating {host} changed {other}")
+
+    for host, other in (("codex", "claude"), ("claude", "codex")):
+        instructions = home / (".codex/AGENTS.md" if host == "codex" else ".claude/CLAUDE.md")
+        instructions.write_bytes(f"user-owned {host} instructions\n".encode())
+        own_before, other_before = snapshot_host(home, host), snapshot_host(home, other)
+        assert_failed(run_installer_for_host(scripts[host], home, options, host=host))
+        if snapshot_host(home, host) != own_before or snapshot_host(home, other) != other_before:
+            raise AssertionError(f"rejected {host} update changed either Host")
+        assert_success(run_installer_for_host(scripts[host], home,
+            ("--global-instructions", "yes"), answers="\n\ny\ny\n", host=host))
+        assert_host_installed(host)
+        if snapshot_host(home, other) != other_before:
+            raise AssertionError(f"recovering {host} changed {other}")
+        if instructions.read_bytes() != (packages[host] / "instructions/global-instructions.md").read_bytes():
+            raise AssertionError(f"{host} instructions were not recovered")
+
+    for host, other in (("codex", "claude"), ("claude", "codex")):
+        skills = home / (".agents/skills" if host == "codex" else ".claude/skills")
+        state_file = skills / "install-state.json"
+        original = state_file.read_bytes()
+        state = json.loads(original)
+        state["host"] = other
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+        other_before = snapshot_host(home, other)
+        assert_failed(run_installer_for_host(scripts[host], home, options, host=host))
+        if state_file.read_text(encoding="utf-8") != json.dumps(state) or snapshot_host(home, other) != other_before:
+            raise AssertionError(f"wrong Host state was changed during {host} rejection")
+        state_file.write_bytes(original)
+        assert_success(run_installer_for_host(scripts[host], home, options, host=host))
+        assert_host_installed(host)
+        if snapshot_host(home, other) != other_before:
+            raise AssertionError(f"restoring {host} state changed {other}")
+    print(f"Dual Host coexistence E2E passed: {platform}")
+
+
 def exercise_package(package, root, platform, source_install=False):
     host = json.loads((package / "release-info.json").read_text(encoding="utf-8"))["host"]
     if host not in ("codex", "claude"):
@@ -525,7 +604,10 @@ def main():
     parser.add_argument("--checksums", required=True, type=Path)
     parser.add_argument("--platform", required=True, choices=("macos-arm64", "windows-x64-msvc"))
     parser.add_argument("--source-install", action="store_true", help="also build and install through Source")
+    parser.add_argument("--peer-zip", type=Path, help="exercise both Host ZIPs in one home")
     args = parser.parse_args()
+    if args.peer_zip and args.source_install:
+        parser.error("--peer-zip cannot be combined with --source-install")
     if args.platform == "windows-x64-msvc" and sys.platform != "win32":
         parser.error("Windows ZIP requires a Windows runner")
     if args.platform == "macos-arm64" and sys.platform != "darwin":
@@ -533,6 +615,8 @@ def main():
     if args.platform == "macos-arm64":
         assert_macos_network_sandbox()
     verify_readme_download(args.zip, args.checksums, args.platform)
+    if args.peer_zip:
+        verify_readme_download(args.peer_zip, args.checksums, args.platform)
     repository = Path(__file__).resolve().parents[3]
     with tempfile.TemporaryDirectory(prefix=".installer-test-release-e2e.", dir=repository) as directory:
         root = Path(directory)
@@ -543,7 +627,18 @@ def main():
         extract_checked(args.zip, package)
         verify_cli_entries(package, args.platform)
         (root / "original.zip").write_bytes(args.zip.read_bytes())
-        exercise_package(package, root, args.platform, args.source_install)
+        if args.peer_zip:
+            peer = root / "peer-package"
+            peer.mkdir()
+            extract_checked(args.peer_zip, peer)
+            verify_cli_entries(peer, args.platform)
+            packages = {json.loads((path / "release-info.json").read_text(encoding="utf-8"))["host"]: path
+                        for path in (package, peer)}
+            if len(packages) != 2:
+                raise AssertionError("coexistence ZIPs have the same Host")
+            exercise_coexistence(packages, root, args.platform)
+        else:
+            exercise_package(package, root, args.platform, args.source_install)
     print(f"Final ZIP E2E passed: {args.platform}")
     return 0
 
