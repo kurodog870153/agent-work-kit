@@ -256,7 +256,7 @@ def exercise_package(package, root, platform, source_install=False):
     assert_success(run_installer(script, home, common))
     assert_state(work, version, workspace_version, False)
     assert_no_work_transactions(work)
-    if (home / instructions_dir).exists():
+    if (home / instructions_path).exists():
         raise AssertionError("disabled Global AGENTS created a target")
 
     default_home = root / "first install defaults"
@@ -276,7 +276,7 @@ def exercise_package(package, root, platform, source_install=False):
     assert_state(saved_work, version, workspace_version, True, saved_global)
     assert_success(run_installer(script, saved_home, ["--non-interactive"]))
     assert_state(saved_work, version, workspace_version, True, saved_global)
-    if (saved_home / instructions_dir).exists():
+    if (saved_home / instructions_path).exists():
         raise AssertionError("saved Global AGENTS directory was replaced by the default")
 
     empty_home = root / "empty Work directory"
