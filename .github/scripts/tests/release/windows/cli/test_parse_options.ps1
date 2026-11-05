@@ -26,10 +26,11 @@ Assert-True ((Parse-InstallerCli -Tokens @('--help')).Action -eq 'help') 'help a
 Assert-True ((Parse-InstallerCli -Tokens @('-h')).Action -eq 'help') 'short help action'
 $unicodeDirectory = ([string]::Concat([char]0x76EE, [char]0x9304)) + ' ' +
     ([string]::Concat([char]0x6709, [char]0x7A7A, [char]0x767D)) + ' !&'
-$parsed = Parse-InstallerCli -Tokens @('--global-agent', '--skills-install-dir', $unicodeDirectory, '--global-agent-install-dir', $unicodeDirectory, '--non-interactive', '--dry-run', '--verbose')
-Assert-True ($parsed.SkillsInstallDir -eq $unicodeDirectory -and $parsed.GlobalAgentsInstallDir -eq $unicodeDirectory) 'path boundary'
+$parsed = Parse-InstallerCli -Tokens @('--host', 'claude', '--global-instructions', 'yes', '--skills-dir', $unicodeDirectory, '--instructions-dir', $unicodeDirectory, '--non-interactive', '--dry-run', '--verbose')
+Assert-True ($parsed.SkillsDir -eq $unicodeDirectory -and $parsed.InstructionsDir -eq $unicodeDirectory) 'path boundary'
 Assert-True ($parsed.NonInteractive -and $parsed.DryRun -and $parsed.Verbose) 'boolean options'
-Assert-True ((Parse-InstallerCli -Tokens @('--no-global-agent')).GlobalAgents -eq $false) 'global override'
+Assert-True ($parsed.InstallerHost -ceq 'claude' -and $parsed.GlobalInstructions) 'Host and global override'
+Assert-True ((Parse-InstallerCli -Tokens @('--host', 'codex', '--global-instructions', 'no')).GlobalInstructions -eq $false) 'global off'
 
 Assert-Invalid @('--help', '-h')
 Assert-Invalid @('--skills')
@@ -40,11 +41,15 @@ Assert-Invalid @('--global-agents')
 Assert-Invalid @('--no-global-agents')
 Assert-Invalid @('--skill-install-dir', 'old/work')
 Assert-Invalid @('--global-agents-install-dir', 'old/global')
-Assert-Invalid @('--skills-install-dir')
-Assert-Invalid @('--skills-install-dir', '')
-Assert-Invalid @('--global-agent-install-dir', '--dry-run')
+Assert-Invalid @('--skills-dir')
+Assert-Invalid @('--skills-dir', '')
+Assert-Invalid @('--instructions-dir', '--dry-run')
 Assert-Invalid @('--install-dir', 'old/work')
 Assert-Invalid @('--global-agent', '--no-global-agent')
+Assert-Invalid @('--host', 'other')
+Assert-Invalid @('--host', 'codex', '--global-instructions', 'maybe')
+Assert-Invalid @('--host', 'codex', '--global-instructions', 'no', '--instructions-dir', 'C:\global')
+Assert-Invalid @('--non-interactive')
 Assert-Invalid @('--unknown')
 Assert-Invalid @('--yes')
 Assert-Invalid @('--HELP')

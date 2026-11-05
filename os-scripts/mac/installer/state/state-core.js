@@ -3,6 +3,14 @@ function validVersion(value) {
 }
 
 function run(argv) {
+    if ((argv[0] === 'release-host' || argv[0] === 'release-target') && argv.length === 2) {
+        var identity = JSON.parse(argv[1]);
+        if (!identity || (identity.host !== 'codex' && identity.host !== 'claude') ||
+                (identity.target !== 'aarch64-apple-darwin' && identity.target !== 'x86_64-pc-windows-msvc')) {
+            throw new Error('invalid release identity');
+        }
+        return argv[0] === 'release-host' ? identity.host : identity.target;
+    }
     if (argv[0] === 'release-version' && argv.length === 2) {
         var info = JSON.parse(argv[1]);
         if (!info || !validVersion(info.version)) throw new Error('invalid release version');
@@ -18,11 +26,13 @@ function run(argv) {
         if (!workInfo || !validVersion(workInfo.work_version)) throw new Error('invalid Work release version');
         return workInfo.work_version;
     }
-    if (argv[0] === 'combined' && argv.length === 5) {
+    if (argv[0] === 'combined' && (argv.length === 5 || argv.length === 6)) {
         var combined;
         try { combined = JSON.parse(argv[1]); } catch (error) { return '-'; }
         var parent = argv[2].replace(/\/work$/, '');
-        if (!combined || Object.keys(combined).sort().join(',') !== 'global_agent_dir,skill_install_dir,status,tooling_version,version,work_version' ||
+        var selectedHost = argv.length === 6 ? argv[5] : 'codex';
+        if (!combined || Object.keys(combined).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
+                (selectedHost !== 'codex' && selectedHost !== 'claude') || combined.host !== selectedHost ||
                 (combined.status !== 'installing' && combined.status !== 'installed') ||
                 !validVersion(combined.version) || !validVersion(combined.work_version) ||
                 !validVersion(combined.tooling_version) ||
@@ -36,12 +46,14 @@ function run(argv) {
         if (argv[4] === 'status') return combined.status;
         return '-';
     }
-    if (argv[0] === 'combined-create' && argv.length === 7) {
+    if (argv[0] === 'combined-create' && (argv.length === 7 || argv.length === 8)) {
+        var host = argv.length === 8 ? argv[7] : 'codex';
+        if (host !== 'codex' && host !== 'claude') throw new Error('invalid installer host');
         if (!validVersion(argv[1]) || !validVersion(argv[2]) || !validVersion(argv[3]) ||
                 argv[4].charAt(0) !== '/' ||
                 (argv[5] !== '-' && argv[5].charAt(0) !== '/') ||
                 (argv[6] !== 'installing' && argv[6] !== 'installed')) throw new Error('invalid combined state');
-        return JSON.stringify({version: argv[1], work_version: argv[2], tooling_version: argv[3],
+        return JSON.stringify({host: host, version: argv[1], work_version: argv[2], tooling_version: argv[3],
             skill_install_dir: argv[4], global_agent_dir: argv[5] === '-' ? null : argv[5], status: argv[6]});
     }
     throw new Error('invalid parent state operation');

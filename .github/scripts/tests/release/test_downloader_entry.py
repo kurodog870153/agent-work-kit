@@ -32,10 +32,10 @@ class DownloaderTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.platform = "windows-x64-msvc" if self.windows else "macos-arm64"
-        self.archive = f"work-{TAG}-{self.platform}.zip"
-        self.entry = "install-work-from-package.bat" if self.windows else "install-work-from-package.command"
+        self.archive = f"agent-work-kit-{TAG}-codex-{self.platform}.zip"
+        self.entry = "install-agent-work-kit-from-package.bat" if self.windows else "install-agent-work-kit-from-package.command"
         self.downloader = self.root / "downloaders" / (
-            "install-work-from-github-release.bat" if self.windows else "install-work-from-github-release.command")
+            "install-agent-work-kit-from-github-release.bat" if self.windows else "install-agent-work-kit-from-github-release.command")
         build_test_downloaders(ROOT, self.downloader.parent)
         self.assets = self.root / TAG
         self.assets.mkdir()
@@ -64,13 +64,16 @@ class DownloaderTests(unittest.TestCase):
 
     def package(self, members=None):
         if members is None:
-            members = ({"install-work-from-package.bat": WINDOWS_PACKAGE, "capture.ps1": WINDOWS_CAPTURE}
-                       if self.windows else {"install-work-from-package.command": MAC_PACKAGE})
+            members = ({"install-agent-work-kit-from-package.bat": WINDOWS_PACKAGE, "capture.ps1": WINDOWS_CAPTURE}
+                       if self.windows else {"install-agent-work-kit-from-package.command": MAC_PACKAGE})
         members = {**members}
-        members.setdefault("release-info.json", json.dumps({"tag": TAG}).encode("ascii"))
+        members.setdefault("release-info.json", json.dumps({"tag": TAG, "host": "codex",
+                                                           "target": "x86_64-pc-windows-msvc" if self.windows else "aarch64-apple-darwin"}).encode("ascii"))
         write_assets(self.assets, self.archive, members, 0o644 if self.windows else 0o755)
 
     def run_downloader(self, *options, environment=None):
+        if options not in (("--help",), ("-h",)) and "--host" not in options:
+            options = ("--host", "codex", *options)
         command = (["cmd.exe", "/D", "/C", str(self.downloader), *options] if self.windows else
                    ["/bin/bash", str(self.downloader), *options])
         result = subprocess.run(command, env=environment if environment is not None else self.environment,
@@ -84,10 +87,10 @@ class DownloaderTests(unittest.TestCase):
         self.package()
         skills = str(self.root / "中文 path & symbols")
         global_dir = str(self.root / "全域 path & symbols")
-        result = self.run_downloader("--skills-install-dir", skills,
-                                     "--global-agent-install-dir", global_dir)
+        result = self.run_downloader("--skills-dir", skills,
+                                     "--instructions-dir", global_dir)
         self.assertEqual(0, result.returncode, (result.stdout, result.stderr))
-        self.assertEqual(["--skills-install-dir", skills, "--global-agent-install-dir", global_dir],
+        self.assertEqual(["--host", "codex", "--skills-dir", skills, "--instructions-dir", global_dir],
                          (self.root / "argv.txt").read_text(encoding="utf-8").splitlines())
         failed = {**self.environment, "WORK_RELEASE_TEST_EXIT": "17"}
         self.assertEqual(17, self.run_downloader(environment=failed).returncode)

@@ -55,8 +55,8 @@ def make_crash_package(archive_path, root, platform):
     return package, crash_zip
 
 
-def exercise_public_crash(entry, target, home, environment, platform, version):
-    options = ["--non-interactive", "--no-global-agent", "--skills-install-dir", str(target.parent)]
+def exercise_public_crash(entry, target, home, environment, platform, version, host):
+    options = ["--host", host, "--non-interactive", "--global-instructions", "no", "--skills-dir", str(target.parent)]
     command = (["cmd.exe", "/D", "/C", str(entry)] if platform == "windows-x64-msvc"
                else ["/bin/bash", str(entry)]) + options
     def invoke(crash=False):
@@ -128,13 +128,13 @@ def main():
             repo = Path(__file__).resolve().parents[3]
             downloaders = {path.name: path for path in build_test_downloaders(repo, root / "downloaders")}
             if args.platform == "windows-x64-msvc":
-                entry = downloaders["install-work-from-github-release.bat"]
+                entry = downloaders["install-agent-work-kit-from-github-release.bat"]
                 command = ["cmd.exe", "/D", "/C", str(entry)]
             else:
-                entry = downloaders["install-work-from-github-release.command"]
+                entry = downloaders["install-agent-work-kit-from-github-release.command"]
                 command = ["/bin/bash", str(entry)]
-            command += ["--non-interactive", "--global-agent", "--skills-install-dir", str(target.parent),
-                        "--global-agent-install-dir", str(global_dir)]
+            command += ["--host", info["host"], "--non-interactive", "--global-instructions", "yes", "--skills-dir", str(target.parent),
+                        "--instructions-dir", str(global_dir)]
             entry_command = command[:4] if args.platform == "windows-x64-msvc" else command[:2]
             help_result = subprocess.run(entry_command + ["--help"], cwd=home, env=environment,
                                          stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
@@ -151,7 +151,7 @@ def main():
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
             state_path = target.parent / "install-state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            if (state != {"version": info["version"], "work_version": info["work_version"],
+            if (state != {"host": info["host"], "version": info["version"], "work_version": info["work_version"],
                           "tooling_version": info["tooling_version"], "skill_install_dir": str(target.parent),
                           "global_agent_dir": str(global_dir), "status": "installed"} or
                     (target / "install-state.json").exists()):
@@ -162,16 +162,19 @@ def main():
                 raise AssertionError("Downloader installed the wrong Tooling entry")
             if (tooling / "references/instructions/interfaces/repl").exists():
                 raise AssertionError("Downloader installed the removed REPL interface")
-            if (global_dir / "AGENTS.md").read_bytes() != (Path(__file__).resolve().parents[3] / "AGENTS.md").read_bytes():
+            instruction_name = "AGENTS.md" if info["host"] == "codex" else "CLAUDE.md"
+            if (global_dir / instruction_name).read_bytes() != (Path(__file__).resolve().parents[3] / "instructions/global-instructions.md").read_bytes():
                 raise AssertionError("Downloader did not install Global AGENTS at the requested path")
             before_state = state_path.read_bytes()
-            before_agents = (global_dir / "AGENTS.md").read_bytes()
-            for options, expected in ((["--non-interactive", "--dry-run",
-                                      "--skills-install-dir", str(target.parent), "--global-agent-install-dir", str(global_dir)], 0),
-                                      (["--unknown"], 2), (["--skills"], 2), (["--list-skills"], 2),
-                                      (["--install-dir", "old/work"], 2),
-                                      (["--global-agent", "--no-global-agent"], 2),
-                                      (["--verbose", "--verbose"], 2)):
+            before_agents = (global_dir / instruction_name).read_bytes()
+            for options, expected in ((["--host", info["host"], "--non-interactive", "--dry-run",
+                                      "--skills-dir", str(target.parent), "--instructions-dir", str(global_dir)], 0),
+                                      (["--host", info["host"], "--unknown"], 2),
+                                      (["--host", info["host"], "--skills"], 2),
+                                      (["--host", info["host"], "--list-skills"], 2),
+                                      (["--host", info["host"], "--install-dir", "old/work"], 2),
+                                      (["--host", info["host"], "--global-instructions", "no", "--instructions-dir", str(global_dir)], 2),
+                                      (["--host", info["host"], "--verbose", "--verbose"], 2)):
                 check = subprocess.run(entry_command + options, cwd=home, env=environment,
                                        stdin=subprocess.DEVNULL, capture_output=True, timeout=180)
                 if check.returncode != expected:
@@ -179,27 +182,27 @@ def main():
                 if "--dry-run" in options and b"Dry run:" not in check.stdout:
                     raise AssertionError("Downloader omitted Package dry-run summary")
                 if (state_path.read_bytes() != before_state or
-                        (global_dir / "AGENTS.md").read_bytes() != before_agents):
+                        (global_dir / instruction_name).read_bytes() != before_agents):
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
             binary = target / "scripts" / ("work.exe" if sys.platform == "win32" else "work")
             subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
             if list(scratch.glob("work-release*")):
                 raise AssertionError("Downloader retained temporary files")
-            if (home / ".codex").exists():
+            if (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
                 raise AssertionError("disabled Global AGENTS created a target")
             crash_package, crash_zip = make_crash_package(args.zip, root, args.platform)
-            package_entry = crash_package / ("install-work-from-package.bat" if args.platform == "windows-x64-msvc"
-                                              else "install-work-from-package.command")
+            package_entry = crash_package / ("install-agent-work-kit-from-package.bat" if args.platform == "windows-x64-msvc"
+                                              else "install-agent-work-kit-from-package.command")
             exercise_public_crash(package_entry, root / "package-crash/work", home,
-                                  environment, args.platform, info["version"])
+                                  environment, args.platform, info["version"], info["host"])
             print(f"Public Package interruption recovery passed: {args.platform}", flush=True)
             shutil.copyfile(crash_zip, assets / args.zip.name)
             digest = hashlib.sha256(crash_zip.read_bytes()).hexdigest()
             (assets / "SHA256SUMS.txt").write_text(f"{digest}  {args.zip.name}\n", encoding="ascii")
             exercise_public_crash(entry, root / "downloader-crash/work", home,
-                                  environment, args.platform, info["version"])
+                                  environment, args.platform, info["version"], info["host"])
             print(f"Public Downloader interruption recovery passed: {args.platform}", flush=True)
-            if list(scratch.glob("work-release*")) or (home / ".codex").exists():
+            if list(scratch.glob("work-release*")) or (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
                 raise AssertionError("public crash recovery retained downloader scratch or Global AGENTS")
         finally:
             server.shutdown()

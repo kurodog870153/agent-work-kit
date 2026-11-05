@@ -1,4 +1,4 @@
-"""Build the two self-contained Work and Tooling release ZIP assets and outer checksums."""
+"""Build Host-specific Work and Tooling release ZIP assets and outer checksums."""
 
 import argparse
 import hashlib
@@ -24,7 +24,7 @@ PLATFORMS = {
         "target": "aarch64-apple-darwin",
         "work-binary": "bin/work",
         "tooling_binary": "bin/tooling",
-        "installer": "os-scripts/mac/install-work-from-package.command",
+        "installer": "os-scripts/mac/install-agent-work-kit-from-package.command",
         "modules": (
             "os-scripts/mac/installer/cli/parse-options.sh",
             "os-scripts/mac/installer/install/install-core.sh",
@@ -47,7 +47,7 @@ PLATFORMS = {
         "target": "x86_64-pc-windows-msvc",
         "work-binary": "bin/work.exe",
         "tooling_binary": "bin/tooling.exe",
-        "installer": "os-scripts/windows/install-work-from-package.bat",
+        "installer": "os-scripts/windows/install-agent-work-kit-from-package.bat",
         "modules": (
             "os-scripts/windows/installer/cli/parse-options.ps1",
             "os-scripts/windows/installer/install/install-core.ps1",
@@ -67,9 +67,10 @@ PLATFORMS = {
         ),
     },
 }
+HOSTS = ("codex", "claude")
 DOWNLOADERS = {
-    "macos-arm64": "os-scripts/mac/install-work-from-github-release.command",
-    "windows-x64-msvc": "os-scripts/windows/install-work-from-github-release.bat",
+    "macos-arm64": "os-scripts/mac/install-agent-work-kit-from-github-release.command",
+    "windows-x64-msvc": "os-scripts/windows/install-agent-work-kit-from-github-release.bat",
 }
 DOWNLOADER_TAG_PLACEHOLDER = b"__WORK_RELEASE_TAG__"
 
@@ -116,7 +117,9 @@ def copy_asset(repository, stage, source, destination):
     shutil.copyfile(source_path, target_path)
 
 
-def build_package(repository, output, platform, binary, tooling_binary, commit, tested_environment):
+def build_package(repository, output, platform, binary, tooling_binary, commit, tested_environment, host):
+    if host not in HOSTS:
+        raise ValueError("invalid package Host")
     config = PLATFORMS[platform]
     required = ("runner_label", "runner_os", "cpu_architecture", "runner_image_name",
                 "runner_image_version", "os_name", "os_version", "os_build")
@@ -127,7 +130,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
     version = checked_version(repository)
     workspace_version = checked_workspace_version(repository)
     tag = f"v{version}"
-    name = f"work-{tag}-{platform}.zip"
+    name = f"agent-work-kit-{tag}-{host}-{platform}.zip"
     target = output / name
     if target.exists():
         raise ValueError(f"release ZIP already exists: {target}")
@@ -136,7 +139,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
         stage = Path(temporary)
         for path in tracked_skill_files(repository):
             copy_asset(repository, stage, path, path)
-        for path in ("AGENTS.md", "LICENSE"):
+        for path in ("instructions/global-instructions.md", "LICENSE"):
             copy_asset(repository, stage, Path(path), Path(path))
         copy_asset(repository, stage, Path("docs/release/README.md"), Path("README.md"))
         copy_asset(repository, stage, Path(config["installer"]), Path(config["installer"]).name)
@@ -161,6 +164,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
             binary_target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, binary_target)
         info = {
+            "host": host,
             "version": version,
             "work_version": workspace_version,
             "tooling_version": workspace_version,
@@ -218,7 +222,8 @@ def build_downloaders(repository, output):
 
 def write_outer_checksums(repository, output):
     version = checked_version(repository)
-    names = [f"work-v{version}-{platform}.zip" for platform in sorted(PLATFORMS)]
+    names = [f"agent-work-kit-v{version}-{host}-{platform}.zip"
+             for platform in sorted(PLATFORMS) for host in HOSTS]
     names += [Path(DOWNLOADERS[platform]).name for platform in sorted(DOWNLOADERS)]
     target = output / "SHA256SUMS.txt"
     if target.exists():
@@ -242,6 +247,7 @@ def main():
     parser.add_argument("--repository", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--platform", choices=sorted(PLATFORMS))
+    parser.add_argument("--host", choices=HOSTS)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--tooling-binary", type=Path)
     parser.add_argument("--commit")
@@ -256,9 +262,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.action == "package":
-            if not all((args.platform, args.binary, args.tooling_binary, args.commit, args.runner_label, args.runner_os, args.runner_arch,
+            if not all((args.platform, args.host, args.binary, args.tooling_binary, args.commit, args.runner_label, args.runner_os, args.runner_arch,
                         args.runner_image, args.runner_image_version, args.os_name, args.os_version, args.os_build)):
-                parser.error("package requires platform, both binaries, commit and all tested environment fields")
+                parser.error("package requires Host, platform, both binaries, commit and all tested environment fields")
             tested_environment = {
                 "runner_label": args.runner_label,
                 "runner_os": args.runner_os,
@@ -269,7 +275,7 @@ def main():
                 "os_version": args.os_version,
                 "os_build": args.os_build,
             }
-            result = build_package(args.repository, args.output, args.platform, args.binary, args.tooling_binary, args.commit, tested_environment)
+            result = build_package(args.repository, args.output, args.platform, args.binary, args.tooling_binary, args.commit, tested_environment, args.host)
         elif args.action == "downloaders":
             result = build_downloaders(args.repository, args.output)
         else:

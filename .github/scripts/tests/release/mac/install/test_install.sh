@@ -7,16 +7,16 @@ next_version="$base_major.$base_minor.$((base_patch + 1))"
 workspace_version="$(sed -n 's/^version = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$repo_root/rust/Cargo.toml")"
 [[ -n "$workspace_version" ]] || exit 1
 write_test_release_info() {
-    printf '{"version":"%s","work_version":"%s","tooling_version":"%s"}\n' "$1" "$workspace_version" "$workspace_version" > "$root/release-info.json"
+    printf '{"host":"%s","target":"aarch64-apple-darwin","version":"%s","work_version":"%s","tooling_version":"%s"}\n' "${2:-codex}" "$1" "$workspace_version" "$workspace_version" > "$root/release-info.json"
 }
-scratch="$(mktemp -d "$repo_root/.issue95-core.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.issue95-core.* ]] || exit 1
+scratch="$(mktemp -d "$repo_root/.installer-test-core.XXXXXX")"
+[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-core.* ]] || exit 1
 trap 'chmod 755 "$scratch/home/.agents/skills/work" "$scratch/home/.agents/skills" 2>/dev/null || true; rm -rf -- "$scratch"' EXIT
 root="$scratch/package"
-mkdir -p -- "$root/skills" "$root/bin" "$scratch/home" "$scratch/shims"
+mkdir -p -- "$root/skills" "$root/bin" "$root/instructions" "$scratch/home" "$scratch/shims"
 cp -R -- "$repo_root/skills/work" "$root/skills/work"
 cp -R -- "$repo_root/skills/tooling" "$root/skills/tooling"
-cp -- "$repo_root/AGENTS.md" "$root/AGENTS.md"
+cp -- "$repo_root/instructions/global-instructions.md" "$root/instructions/global-instructions.md"
 write_test_release_info "$base_version"
 mkdir -p -- "$root/installer/state"
 cp -- "$repo_root/os-scripts/common/installer/install-state.json" "$root/installer/state/install-state.json"
@@ -43,29 +43,46 @@ export HOME="$scratch/home"
 mkdir -p -- "$scratch/linked-codex"
 ln -s -- "$scratch/linked-codex" "$HOME/.codex"
 target="$scratch/installed/work"
-if ! bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" --dry-run >/dev/null; then
+if ! bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" --dry-run >/dev/null; then
     printf 'FAIL: macOS core dry run failed.\n' >&2; exit 1
 fi
 [[ ! -e "$target" ]] || { printf 'FAIL: dry run modified target.\n' >&2; exit 1; }
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null
 [[ -f "$target/scripts/work" && -f "${target%/*}/install-state.json" &&
    ! -e "$target/install-state.json" &&
    ! -e "${target%/*}/tooling/install-state.json" &&
    -x "${target%/*}/tooling/scripts/tooling" &&
    -f "${target%/*}/tooling/references/instructions/interfaces/mcp/instructions.md" &&
    ! -e "${target%/*}/tooling/references/instructions/interfaces/repl" ]] || exit 1
+codex_state_before="$(cat -- "${target%/*}/install-state.json")"
+write_test_release_info "$base_version" claude
+claude_parent="$scratch/claude-skills"
+claude_global="$scratch/claude-global"
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "$scratch/mismatched-package" >/dev/null 2>&1; then
+    printf 'FAIL: mismatched Package Host was accepted.\n' >&2; exit 1
+fi
+[[ ! -e "$scratch/mismatched-package" ]] || { printf 'FAIL: mismatched Package changed the target.\n' >&2; exit 1; }
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host claude \
+    --non-interactive --global-instructions yes --skills-dir "$claude_parent" --instructions-dir "$claude_global" >/dev/null
+[[ -f "$claude_parent/work/scripts/work" && -f "$claude_global/CLAUDE.md" &&
+   ! -e "$claude_global/AGENTS.md" && "$(cat -- "${target%/*}/install-state.json")" == "$codex_state_before" ]] || {
+    printf 'FAIL: Claude installation or Host isolation failed.\n' >&2; exit 1;
+}
+MSYS_NO_PATHCONV=1 node -e 'const fs=require("fs"); if(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).host!=="claude") process.exit(1)' "$claude_parent/install-state.json"
+write_test_release_info "$base_version"
 printf 'legacy state\n' > "$target/install-state.json"
-if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null 2>&1; then
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1; then
     printf 'FAIL: legacy Work child state was accepted.\n' >&2; exit 1
 fi
 [[ "$(cat -- "$target/install-state.json")" == 'legacy state' ]] || exit 1
 rm -- "$target/install-state.json"
 printf keep > "${target%/*}/tooling/unknown.txt"
-if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null 2>&1; then
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1; then
     printf 'FAIL: unknown Tooling content was accepted.\n' >&2; exit 1
 fi
 [[ "$(cat -- "${target%/*}/tooling/unknown.txt")" == keep ]] || exit 1
@@ -74,8 +91,8 @@ legacy_parent="$scratch/legacy-tooling"
 mkdir -p -- "$legacy_parent"
 cp -R -- "${target%/*}/tooling" "$legacy_parent/tooling"
 printf 'legacy state\n' > "$legacy_parent/tooling/install-state.json"
-if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "$legacy_parent" >/dev/null 2>&1; then
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "$legacy_parent" >/dev/null 2>&1; then
     printf 'FAIL: legacy Tooling takeover was accepted.\n' >&2; exit 1
 fi
 [[ "$(cat -- "$legacy_parent/tooling/install-state.json")" == 'legacy state' &&
@@ -94,16 +111,16 @@ if content.count(needle) != 1:
 path.write_text(content.replace(needle, needle + '    kill -9 $$\n'))
 PY
 set +e
-bash "$tooling_crash_installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null 2>&1
+bash "$tooling_crash_installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1
 tooling_crash_exit=$?
 set -e
 tooling_txn="$(find "${target%/*}" -maxdepth 1 -name '.tooling-install.*' -type d -print -quit)"
 [[ "$tooling_crash_exit" == 137 && -d "$tooling_txn/previous" && ! -e "${target%/*}/tooling" ]] || {
     printf 'FAIL: Tooling crash did not preserve the previous installation.\n' >&2; exit 1
 }
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null
 [[ -f "${target%/*}/install-state.json" && ! -e "${target%/*}/tooling/install-state.json" &&
    ! -e "$tooling_txn" ]] || {
     printf 'FAIL: Tooling crash recovery did not complete.\n' >&2; exit 1
@@ -111,42 +128,42 @@ bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$roo
 printf keep > "$target/unknown.txt"
 for mode in interactive non-interactive; do
     if [[ "$mode" == non-interactive ]]; then
-        output="$(bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-            --non-interactive --no-global-agent --skills-install-dir "${target%/*}" 2>&1)" && {
+        output="$(bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+            --non-interactive --global-instructions no --skills-dir "${target%/*}" 2>&1)" && {
             printf 'FAIL: %s accepted unknown Work content.\n' "$mode" >&2; exit 1;
         }
     else
-        output="$(printf 'y\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-            --no-global-agent --skills-install-dir "${target%/*}" 2>&1)" && {
+        output="$(printf 'y\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+            --global-instructions no --skills-dir "${target%/*}" 2>&1)" && {
             printf 'FAIL: %s accepted unknown Work content.\n' "$mode" >&2; exit 1;
         }
     fi
-    [[ "$output" == *'unknown entry: unknown.txt'* && "$output" == *'--skills-install-dir'* &&
+    [[ "$output" == *'unknown entry: unknown.txt'* && "$output" == *'--skills-dir'* &&
        "$(cat -- "$target/unknown.txt")" == keep ]] || {
         printf 'FAIL: %s did not explain or preserve unknown Work content.\n' "$mode" >&2; exit 1;
     }
 done
 rm -- "$target/unknown.txt"
-ln -s -- "$root/AGENTS.md" "$target/unsafe-link"
-output="$(printf 'y\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --no-global-agent --skills-install-dir "${target%/*}" 2>&1)" && {
+ln -s -- "$root/instructions/global-instructions.md" "$target/unsafe-link"
+output="$(printf 'y\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --global-instructions no --skills-dir "${target%/*}" 2>&1)" && {
     printf 'FAIL: interactive mode accepted unsafe Work symlink.\n' >&2; exit 1;
 }
-[[ "$output" == *'unsafe entry: unsafe-link'* && "$output" == *'--skills-install-dir'* && -L "$target/unsafe-link" ]] || {
+[[ "$output" == *'unsafe entry: unsafe-link'* && "$output" == *'--skills-dir'* && -L "$target/unsafe-link" ]] || {
     printf 'FAIL: unsafe Work symlink diagnostic or preservation failed.\n' >&2; exit 1;
 }
 rm -- "$target/unsafe-link"
 [[ ! -e "$scratch/linked-codex/AGENTS.md" ]] || {
-    printf 'FAIL: --no-global-agent modified linked Global AGENTS directory.\n' >&2; exit 1;
+    printf 'FAIL: --global-instructions no modified linked Global AGENTS directory.\n' >&2; exit 1;
 }
-if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --global-agent --skills-install-dir "$scratch/unsafe-global" >/dev/null 2>&1; then
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions yes --skills-dir "$scratch/unsafe-global" >/dev/null 2>&1; then
     printf 'FAIL: enabled Global AGENTS accepted linked directory.\n' >&2; exit 1
 fi
 interactive_target="$scratch/custom Work/work"
 if ! printf '2\n%s\ny\n' "${interactive_target%/*}" | \
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --no-global-agent >/dev/null; then
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --global-instructions no >/dev/null; then
     printf 'FAIL: interactive custom Work directory install failed.\n' >&2; exit 1
 fi
 [[ -f "$interactive_target/scripts/work" ]] || { printf 'FAIL: custom Work target missing.\n' >&2; exit 1; }
@@ -154,8 +171,8 @@ preview_global="$scratch/preview Global"
 mkdir -- "$preview_global"
 printf 'private existing instructions\n' > "$preview_global/AGENTS.md"
 preview_output="$(printf 'y\n2\n%s\n\nn\n' "$preview_global" | \
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --skills-install-dir "$scratch/preview Work" --dry-run)" || {
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --skills-dir "$scratch/preview Work" --dry-run)" || {
     printf 'FAIL: interactive Global AGENTS preview failed.\n' >&2; exit 1;
 }
 [[ "$preview_output" != *'Work instructions: all'* &&
@@ -168,8 +185,8 @@ preview_output="$(printf 'y\n2\n%s\n\nn\n' "$preview_global" | \
 global_work_target="$scratch/global Work/work"
 global_dir="$scratch/custom Global"
 if ! printf '2\n%s\ny\n' "$global_dir" | \
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --skills-install-dir "${global_work_target%/*}" --global-agent >/dev/null; then
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --skills-dir "${global_work_target%/*}" --global-instructions yes >/dev/null; then
     printf 'FAIL: interactive custom Global AGENTS directory install failed.\n' >&2; exit 1
 fi
 [[ -f "$global_work_target/scripts/work" && -f "$global_dir/AGENTS.md" ]] || {
@@ -178,21 +195,21 @@ fi
 default_global_home="$scratch/default Global home"
 mkdir -- "$default_global_home"
 if ! printf '\n1\ny\n' | HOME="$default_global_home" \
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --skills-install-dir "${global_work_target%/*}" >/dev/null; then
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --skills-dir "${global_work_target%/*}" >/dev/null; then
     printf 'FAIL: default Global AGENTS directory reinstall failed.\n' >&2; exit 1
 fi
 [[ -f "$default_global_home/.codex/AGENTS.md" && -f "$global_dir/AGENTS.md" ]] || {
     printf 'FAIL: default Global AGENTS choice did not select the displayed directory.\n' >&2; exit 1;
 }
 default_target="$HOME/.agents/skills/work"
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no >/dev/null
 migration_target="$scratch/migrated/work"
 chmod 555 "${default_target%/*}"
 chmod 555 "$default_target"
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${migration_target%/*}" >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${migration_target%/*}" >/dev/null
 record="$scratch/migrated/.work-migration-cleanup"
 [[ ! -e "$record" && -f "$default_target/scripts/work" && -f "$migration_target/scripts/work" ]] || {
     printf 'FAIL: independent installation modified previous Work.\n' >&2; exit 1;
@@ -200,14 +217,14 @@ record="$scratch/migrated/.work-migration-cleanup"
 chmod 755 "${default_target%/*}"
 chmod 755 "$default_target"
 printf changed > "$default_target/SKILL.md"
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${migration_target%/*}" >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${migration_target%/*}" >/dev/null
 [[ ! -e "$record" && -f "$default_target/SKILL.md" ]] || {
     printf 'FAIL: changed previous Work was deleted.\n' >&2; exit 1;
 }
 cp -- "$root/skills/work/SKILL.md" "$default_target/SKILL.md"
-bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${migration_target%/*}" >/dev/null
+bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${migration_target%/*}" >/dev/null
 [[ ! -e "$record" && -f "$default_target/SKILL.md" && -f "$migration_target/scripts/work" ]] || {
     printf 'FAIL: independent installation changed previous Work.\n' >&2; exit 1;
 }
@@ -222,8 +239,8 @@ fi
 MSYS_NO_PATHCONV=1 node -e 'const core=require(process.argv[1]); const work=require(process.argv[2]); const fs=require("fs"); const raw=fs.readFileSync(process.argv[3],"utf8"); const target=process.argv[4]; const tooling=process.argv[5]; const version=core.run(["combined",raw,target,tooling,"work-version"]); const global=core.run(["combined",raw,target,tooling,"global-agent-dir"]); const state=JSON.parse(work.run(["from-combined",version,target,global])); if(state.skills.length!==14||state.global_agents_dir!==null) process.exit(1)' \
     "$module_path" "$work_module_path" "$state_path" "$target" "${target%/*}/tooling"
 rm -- "${target%/*}/install-state.json"
-if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-    --non-interactive --no-global-agent --skills-install-dir "${target%/*}" >/dev/null 2>&1; then
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1; then
     printf 'FAIL: noninteractive first update was accepted.\n' >&2; exit 1
 fi
 [[ -f "$target/scripts/work" && ! -e "${target%/*}/install-state.json" ]] || exit 1
@@ -233,9 +250,9 @@ for crash_point in staging first-rename second-rename before-verified after-veri
     crash_target="$scratch/crash-$crash_point/work"
     crash_global="$scratch/crash-$crash_point/global"
     write_test_release_info "$base_version"
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --non-interactive --global-agent --global-agent-install-dir "$crash_global" \
-        --skills-install-dir "${crash_target%/*}" >/dev/null
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --non-interactive --global-instructions yes --instructions-dir "$crash_global" \
+        --skills-dir "${crash_target%/*}" >/dev/null
     global_before="$(shasum -a 256 "$crash_global/AGENTS.md")"
     write_test_release_info "$next_version"
     cp -- "$repo_root/os-scripts/mac/installer/transaction/work.sh" "$scratch/crash-installer/transaction/work.sh"
@@ -261,9 +278,9 @@ if contents.count(before) != 1:
 path.write_text(contents.replace(before, before + after if point not in ("second-rename", "after-verified") else after))
 PY
     set +e
-    bash "$scratch/crash-installer/install/install-core.sh" package "$root" \
-        --non-interactive --global-agent --global-agent-install-dir "$crash_global" \
-        --skills-install-dir "${crash_target%/*}" >/dev/null 2>&1
+    bash "$scratch/crash-installer/install/install-core.sh" package "$root" --host codex \
+        --non-interactive --global-instructions yes --instructions-dir "$crash_global" \
+        --skills-dir "${crash_target%/*}" >/dev/null 2>&1
     crash_exit=$?
     set -e
     [[ "$crash_exit" == 137 ]] || {
@@ -279,9 +296,9 @@ PY
        "$(shasum -a 256 "$crash_global/AGENTS.md")" == "$global_before" ]] || {
         printf 'FAIL: %s lost previous Work.\n' "$crash_point" >&2; exit 1;
     }
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --non-interactive --global-agent --global-agent-install-dir "$crash_global" \
-        --skills-install-dir "${crash_target%/*}" >/dev/null
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --non-interactive --global-instructions yes --instructions-dir "$crash_global" \
+        --skills-dir "${crash_target%/*}" >/dev/null
     crash_state="$(cat -- "${crash_target%/*}/install-state.json")"
     [[ "$crash_state" == *"\"$next_version\""* && -x "$crash_target/scripts/work" &&
        "$(shasum -a 256 "$crash_global/AGENTS.md")" == "$global_before" &&
@@ -289,19 +306,19 @@ PY
         printf 'FAIL: %s did not reinstall new Work.\n' "$crash_point" >&2; exit 1;
     }
 done
-cp -- "$root/AGENTS.md" "$scratch/original-AGENTS.md"
+cp -- "$root/instructions/global-instructions.md" "$scratch/original-AGENTS.md"
 for global_crash in after-global during-work after-work-verified; do
     global_case="$scratch/global-crash-$global_crash"
     global_work="$global_case/work"
     global_agents="$global_case/global"
-    cp -- "$scratch/original-AGENTS.md" "$root/AGENTS.md"
+    cp -- "$scratch/original-AGENTS.md" "$root/instructions/global-instructions.md"
     write_test_release_info "$base_version"
-    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --non-interactive --global-agent --global-agent-install-dir "$global_agents" \
-        --skills-install-dir "${global_work%/*}" >/dev/null
+    bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --non-interactive --global-instructions yes --instructions-dir "$global_agents" \
+        --skills-dir "${global_work%/*}" >/dev/null
     old_global_hash="$(shasum -a 256 "$global_agents/AGENTS.md" | cut -d ' ' -f1)"
-    printf 'new Global AGENTS for %s\n' "$global_crash" > "$root/AGENTS.md"
-    new_global_hash="$(shasum -a 256 "$root/AGENTS.md" | cut -d ' ' -f1)"
+    printf 'new Global AGENTS for %s\n' "$global_crash" > "$root/instructions/global-instructions.md"
+    new_global_hash="$(shasum -a 256 "$root/instructions/global-instructions.md" | cut -d ' ' -f1)"
     write_test_release_info "$next_version"
     cp -- "$repo_root/os-scripts/mac/installer/transaction/work.sh" "$scratch/crash-installer/transaction/work.sh"
     python3 -B - "$scratch/crash-installer/transaction/work.sh" "$global_crash" <<'PY'
@@ -324,9 +341,9 @@ contents = contents.replace(marker, injection + marker if point == "after-global
 path.write_text(contents)
 PY
     set +e
-    printf 'y\ny\n' | bash "$scratch/crash-installer/install/install-core.sh" package "$root" \
-        --global-agent --global-agent-install-dir "$global_agents" \
-        --skills-install-dir "${global_work%/*}" >/dev/null 2>&1
+    printf 'y\ny\n' | bash "$scratch/crash-installer/install/install-core.sh" package "$root" --host codex \
+        --global-instructions yes --instructions-dir "$global_agents" \
+        --skills-dir "${global_work%/*}" >/dev/null 2>&1
     crash_exit=$?
     set -e
     [[ "$crash_exit" == 137 && "$(shasum -a 256 "$global_agents/AGENTS.md" | cut -d ' ' -f1)" == "$new_global_hash" ]] || {
@@ -340,9 +357,9 @@ PY
     if [[ "$global_crash" == after-global ]]; then
         recorded_hash="$(cat -- "$global_txn/source-sha256.txt")"
         printf 'invalid\n' > "$global_txn/source-sha256.txt"
-        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-            --global-agent --global-agent-install-dir "$global_agents" \
-            --skills-install-dir "${global_work%/*}" >/dev/null 2>&1; then
+        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+            --global-instructions yes --instructions-dir "$global_agents" \
+            --skills-dir "${global_work%/*}" >/dev/null 2>&1; then
             printf 'FAIL: damaged Global transaction record was accepted.\n' >&2; exit 1
         fi
         [[ "$(cat -- "$global_txn/global-previous")" == "$(cat -- "$scratch/original-AGENTS.md")" &&
@@ -351,20 +368,20 @@ PY
         }
         printf '%s\n' "$recorded_hash" > "$global_txn/source-sha256.txt"
         printf 'external edit\n' > "$global_agents/AGENTS.md"
-        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-            --global-agent --global-agent-install-dir "$global_agents" \
-            --skills-install-dir "${global_work%/*}" >/dev/null 2>&1; then
+        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+            --global-instructions yes --instructions-dir "$global_agents" \
+            --skills-dir "${global_work%/*}" >/dev/null 2>&1; then
             printf 'FAIL: externally changed Global AGENTS was overwritten.\n' >&2; exit 1
         fi
         [[ "$(cat -- "$global_agents/AGENTS.md")" == 'external edit' &&
            "$(shasum -a 256 "$global_txn/global-previous" | cut -d ' ' -f1)" == "$old_global_hash" ]] || {
             printf 'FAIL: external Global AGENTS edit or previous bytes were lost.\n' >&2; exit 1;
         }
-        cp -- "$root/AGENTS.md" "$global_agents/AGENTS.md"
+        cp -- "$root/instructions/global-instructions.md" "$global_agents/AGENTS.md"
         printf keep > "$global_txn/unknown.txt"
-        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-            --global-agent --global-agent-install-dir "$global_agents" \
-            --skills-install-dir "${global_work%/*}" >/dev/null 2>&1; then
+        if printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+            --global-instructions yes --instructions-dir "$global_agents" \
+            --skills-dir "${global_work%/*}" >/dev/null 2>&1; then
             printf 'FAIL: unknown Global transaction content was accepted.\n' >&2; exit 1
         fi
         [[ "$(cat -- "$global_txn/unknown.txt")" == keep &&
@@ -373,9 +390,9 @@ PY
         }
         rm -- "$global_txn/unknown.txt"
     fi
-    restart_output="$(printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" \
-        --global-agent --global-agent-install-dir "$global_agents" \
-        --skills-install-dir "${global_work%/*}")" || {
+    restart_output="$(printf 'y\ny\n' | bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+        --global-instructions yes --instructions-dir "$global_agents" \
+        --skills-dir "${global_work%/*}")" || {
         printf 'FAIL: %s combined recovery failed.\n' "$global_crash" >&2; exit 1;
     }
     if [[ "$global_crash" != after-work-verified ]]; then
@@ -390,7 +407,7 @@ PY
     }
 done
 source_project="$scratch/source-project"
-mkdir -p -- "$source_project/os-scripts" "$source_project/skills" "$source_project/rust"
+mkdir -p -- "$source_project/os-scripts" "$source_project/skills" "$source_project/rust" "$source_project/instructions"
 cp -- "$repo_root/rust/Cargo.toml" "$source_project/rust/Cargo.toml"
 cp -R -- "$repo_root/os-scripts/mac" "$source_project/os-scripts/mac"
 cp -R -- "$repo_root/skills/work" "$source_project/skills/work"
@@ -398,7 +415,7 @@ cp -R -- "$repo_root/skills/tooling" "$source_project/skills/tooling"
 cp -- "$repo_root/os-scripts/common/installer/options.tsv" "$source_project/os-scripts/mac/installer/cli/options.tsv"
 mkdir -p -- "$source_project/os-scripts/common/installer"
 cp -- "$repo_root/os-scripts/common/installer/install-state.json" "$source_project/os-scripts/common/installer/install-state.json"
-cp -- "$root/AGENTS.md" "$source_project/AGENTS.md"
+cp -- "$root/instructions/global-instructions.md" "$source_project/instructions/global-instructions.md"
 printf '%s\n' "$base_version" > "$source_project/VERSION"
 cat > "$scratch/shims/cargo" <<'CARGO'
 #!/usr/bin/env bash
@@ -409,15 +426,15 @@ CARGO
 chmod 755 "$scratch/shims/cargo"
 export TEST_WORK_BINARY="$root/bin/work"
 export TEST_TOOLING_BINARY="$root/bin/tooling"
-source_entry="$source_project/os-scripts/mac/install-work-from-source.command"
+source_entry="$source_project/os-scripts/mac/install-agent-work-kit-from-source.command"
 source_work_target="$scratch/public-source/work"
 source_global="$scratch/public-source/global"
-bash "$source_entry" --non-interactive --global-agent --global-agent-install-dir "$source_global" \
-    --skills-install-dir "${source_work_target%/*}" >/dev/null
+bash "$source_entry" --host codex --non-interactive --global-instructions yes --instructions-dir "$source_global" \
+    --skills-dir "${source_work_target%/*}" >/dev/null
 source_old_hash="$(shasum -a 256 "$source_global/AGENTS.md" | cut -d ' ' -f1)"
 printf '%s\n' "$next_version" > "$source_project/VERSION"
-printf 'new public Source Global AGENTS\n' > "$source_project/AGENTS.md"
-source_new_hash="$(shasum -a 256 "$source_project/AGENTS.md" | cut -d ' ' -f1)"
+printf 'new public Source Global AGENTS\n' > "$source_project/instructions/global-instructions.md"
+source_new_hash="$(shasum -a 256 "$source_project/instructions/global-instructions.md" | cut -d ' ' -f1)"
 python3 -B - "$source_project/os-scripts/mac/installer/transaction/work.sh" <<'PY'
 import pathlib
 import sys
@@ -430,8 +447,8 @@ if contents.count(marker) != 1:
 path.write_text(contents.replace(marker, '    kill -9 $$\n' + marker))
 PY
 set +e
-printf 'y\ny\n' | bash "$source_entry" --global-agent --global-agent-install-dir "$source_global" \
-    --skills-install-dir "${source_work_target%/*}" >/dev/null 2>&1
+printf 'y\ny\n' | bash "$source_entry" --host codex --global-instructions yes --instructions-dir "$source_global" \
+    --skills-dir "${source_work_target%/*}" >/dev/null 2>&1
 source_crash_exit=$?
 set -e
 source_txn="$(find "$scratch/public-source" -maxdepth 1 -name '.agents-install.*' -type d -print -quit)"
@@ -444,8 +461,8 @@ source_txn="$(find "$scratch/public-source" -maxdepth 1 -name '.agents-install.*
 }
 cp -- "$repo_root/os-scripts/mac/installer/transaction/work.sh" \
     "$source_project/os-scripts/mac/installer/transaction/work.sh"
-printf 'y\ny\n' | bash "$source_entry" --global-agent --global-agent-install-dir "$source_global" \
-    --skills-install-dir "${source_work_target%/*}" >/dev/null
+printf 'y\ny\n' | bash "$source_entry" --host codex --global-instructions yes --instructions-dir "$source_global" \
+    --skills-dir "${source_work_target%/*}" >/dev/null
 [[ "$(cat -- "${source_work_target%/*}/install-state.json")" == *"\"$next_version\""* &&
    "$(shasum -a 256 "$source_global/AGENTS.md" | cut -d ' ' -f1)" == "$source_new_hash" &&
    -z "$(find "$scratch/public-source" -maxdepth 1 \( -name '.agents-install.*' -o -name '.work-install.*' \) -print -quit)" ]] || {

@@ -21,11 +21,12 @@ installer_cli_parse --help </dev/null
 [[ "$installer_cli_action" == help ]] || fail 'help action'
 installer_cli_parse -h </dev/null
 [[ "$installer_cli_action" == help ]] || fail 'short help action'
-installer_cli_parse --global-agent --skills-install-dir '目錄 有空白 !&' --global-agent-install-dir '全域 有空白 !&' --non-interactive --dry-run --verbose </dev/null
-[[ "$installer_cli_skills_install_dir" == '目錄 有空白 !&' && "$installer_cli_global_agents_install_dir" == '全域 有空白 !&' ]] || fail 'path boundary'
+installer_cli_parse --host claude --global-instructions yes --skills-dir '目錄 有空白 !&' --instructions-dir '全域 有空白 !&' --non-interactive --dry-run --verbose </dev/null
+[[ "$installer_cli_skills_dir" == '目錄 有空白 !&' && "$installer_cli_instructions_dir" == '全域 有空白 !&' ]] || fail 'path boundary'
 [[ "$installer_cli_non_interactive" == 1 && "$installer_cli_dry_run" == 1 && "$installer_cli_verbose" == 1 ]] || fail 'boolean options'
-installer_cli_parse --no-global-agent </dev/null
-[[ "$installer_cli_global_agents" == 0 ]] || fail 'global override'
+[[ "$installer_cli_host" == claude && "$installer_cli_global_instructions" == yes ]] || fail 'Host and global override'
+installer_cli_parse --host codex --global-instructions no </dev/null
+[[ "$installer_cli_global_instructions" == no ]] || fail 'global override'
 
 expect_invalid --help -h
 expect_invalid --skills
@@ -36,11 +37,15 @@ expect_invalid --global-agents
 expect_invalid --no-global-agents
 expect_invalid --skill-install-dir old/work
 expect_invalid --global-agents-install-dir old/global
-expect_invalid --skills-install-dir
-expect_invalid --skills-install-dir ''
-expect_invalid --global-agent-install-dir --dry-run
+expect_invalid --skills-dir
+expect_invalid --skills-dir ''
+expect_invalid --instructions-dir --dry-run
 expect_invalid --install-dir old/work
 expect_invalid --global-agent --no-global-agent
+expect_invalid --host unknown
+expect_invalid --host codex --global-instructions maybe
+expect_invalid --host codex --global-instructions no --instructions-dir /tmp/global
+expect_invalid --non-interactive
 expect_invalid --unknown
 expect_invalid --yes
 

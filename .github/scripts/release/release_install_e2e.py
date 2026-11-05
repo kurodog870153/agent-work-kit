@@ -19,8 +19,8 @@ from release_package_integrity import verify_tree, verify_zip
 from rust_toolchain import rust_toolchain
 
 
-CLI_OPTIONS = ("--global-agent", "--no-global-agent", "--skills-install-dir",
-               "--global-agent-install-dir", "--non-interactive", "--dry-run", "--verbose",
+CLI_OPTIONS = ("--host", "--global-instructions", "--skills-dir",
+               "--instructions-dir", "--non-interactive", "--dry-run", "--verbose",
                "--help")
 
 
@@ -36,6 +36,10 @@ def verify_readme_download(archive_path, checksum_path, platform):
         raise ValueError(f"outer ZIP digest missing or mismatched: {name}")
     with zipfile.ZipFile(archive_path) as archive:
         info = json.loads(archive.read("release-info.json"))
+    target = {"macos-arm64": "aarch64-apple-darwin", "windows-x64-msvc": "x86_64-pc-windows-msvc"}[platform]
+    if (info.get("host") not in ("codex", "claude") or info.get("target") != target or
+            name != f"agent-work-kit-v{info.get('version')}-{info['host']}-{platform}.zip"):
+        raise ValueError("ZIP Host, platform or version identity is invalid")
     expected_label = {"macos-arm64": "macos-latest", "windows-x64-msvc": "windows-latest"}[platform]
     environment = info["tested_environment"]
     if environment.get("runner_label") != expected_label or any(not environment.get(field) for field in (
@@ -77,6 +81,8 @@ def verify_cli_entries(package, platform):
 
 
 def run_installer(script, home, options=(), answers=None, extra_env=None, stream_output=False):
+    if tuple(options) not in (("--help",), ("-h",)) and "--host" not in options:
+        options = ("--host", "codex", *options)
     environment = os.environ.copy()
     if sys.platform == "win32":
         system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
@@ -152,12 +158,12 @@ def assert_no_target(result, home, target):
 
 def assert_state(work, version, workspace_version, global_agents, global_dir=None):
     state = json.loads((work.parent / "install-state.json").read_text(encoding="utf-8"))
-    if (state["version"] != version or state["work_version"] != workspace_version or
+    if (state["host"] != "codex" or state["version"] != version or state["work_version"] != workspace_version or
             state["tooling_version"] != workspace_version or
             Path(state["skill_install_dir"]) != work.parent or
             state["global_agent_dir"] != (str(global_dir) if global_agents else None) or
             state["status"] != "installed" or
-            set(state) != {"version", "work_version", "tooling_version", "skill_install_dir", "global_agent_dir", "status"}):
+            set(state) != {"host", "version", "work_version", "tooling_version", "skill_install_dir", "global_agent_dir", "status"}):
         raise AssertionError(f"unexpected Skills state: {state!r}")
     if (work / "install-state.json").exists():
         raise AssertionError("Work retained a child install-state.json")
@@ -187,9 +193,9 @@ def assert_no_work_transactions(work):
 
 def exercise_package(package, root, platform, source_install=False):
     suffix = ".bat" if platform == "windows-x64-msvc" else ".command"
-    script = package / f"install-work-from-package{suffix}"
+    script = package / f"install-agent-work-kit-from-package{suffix}"
     source = Path(__file__).resolve().parents[3] / "os-scripts" / (
-        "windows" if suffix == ".bat" else "mac") / f"install-work-from-source{suffix}"
+        "windows" if suffix == ".bat" else "mac") / f"install-agent-work-kit-from-source{suffix}"
     if not script.is_file() or not source.is_file():
         raise AssertionError("a formal installer entry is missing")
     for entry in (script, source):
@@ -201,19 +207,19 @@ def exercise_package(package, root, platform, source_install=False):
             if not all(flag.encode() in result[1] for flag in CLI_OPTIONS):
                 raise AssertionError(f"{entry.name} {option} omitted a CLI option: {result!r}")
         dry = run_installer(entry, help_home,
-            ["--non-interactive", "--no-global-agent", "--dry-run"])
+            ["--non-interactive", "--global-instructions", "no", "--dry-run"])
         assert_success(dry)
         if b"Version:" not in dry[1] or b"Tooling target:" not in dry[1] or b"Dry run:" not in dry[1]:
             raise AssertionError(f"{entry.name} dry run omitted its summary: {dry!r}")
         verbose = run_installer(entry, help_home,
-            ["--non-interactive", "--no-global-agent", "--dry-run", "--verbose"])
+            ["--non-interactive", "--global-instructions", "no", "--dry-run", "--verbose"])
         assert_success(verbose)
         if b"Installer" not in verbose[1] or b"Dry run:" not in verbose[1]:
             raise AssertionError(f"{entry.name} verbose dry run omitted diagnostics: {verbose!r}")
         for invalid in (["--unknown"], ["--install-dir", "old/work"], ["--skills"],
                         ["--skills", "unknown"], ["--list-skills"],
-                        ["--work-install-dir"], ["--skills-install-dir"], ["--global-agent-install-dir"],
-                        ["--global-agent", "--no-global-agent"],
+                        ["--work-install-dir"], ["--skills-dir"], ["--instructions-dir"],
+                        ["--global-instructions", "yes", "--global-instructions", "no"],
                         ["--verbose", "--verbose"], ["--help", "-h"],
                         ["--yes"], ["--force"]):
             assert_failed(run_installer(entry, help_home, invalid), 2)
@@ -223,7 +229,7 @@ def exercise_package(package, root, platform, source_install=False):
     home = root / "default install"
     home.mkdir()
     work = home / ".agents/skills/work"
-    common = ["--non-interactive", "--no-global-agent"]
+    common = ["--non-interactive", "--global-instructions", "no"]
     release_info = json.loads((package / "release-info.json").read_text(encoding="utf-8"))
     version = release_info["version"]
     workspace_version = release_info["work_version"]
@@ -240,15 +246,15 @@ def exercise_package(package, root, platform, source_install=False):
     default_home.mkdir()
     assert_success(run_installer(script, default_home, ["--non-interactive"]))
     assert_state(default_home / ".agents/skills/work", version, workspace_version, True, default_home / ".codex")
-    if (default_home / ".codex/AGENTS.md").read_bytes() != (package / "AGENTS.md").read_bytes():
+    if (default_home / ".codex/AGENTS.md").read_bytes() != (package / "instructions/global-instructions.md").read_bytes():
         raise AssertionError("first installation did not enable the default Global AGENTS")
 
     saved_home = root / "saved Global AGENTS directory"
     saved_home.mkdir()
     saved_work = saved_home / ".agents/skills/work"
     saved_global = root / "自訂 Global AGENTS & path"
-    saved_options = ["--non-interactive", "--global-agent",
-                     "--global-agent-install-dir", str(saved_global)]
+    saved_options = ["--non-interactive", "--global-instructions", "yes",
+                     "--instructions-dir", str(saved_global)]
     assert_success(run_installer(script, saved_home, saved_options))
     assert_state(saved_work, version, workspace_version, True, saved_global)
     assert_success(run_installer(script, saved_home, ["--non-interactive"]))
@@ -268,7 +274,7 @@ def exercise_package(package, root, platform, source_install=False):
     cancelled_home.mkdir()
     cancelled_work = cancelled_home / ".agents/skills/work"
     assert_no_target(run_installer(script, cancelled_home,
-        ["--no-global-agent"], answers="\nn\n"), cancelled_home, cancelled_work)
+        ["--global-instructions", "no"], answers="\nn\n"), cancelled_home, cancelled_work)
 
     conflict_home = root / "Global AGENTS conflict"
     conflict_home.mkdir()
@@ -277,13 +283,13 @@ def exercise_package(package, root, platform, source_install=False):
     global_target.write_bytes(b"user-owned Global AGENTS\r\n")
     conflict_work = conflict_home / ".agents/skills/work"
     assert_failed(run_installer(script, conflict_home,
-        ["--non-interactive", "--global-agent"]))
+        ["--non-interactive", "--global-instructions", "yes"]))
     if conflict_work.exists() or global_target.read_bytes() != b"user-owned Global AGENTS\r\n":
         raise AssertionError("Global AGENTS conflict changed existing data")
     assert_success(run_installer(script, conflict_home,
-        ["--global-agent"], answers="\n\ny\ny\n"))
+        ["--global-instructions", "yes"], answers="\n\ny\ny\n"))
     assert_state(conflict_work, version, workspace_version, True, conflict_home / ".codex")
-    if global_target.read_bytes() != (package / "AGENTS.md").read_bytes():
+    if global_target.read_bytes() != (package / "instructions/global-instructions.md").read_bytes():
         raise AssertionError("confirmed Global AGENTS replacement did not publish source bytes")
     assert_no_work_transactions(conflict_work)
 
@@ -293,7 +299,7 @@ def exercise_package(package, root, platform, source_install=False):
     retained_target.parent.mkdir()
     retained_target.write_bytes(b"keep user Global AGENTS\n")
     assert_success(run_installer(script, retained_home,
-        ["--global-agent"], answers="\n\nn\ny\n"))
+        ["--global-instructions", "yes"], answers="\n\nn\ny\n"))
     assert_state(retained_home / ".agents/skills/work", version, workspace_version, True, retained_home / ".codex")
     if retained_target.read_bytes() != b"keep user Global AGENTS\n":
         raise AssertionError("declined Global AGENTS replacement changed original bytes")
@@ -308,7 +314,7 @@ def exercise_package(package, root, platform, source_install=False):
     custom_home = root / "custom home"
     custom_home.mkdir()
     custom = root / "路徑 with spaces & symbols" / "work"
-    custom_options = [*common, "--skills-install-dir", str(custom.parent)]
+    custom_options = [*common, "--skills-dir", str(custom.parent)]
     assert_success(run_installer(script, custom_home, custom_options))
     assert_state(custom, version, workspace_version, False)
     for mode in ("task", "execute"):
@@ -324,7 +330,7 @@ def exercise_package(package, root, platform, source_install=False):
     old_binary = (old_work / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes()
     moved_work = root / "migrated Work" / "work"
     assert_success(run_installer(script, migration_home,
-        ["--non-interactive", "--no-global-agent", "--skills-install-dir", str(moved_work.parent)]))
+        ["--non-interactive", "--global-instructions", "no", "--skills-dir", str(moved_work.parent)]))
     if (old_work / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes() != old_binary:
         raise AssertionError("independent installation changed the previous Work")
     assert_state(moved_work, version, workspace_version, False)
@@ -352,7 +358,7 @@ def exercise_package(package, root, platform, source_install=False):
         source_interactive_home = root / "source interactive install"
         source_interactive_home.mkdir()
         assert_success(run_installer(source, source_interactive_home,
-                                     ["--no-global-agent"],
+                                     ["--global-instructions", "no"],
                                      answers="\ny\n", extra_env=source_environment,
                                      stream_output=True))
         assert_state(source_interactive_home / ".agents/skills/work", version, workspace_version, False)
@@ -365,7 +371,7 @@ def exercise_package(package, root, platform, source_install=False):
     legacy_state.write_bytes(b"legacy state\n")
     rejected = run_installer(script, first_update, common)
     assert_failed(rejected)
-    assert_failed(run_installer(script, first_update, ["--no-global-agent"], answers="\nYES\ny\n"))
+    assert_failed(run_installer(script, first_update, ["--global-instructions", "no"], answers="\nYES\ny\n"))
     if not (legacy / "scripts" / ("work.exe" if suffix == ".bat" else "work")).is_file() or legacy_state.read_bytes() != b"legacy state\n":
         raise AssertionError("legacy Work state or binary changed after rejection")
 
@@ -375,7 +381,7 @@ def exercise_package(package, root, platform, source_install=False):
     shutil.copytree(work, declined)
     prior_binary = (declined / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes()
     assert_failed(run_installer(script, declined_home,
-        ["--no-global-agent", "--skills-install-dir", str(declined.parent)], answers="no\n"))
+        ["--global-instructions", "no", "--skills-dir", str(declined.parent)], answers="no\n"))
     if (declined / "install-state.json").exists() or (declined / "scripts" / ("work.exe" if suffix == ".bat" else "work")).read_bytes() != prior_binary:
         raise AssertionError("declined first update changed Work")
 
@@ -389,7 +395,7 @@ def exercise_package(package, root, platform, source_install=False):
     if invalid_state.read_bytes() != b"{invalid json\n":
         raise AssertionError("noninteractive first update changed invalid state")
     assert_failed(run_installer(script, invalid_home,
-        ["--no-global-agent"], answers="\nYES\ny\n"))
+        ["--global-instructions", "no"], answers="\nYES\ny\n"))
     if invalid_state.read_bytes() != b"{invalid json\n":
         raise AssertionError("interactive attempt changed invalid legacy state")
 
@@ -408,7 +414,7 @@ def exercise_package(package, root, platform, source_install=False):
         if state_file.read_bytes() != raw or marker.read_bytes() != b"existing Work\n":
             raise AssertionError(f"{name} state changed on noninteractive rejection")
         assert_failed(run_installer(script, case_home,
-            ["--no-global-agent", "--skills-install-dir", str(case_work.parent)],
+            ["--global-instructions", "no", "--skills-dir", str(case_work.parent)],
             answers="YES\ny\n"))
         if state_file.read_bytes() != raw or marker.read_bytes() != b"existing Work\n":
             raise AssertionError(f"{name} state changed on interactive rejection")
@@ -421,7 +427,7 @@ def exercise_package(package, root, platform, source_install=False):
     marker.write_text("keep", encoding="utf-8")
     assert_failed(run_installer(script, unknown_home, common))
     unknown_result = run_installer(script, unknown_home,
-        ["--no-global-agent", "--skills-install-dir", str(unknown.parent)], answers="y\n")
+        ["--global-instructions", "no", "--skills-dir", str(unknown.parent)], answers="y\n")
     assert_failed(unknown_result)
     diagnostic = unknown_result[1] + unknown_result[2]
     if b"parent install-state.json" not in diagnostic or str(unknown).encode() not in diagnostic:
@@ -448,7 +454,7 @@ def exercise_package(package, root, platform, source_install=False):
         linked_directory.symlink_to(outside, target_is_directory=True)
     assert_failed(run_installer(script, link_home, common))
     assert_failed(run_installer(script, link_home,
-        ["--no-global-agent", "--skills-install-dir", str(linked_work.parent)],
+        ["--global-instructions", "no", "--skills-dir", str(linked_work.parent)],
         answers="y\n", stream_output=True))
     if (outside / "marker.txt").read_text(encoding="utf-8") != "keep" or not linked_directory.exists():
         raise AssertionError("unsafe Work link or linked data changed after rejection")
@@ -457,11 +463,11 @@ def exercise_package(package, root, platform, source_install=False):
         bad = root / f"bad {scenario}"
         shutil.copytree(package, bad)
         if scenario == "hash":
-            (bad / "AGENTS.md").write_bytes(b"tampered")
+            (bad / "instructions/global-instructions.md").write_bytes(b"tampered")
         elif scenario == "extra":
             (bad / "extra.txt").write_bytes(b"extra")
         elif scenario == "missing":
-            (bad / "AGENTS.md").unlink()
+            (bad / "instructions/global-instructions.md").unlink()
         elif scenario == "missing-options":
             (bad / "installer/cli/options.tsv").unlink()
         elif scenario == "duplicate-manifest":
@@ -511,7 +517,7 @@ def main():
         assert_macos_network_sandbox()
     verify_readme_download(args.zip, args.checksums, args.platform)
     repository = Path(__file__).resolve().parents[3]
-    with tempfile.TemporaryDirectory(prefix=".issue95-release-e2e.", dir=repository) as directory:
+    with tempfile.TemporaryDirectory(prefix=".installer-test-release-e2e.", dir=repository) as directory:
         root = Path(directory)
         if root.resolve().parent != repository.resolve():
             raise AssertionError("Release E2E fixture path escaped the repository")

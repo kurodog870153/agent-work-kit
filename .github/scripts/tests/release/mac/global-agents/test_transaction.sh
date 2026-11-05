@@ -3,8 +3,8 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd -P)"
 source "$repo_root/os-scripts/mac/installer/global-agents/policy.sh"
 source "$repo_root/os-scripts/mac/installer/global-agents/transaction.sh"
-scratch="$(mktemp -d "$repo_root/.issue95-global-transaction.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.issue95-global-transaction.* ]] || exit 1
+scratch="$(mktemp -d "$repo_root/.installer-test-global-transaction.XXXXXX")"
+[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-global-transaction.* ]] || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 source_file="$scratch/source.md"
 target="$scratch/AGENTS.md"

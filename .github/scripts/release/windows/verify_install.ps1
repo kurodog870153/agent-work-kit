@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $version = (Get-Content VERSION -Raw).Trim()
-$zip = "dist/work-v${version}-windows-x64-msvc.zip"
+$zip = "dist/agent-work-kit-v${version}-codex-windows-x64-msvc.zip"
 $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
 Write-Host "Enabling outbound network isolation for Windows release installation E2E."
 New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null

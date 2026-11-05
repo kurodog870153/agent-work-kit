@@ -121,8 +121,8 @@ class ReleaseGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check_immutable("owner/repo")
 
-    def test_draft_requires_exact_five_assets_and_digests(self):
-        self.assertEqual(len(expected_assets("1.0.0")), 5)
+    def test_draft_requires_exact_seven_assets_and_digests(self):
+        self.assertEqual(len(expected_assets("1.0.0")), 7)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             assets = []

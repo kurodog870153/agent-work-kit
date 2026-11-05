@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 
 installer_run() {
-    local mode="$1" root="$2" helper lock_build='' result
+    local mode="$1" root="$2" helper lock_build='' result selected_host choice lock_path
     shift 2
     local module_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
     local installer_dir="$(cd -- "$module_dir/.." && pwd -P)"
     source "$installer_dir/cli/parse-options.sh"
     installer_cli_parse "$@" || return 2
     if [[ "$installer_cli_action" == help ]]; then installer_cli_usage; return 0; fi
+    selected_host="$installer_cli_host"
+    if [[ -z "$selected_host" ]]; then
+        read -r -p 'Select Host: 1) Codex, 2) Claude Code [] ' choice || return 1
+        case "$choice" in
+            1) selected_host=codex ;;
+            2) selected_host=claude ;;
+            *) printf 'Error: Host selection is required.\n' >&2; return 1 ;;
+        esac
+        set -- "$@" --host "$selected_host"
+    fi
     if [[ "$mode" == source ]]; then
         command -v xcrun >/dev/null 2>&1 || { printf 'Error: Xcode Command Line Tools are required.\n' >&2; return 1; }
         lock_build="$(mktemp -d "${TMPDIR:-/tmp}/work-lock.XXXXXXXX")" || return 1
@@ -20,7 +30,8 @@ installer_run() {
         helper="$root/bin/work-install-lock"
         [[ -x "$helper" ]] || { printf 'Error: packaged macOS lock helper is missing.\n' >&2; return 1; }
     fi
-    "$helper" /private/tmp/codex-workflow-kit-work-install.lock /bin/bash \
+    lock_path="/private/tmp/agent-work-kit-${selected_host}-install.lock"
+    "$helper" "$lock_path" /bin/bash \
         "$installer_dir/install/install-core.sh" "$mode" "$root" "$@"
     result=$?
     if [[ -n "$lock_build" && -d "$lock_build" ]]; then rm -rf -- "$lock_build"; fi
@@ -122,20 +133,20 @@ installer_remove_empty_work_parents() {
     done
 }
 installer_combined_action() {
-    osascript -l JavaScript "$state_module" combined "$1" "$target" "$tooling_target" "$2"
+    osascript -l JavaScript "$state_module" combined "$1" "$target" "$tooling_target" "$2" "$selected_host"
 }
 installer_work_state_from_combined() {
     local raw="$1" work="$2" tooling="$3" version global_dir
-    version="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" work-version)" || return 1
+    version="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" work-version "$selected_host")" || return 1
     [[ "$version" != - ]] || { printf ''; return 0; }
-    global_dir="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" global-agent-dir)" || return 1
-    osascript -l JavaScript "$work_state_module" from-combined "$version" "$work" "$global_dir"
+    global_dir="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" global-agent-dir "$selected_host")" || return 1
+    osascript -l JavaScript "$work_state_module" from-combined "$version" "$work" "$global_dir" "$selected_host"
 }
 installer_combined_write() {
     local status="$1" json temporary="$skills_parent/.install-state.json.tmp"
     [[ ! -e "$temporary" && ! -L "$temporary" ]] || { installer_fail "pending state write needs review: $temporary"; return 1; }
     json="$(osascript -l JavaScript "$state_module" combined-create "$version" "$work_version" \
-        "$tooling_version" "$skills_parent" "${global_dir_for_state:--}" "$status")" || return 1
+        "$tooling_version" "$skills_parent" "${global_dir_for_state:--}" "$status" "$selected_host")" || return 1
     printf '%s\n' "$json" > "$temporary" || return 1
     mv -f -- "$temporary" "$skills_parent/install-state.json"
 }
@@ -144,7 +155,7 @@ installer_combined_remove_child_states() {
     if [[ -e "$target/install-state.json" || -L "$target/install-state.json" ]]; then
         [[ -f "$target/install-state.json" && ! -L "$target/install-state.json" ]] || return 1
         work_raw="$(cat -- "$target/install-state.json")" || return 1
-        work_version_record="$(osascript -l JavaScript "$work_state_module" settings "$work_raw" "$target" '' '')" || return 1
+        work_version_record="$(osascript -l JavaScript "$work_state_module" settings "$work_raw" "$target" '' '' "$selected_host")" || return 1
         [[ "$work_version_record" == *$'\t'"$work_version"$'\t'* ]] || return 1
         rm -- "$target/install-state.json" || return 1
     fi
@@ -161,14 +172,48 @@ installer_cli_parse "$@" || exit 2
 if [[ "$installer_cli_action" == help ]]; then installer_cli_usage; exit 0; fi
 installer_log() { [[ "$installer_cli_verbose" == 1 ]] && printf 'Installer: %s\n' "$1" || true; }
 installer_log 'options parsed'
-default_parent="$(installer_absolute_path "$HOME/.agents/skills")"
-skills_parent="${installer_cli_skills_install_dir:-$default_parent}"
+selected_host="$installer_cli_host"
+if [[ -z "$selected_host" ]]; then
+    choice="$(installer_prompt 'Select Host: 1) Codex, 2) Claude Code' '')" || exit 1
+    case "$choice" in
+        1) selected_host=codex ;;
+        2) selected_host=claude ;;
+        *) installer_fail 'Host selection is required'; exit 1 ;;
+    esac
+fi
+if [[ "$mode" == package ]]; then
+    release_identity="$(cat -- "$root/release-info.json")" || exit 1
+    package_host="$(osascript -l JavaScript "$state_module" release-host "$release_identity")" || exit 1
+    package_target="$(osascript -l JavaScript "$state_module" release-target "$release_identity")" || exit 1
+    [[ "$package_host" == "$selected_host" && "$package_target" == aarch64-apple-darwin ]] || {
+        installer_fail 'release package Host or platform does not match the selected installation'; exit 1;
+    }
+fi
+if [[ "$selected_host" == codex ]]; then
+    default_parent="$(installer_absolute_path "$HOME/.agents/skills")"
+    default_global_dir="$(installer_absolute_path "$HOME/.codex")"
+    global_filename=AGENTS.md
+else
+    default_parent="$(installer_absolute_path "$HOME/.claude/skills")"
+    default_global_dir="$(installer_absolute_path "$HOME/.claude")"
+    global_filename=CLAUDE.md
+fi
+skills_parent="${installer_cli_skills_dir:-$default_parent}"
+if [[ -z "$installer_cli_skills_dir" && "$installer_cli_non_interactive" != 1 ]]; then
+    choice="$(installer_prompt "Skills directory: 1) default ($default_parent), 2) custom" 1)" || exit 1
+    case "$choice" in
+        1) skills_parent="$default_parent" ;;
+        2) skills_parent="$(installer_prompt 'Custom Skills directory' '')" || exit 1
+           [[ -n "$skills_parent" ]] || { installer_fail 'Skills directory cannot be empty'; exit 1; } ;;
+        *) installer_fail 'invalid Skills directory choice'; exit 1 ;;
+    esac
+fi
 default_target="$default_parent/work"
 target="$skills_parent/work"
 interactive_global_choice=''
 interactive_global_dir=''
 if [[ "$installer_cli_non_interactive" != 1 ]]; then
-    if [[ -z "$installer_cli_global_agents" ]]; then
+    if [[ -z "$installer_cli_global_instructions" ]]; then
         initial_state=''
         initial_parent="$(installer_absolute_path "$skills_parent")"
         if installer_directory_path_safe "$initial_parent" &&
@@ -177,35 +222,26 @@ if [[ "$installer_cli_non_interactive" != 1 ]]; then
         fi
         initial_work="$(installer_work_state_from_combined "$initial_state" "$initial_parent/work" "$initial_parent/tooling")" || exit 1
         initial_settings="$(osascript -l JavaScript "$work_state_module" settings "$initial_work" \
-            "$initial_parent/work" '' '')" || exit 1
+            "$initial_parent/work" '' '' "$selected_host")" || exit 1
         IFS=$'\t' read -r initial_valid initial_skills initial_global initial_version initial_dir <<< "$initial_settings"
         default_choice=y
         [[ "$initial_global" == 1 ]] || default_choice=n
-        interactive_global_choice="$(installer_prompt 'Install Global AGENTS.md? (y/n)' "$default_choice")" || exit 1
+        interactive_global_choice="$(installer_prompt 'Install Global Instructions? (y/n)' "$default_choice")" || exit 1
         [[ "$interactive_global_choice" == y || "$interactive_global_choice" == n ]] || {
-            installer_fail 'invalid Global AGENTS choice'; exit 1;
+            installer_fail 'invalid Global Instructions choice'; exit 1;
         }
     fi
-    if [[ "$installer_cli_global_agents" == 1 ||
-          ( -z "$installer_cli_global_agents" && "$interactive_global_choice" == y ) ]] &&
-          [[ -z "$installer_cli_global_agents_install_dir" ]]; then
-        choice="$(installer_prompt "Global AGENTS directory: 1) default ($HOME/.codex), 2) custom" 1)" || exit 1
+    if [[ "$installer_cli_global_instructions" == yes ||
+          ( -z "$installer_cli_global_instructions" && "$interactive_global_choice" == y ) ]] &&
+          [[ -z "$installer_cli_instructions_dir" ]]; then
+        choice="$(installer_prompt "Global Instructions directory: 1) default ($default_global_dir), 2) custom" 1)" || exit 1
         case "$choice" in
-            1) interactive_global_dir="$HOME/.codex" ;;
-            2) interactive_global_dir="$(installer_prompt 'Custom Global AGENTS directory' '')" || exit 1
-               [[ -n "$interactive_global_dir" ]] || { installer_fail 'Global AGENTS directory cannot be empty'; exit 1; } ;;
-            *) installer_fail 'invalid Global AGENTS directory choice'; exit 1 ;;
+            1) interactive_global_dir="$default_global_dir" ;;
+            2) interactive_global_dir="$(installer_prompt 'Custom Global Instructions directory' '')" || exit 1
+               [[ -n "$interactive_global_dir" ]] || { installer_fail 'Global Instructions directory cannot be empty'; exit 1; } ;;
+            *) installer_fail 'invalid Global Instructions directory choice'; exit 1 ;;
         esac
     fi
-fi
-if [[ -z "$installer_cli_skills_install_dir" && "$installer_cli_non_interactive" != 1 ]]; then
-    choice="$(installer_prompt "Skills directory: 1) default ($default_parent), 2) custom" 1)" || exit 1
-    case "$choice" in
-        1) skills_parent="$default_parent" ;;
-        2) skills_parent="$(installer_prompt 'Custom Skills directory' '')" || exit 1
-           [[ -n "$skills_parent" ]] || { installer_fail 'Skills directory cannot be empty'; exit 1; } ;;
-        *) installer_fail 'invalid Skills directory choice'; exit 1 ;;
-    esac
 fi
 skills_parent="$(installer_absolute_path "$skills_parent")"
 target="$skills_parent/work"
@@ -302,24 +338,24 @@ if [[ -n "$combined_raw" ]]; then
 fi
 skills_override=all
 global_override=''
-if [[ -n "$installer_cli_global_agents" ]]; then
-    if [[ "$installer_cli_global_agents" == 1 ]]; then global_override=true; else global_override=false; fi
+if [[ -n "$installer_cli_global_instructions" ]]; then
+    if [[ "$installer_cli_global_instructions" == yes ]]; then global_override=true; else global_override=false; fi
 elif [[ -n "$interactive_global_choice" ]]; then
     if [[ "$interactive_global_choice" == y ]]; then global_override=true; else global_override=false; fi
 fi
-settings="$(osascript -l JavaScript "$work_state_module" settings "$raw_state" "$target" "$skills_override" "$global_override")" || exit 1
+settings="$(osascript -l JavaScript "$work_state_module" settings "$raw_state" "$target" "$skills_override" "$global_override" "$selected_host")" || exit 1
 IFS=$'\t' read -r state_valid skills_csv global_enabled prior_version saved_global_dir <<< "$settings"
 installer_log "installed version ${prior_version:-none}; selected Skills $skills_csv"
 target_state_valid="$state_valid"
 settings_raw="$raw_state"
 settings_dir="$target"
 migration=''
-global_dir="$HOME/.codex"
+global_dir="$default_global_dir"
 if [[ "$global_enabled" == 1 && "$saved_global_dir" != - ]]; then
     global_dir="$saved_global_dir"
 fi
-if [[ -n "$installer_cli_global_agents_install_dir" ]]; then
-    global_dir="$installer_cli_global_agents_install_dir"
+if [[ -n "$installer_cli_instructions_dir" ]]; then
+    global_dir="$installer_cli_instructions_dir"
 elif [[ -n "$interactive_global_dir" ]]; then
     global_dir="$interactive_global_dir"
 fi
@@ -352,7 +388,7 @@ fi
 installer_target_allows_install "$installer_cli_non_interactive" "$confirmed" || {
     installer_fail "Work target cannot be installed: $installer_target_reason"
     if [[ "$installer_target_kind" == unsafe ]]; then
-        printf 'Keep the existing files. Inspect and organize this directory yourself, or choose another --skills-install-dir.\n' >&2
+        printf 'Keep the existing files. Inspect and organize this directory yourself, or choose another --skills-dir.\n' >&2
     fi
     exit 1
 }
@@ -382,15 +418,15 @@ done
 if installer_binary_in_use "$tooling_target/scripts/tooling"; then
     installer_fail 'installed Tooling binary is in use; close that Tooling process and retry'; exit 1
 fi
-global_source="$root/AGENTS.md"
-global_target="$global_dir/AGENTS.md"
+global_source="$root/instructions/global-instructions.md"
+global_target="$global_dir/$global_filename"
 installer_global_agents_plan "$global_source" "$global_target" "$global_enabled" "$installer_cli_non_interactive" 0 || {
     installer_fail 'Global AGENTS target conflicts or is unsafe'; exit 1;
 }
 if [[ "$installer_global_agents_action" == confirm ]]; then
-    printf 'Global AGENTS.md differs (current SHA-256 %s, new %s).\n' \
+    printf 'Global %s differs (current SHA-256 %s, new %s).\n' "$global_filename" \
         "$installer_global_agents_target_sha256" "$installer_global_agents_source_sha256"
-    choice="$(installer_prompt 'Replace Global AGENTS.md? (y/n)' n)" || exit 1
+    choice="$(installer_prompt "Replace Global $global_filename? (y/n)" n)" || exit 1
     if [[ "$choice" == y ]]; then installer_global_agents_action=replace
     else installer_global_agents_action=skip; fi
 fi
@@ -404,7 +440,7 @@ fi
 installer_log 'candidate Work binary smoke test passed'
 template_json="$(cat -- "$state_template")" || exit 1
 state_json="$(osascript -l JavaScript "$work_state_module" create "$template_json" "$work_version" "$skills_csv" \
-    "$(if [[ "$global_enabled" == 1 ]]; then printf true; else printf false; fi)" "$target" "$global_dir")" || exit 1
+    "$(if [[ "$global_enabled" == 1 ]]; then printf true; else printf false; fi)" "$target" "$global_dir" "$selected_host")" || exit 1
 tooling_state_json="$(osascript -l JavaScript "$installer_tooling_state_module" create "$tooling_version" "$tooling_target")" || exit 1
 parent="${target%/*}"
 installer_create_work_parents "$parent" || { installer_remove_empty_work_parents; exit 1; }

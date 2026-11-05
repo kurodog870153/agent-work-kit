@@ -1,31 +1,34 @@
 # Work Release 安裝
 
-本 ZIP 包含對應平台的預編譯 Work binary、完整 Work 與 Tooling Skill、Global `AGENTS.md` 與安裝器。安裝器將 Work 與 Tooling 安裝在同一 Skill 父目錄。
+每個 ZIP 對應一個 Host 與平台，包含預編譯 Work binary、Work 與 Tooling Skill、共用規範及安裝器。Host 可選 Codex 或 Claude Code。
 
 ## 1. 下載
 
 從同一個 [GitHub Release](https://github.com/kurodog870153/agent-work-kit/releases) 下載 `SHA256SUMS.txt` 及適用平台的 ZIP：
 
-1. Windows x64 使用 `work-v<版本>-windows-x64-msvc.zip`
-2. macOS ARM64 使用 `work-v<版本>-macos-arm64.zip`
+1. Codex Windows x64：`agent-work-kit-v<版本>-codex-windows-x64-msvc.zip`
+2. Claude Code Windows x64：`agent-work-kit-v<版本>-claude-windows-x64-msvc.zip`
+3. Codex macOS ARM64：`agent-work-kit-v<版本>-codex-macos-arm64.zip`
+4. Claude Code macOS ARM64：`agent-work-kit-v<版本>-claude-macos-arm64.zip`
 
-`<版本>` 是 Release tag 去掉開頭 `v` 的版本；例如 tag `v1.2.3`，檔名即以 `work-v1.2.3-` 開頭。把兩個檔案放在同一目錄。
+`<版本>` 是 Release tag 去掉開頭 `v` 的版本。把所選 ZIP 與 `SHA256SUMS.txt` 放在同一目錄。
 
 ## 2. 驗證 ZIP
 
 先切換到下載目錄，再將所屬平台的整段命令貼上執行；不必修改版本字串。
 
-命令會從 `SHA256SUMS.txt` 找出該平台唯一的 ZIP 項目，再比對下載檔的 SHA-256。
+命令會從 `SHA256SUMS.txt` 找出所選 Host 與平台的 ZIP 項目，再比對 SHA-256。先將下列 `<host>` 換成 `codex` 或 `claude`。
 
 找不到項目、ZIP 或雜湊不符時，不要解壓或執行安裝器。
 
-正式 Release 發佈流程會為兩個 ZIP、兩個下載器及 `SHA256SUMS.txt` 建立 Artifact Attestation。下載後也應核對資產的來源與 digest。
+正式 Release 發佈流程會為四個 ZIP、兩個下載器及 `SHA256SUMS.txt` 建立 Artifact Attestation。下載後也應核對資產的來源與 digest。
 
 ### Windows x64：在 PowerShell 執行
 
 ```powershell
 & {
-  $entries = @(Select-String -LiteralPath .\SHA256SUMS.txt -Pattern '^[0-9a-fA-F]{64}\s+work-v.+-windows-x64-msvc\.zip$' |
+  $hostName = '<host>'
+  $entries = @(Select-String -LiteralPath .\SHA256SUMS.txt -Pattern "^[0-9a-fA-F]{64}\s+agent-work-kit-v.+-$hostName-windows-x64-msvc\.zip$" |
     ForEach-Object { $_.Line })
   if ($entries.Count -ne 1) { throw 'SHA256SUMS.txt 中找不到唯一的 Windows ZIP 項目' }
   $parts = $entries[0] -split '\s+', 3
@@ -41,13 +44,14 @@
 
 ```sh
 (
-count=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { n++ } END { print n+0 }' SHA256SUMS.txt) || exit 1
+host='<host>'
+count=$(awk -v host="$host" '$2 ~ "^agent-work-kit-v.+-" host "-macos-arm64[.]zip$" { n++ } END { print n+0 }' SHA256SUMS.txt) || exit 1
 if [ "$count" -ne 1 ]; then
   echo 'SHA256SUMS.txt 中找不到唯一的 macOS ZIP 項目' >&2
   exit 1
 fi
-zip=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { print $2 }' SHA256SUMS.txt) || exit 1
-expected=$(awk '$2 ~ /^work-v.+-macos-arm64[.]zip$/ { print $1 }' SHA256SUMS.txt) || exit 1
+zip=$(awk -v host="$host" '$2 ~ "^agent-work-kit-v.+-" host "-macos-arm64[.]zip$" { print $2 }' SHA256SUMS.txt) || exit 1
+expected=$(awk -v host="$host" '$2 ~ "^agent-work-kit-v.+-" host "-macos-arm64[.]zip$" { print $1 }' SHA256SUMS.txt) || exit 1
 if ! printf '%s\n' "$expected" | grep -Eq '^[[:xdigit:]]{64}$'; then
   echo 'SHA-256 格式不正確' >&2
   exit 1
@@ -80,20 +84,20 @@ echo "SHA-256 驗證通過：$zip"
 Windows PowerShell：
 
 ```powershell
-.\install-work-from-package.bat --dry-run
+.\install-agent-work-kit-from-package.bat --dry-run
 ```
 
 macOS Terminal：
 
 ```sh
-./install-work-from-package.command --dry-run
+./install-agent-work-kit-from-package.command --dry-run
 ```
 
 macOS 若顯示「權限不足」：
 
 1. 先依上一節確認 ZIP 與 `SHA256SUMS.txt` 來自預期的 Release，且雜湊相符。
-2. 在解壓後的根目錄執行 `chmod +x install-work-from-package.command`，再重試上方命令。
-3. 若不想更改權限，可直接執行 `bash install-work-from-package.command --dry-run`。
+2. 在解壓後的根目錄執行 `chmod +x install-agent-work-kit-from-package.command`，再重試上方命令。
+3. 若不想更改權限，可直接執行 `bash install-agent-work-kit-from-package.command --dry-run`。
 
 ### 3.3 執行安裝
 
@@ -102,37 +106,38 @@ macOS 若顯示「權限不足」：
 Windows PowerShell：
 
 ```powershell
-.\install-work-from-package.bat
+.\install-agent-work-kit-from-package.bat
 ```
 
 macOS Terminal：
 
 ```sh
-./install-work-from-package.command
+./install-agent-work-kit-from-package.command
 ```
 
-安裝器每次安裝完整 Work 與 Tooling。首次安裝預設啟用 Global `AGENTS.md`；已有有效安裝狀態時，沿用原本的 Global `AGENTS.md` 設定。安裝器會先驗證包內 manifest、平台及預編譯 binary，再修改正式目標。
+安裝器每次安裝完整 Work 與 Tooling。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
 
 ### 3.4 可用參數
 
 其他參數接在入口檔名後面，多個參數以空白分隔：
 
 1. `--help` 或 `-h`：顯示用法，不安裝。
-2. `--global-agent`／`--no-global-agent`：啟用／停用 Global `AGENTS.md` 安裝；兩者不可同時使用。
-3. `--skills-install-dir <path>`：指定 Work 與 Tooling 的共同父目錄；路徑含空白時須加引號。
-4. `--global-agent-install-dir <path>`：指定 Global `AGENTS.md` 所在目錄；路徑含空白時須加引號。
-5. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
-6. `--dry-run`：列出預計動作，不修改正式安裝目標。
-7. `--verbose`：顯示較詳細的診斷資訊。舊 `--install-dir`、`--work-install-dir`、`--skills` 與 `--list-skills` 不再接受。
+2. `--host codex|claude`：選擇 Host；非互動模式必填。
+3. `--global-instructions yes|no`：啟用或停用 Global Instructions。
+4. `--skills-dir <path>`：指定 Work 與 Tooling 的共同父目錄；路徑含空白時須加引號。
+5. `--instructions-dir <path>`：指定 Global Instructions 所在目錄；路徑含空白時須加引號。
+6. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
+7. `--dry-run`：列出預計動作，不修改正式安裝目標。
+8. `--verbose`：顯示較詳細的診斷資訊。
 
 ### 3.5 安裝時的確認
 
 安裝器會依目標目錄的狀態處理：
 
 1. Work 與 Tooling 目錄不存在或為空時，視為首次安裝；沒有父層 `install-state.json` 是正常情況。
-2. Work 或 Tooling 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。舊版子目錄狀態檔不作為更新依據。
-3. 已選擇安裝 Global `AGENTS.md`，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
-4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到 Global `AGENTS.md` 差異等必須確認的情況，會拒絕安裝並保留原目標。
+2. Work 或 Tooling 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。
+3. 已選擇安裝 Global Instructions，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
+4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到 Global Instructions 差異等必須確認的情況，會拒絕安裝並保留原目標。
 
 ### 3.6 安全警告與錯誤處理
 

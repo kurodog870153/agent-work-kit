@@ -10,10 +10,12 @@ $installDir = 'C:\目錄 有空白\skills\work'
 $globalDir = 'C:\全域 有空白'
 $template = [IO.File]::ReadAllText((Join-Path $repoRoot 'os-scripts/common/installer/install-state.json'))
 $templateKeys = @((ConvertFrom-Json $template).PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ','
-Assert-True ($templateKeys -ceq 'global_agent_dir,skill_install_dir,status,tooling_version,version,work_version') 'combined state template shape'
-$combinedRaw = '{"version":"1.2.3","work_version":"1.2.3","tooling_version":"1.0.0","skill_install_dir":"C:\\目錄 有空白\\skills","global_agent_dir":null,"status":"installed"}'
+Assert-True ($templateKeys -ceq 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version') 'combined state template shape'
+$combinedRaw = '{"host":"codex","version":"1.2.3","work_version":"1.2.3","tooling_version":"1.0.0","skill_install_dir":"C:\\目錄 有空白\\skills","global_agent_dir":null,"status":"installed"}'
 $combined = Read-InstallerCombinedState -Raw $combinedRaw -WorkTarget $installDir -ToolingTarget 'C:\目錄 有空白\skills\tooling'
 Assert-True ($null -ne $combined -and $combined.work_version -eq '1.2.3') 'combined parent state read'
+Assert-True ($null -eq (Read-InstallerCombinedState -Raw $combinedRaw -WorkTarget $installDir -ToolingTarget 'C:\目錄 有空白\skills\tooling' -InstallerHost 'claude')) 'wrong parent host'
+Assert-True ($null -eq (Read-InstallerCombinedState -Raw ($combinedRaw -replace '"host":"codex",', '') -WorkTarget $installDir -ToolingTarget 'C:\目錄 有空白\skills\tooling')) 'legacy parent state'
 Assert-True ((Get-InstallerToolingStateVersion -Raw '{"version":"1.0.0","skill":"tooling","tooling_dir":"C:\\tools\\tooling"}' -Target 'C:\tools\tooling') -eq '1.0.0') 'Tooling transaction state read'
 $state = New-InstallerState -TemplateRaw $template -Version '1.2.3' -Skills 'java,spring-boot' -GlobalAgents $true -WorkDir $installDir -GlobalAgentsDir $globalDir
 Assert-True (($state.skills -join ',') -ceq 'general,programming-language,java,spring-boot') 'parent Skill expansion'
@@ -21,6 +23,9 @@ Assert-True (@(Get-InstallerExpandedSkills -Selection 'all').Count -eq 14) 'all 
 $raw = ConvertTo-Json -InputObject $state -Depth 4 -Compress
 $read = Read-InstallerState -Raw $raw -InstallDir $installDir
 Assert-True ($null -ne $read -and $read.version -eq '1.2.3') 'valid state read'
+Assert-True ($null -eq (Read-InstallerState -Raw $raw -InstallDir $installDir -InstallerHost 'claude')) 'wrong child host'
+Assert-True ($null -eq (Read-InstallerState -Raw ($raw -replace '"host":"codex",', '') -InstallDir $installDir)) 'legacy child state'
+Assert-True ($null -eq (Read-InstallerState -Raw ($raw -replace '"host":"codex"', '"host":"unknown"') -InstallDir $installDir)) 'unknown child host'
 Assert-True ($null -eq (Read-InstallerState -Raw $raw -InstallDir 'C:\other')) 'wrong target'
 Assert-True ($null -eq (Read-InstallerState -Raw '' -InstallDir $installDir)) 'empty state'
 Assert-True ($null -eq (Read-InstallerState -Raw '{' -InstallDir $installDir)) 'malformed state'

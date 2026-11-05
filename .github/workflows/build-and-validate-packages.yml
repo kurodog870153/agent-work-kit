@@ -2,6 +2,11 @@ name: build and validate packages
 
 on:
   workflow_call:
+    outputs:
+      tag:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.tag }}
+      version:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.version }}
     inputs:
       release:
         type: boolean
@@ -58,13 +63,16 @@ jobs:
           else
             version="${TAG#v}"
           fi
-          zip="dist/work-v${version}-macos-arm64.zip"
-          python3 .github/scripts/release/release_package.py package --output dist --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
-          if [[ "$RELEASE_MODE" == true ]]; then
+          for host in codex claude; do
+            zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
+            python3 .github/scripts/release/release_package.py package --output dist --host "$host" --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
             python3 .github/scripts/release/release_package_integrity.py verify-zip "$zip"
-          fi
-          (cd dist && shasum -a 256 "${zip##*/}" > SHA256SUMS.txt)
-          python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+            (cd dist && shasum -a 256 "${zip##*/}") >> dist/SHA256SUMS.txt
+          done
+          for host in codex claude; do
+            zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
+            python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+          done
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
       - uses: actions/upload-artifact@v7
@@ -142,17 +150,22 @@ jobs:
             $version = $env:TAG.Substring(1)
           }
           $os = Get-CimInstance Win32_OperatingSystem
-          python -B .github/scripts/release/release_package.py package --output dist --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $zip = "dist/work-v${version}-windows-x64-msvc.zip"
-          if ($env:RELEASE_MODE -eq 'true') {
+          $checksumLines = @()
+          foreach ($installerHost in @('codex', 'claude')) {
+            python -B .github/scripts/release/release_package.py package --output dist --host $installerHost --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
             python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+            $checksumLines += "$hash  $(Split-Path $zip -Leaf)"
           }
-          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), "$hash  $(Split-Path $zip -Leaf)`n")
-          python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), (($checksumLines -join "`n") + "`n"))
+          foreach ($installerHost in @('codex', 'claude')) {
+            $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
+            python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
       - uses: actions/upload-artifact@v7
@@ -190,6 +203,9 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      version: ${{ steps.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -199,4 +215,11 @@ jobs:
           platform: windows-x64-msvc
           package-artifact: ${{ inputs.release && 'release-windows-x64-msvc' || 'pr-release-windows-x64-msvc' }}
           checksum-artifact: ${{ inputs.release && 'checksums-release-windows-x64-msvc' || 'checksums-pr-release-windows-x64-msvc' }}
+      - name: Record verified package identity
+        id: identity
+        shell: bash
+        run: |
+          version="$(cat VERSION)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
 

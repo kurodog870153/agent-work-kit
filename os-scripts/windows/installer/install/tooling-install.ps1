@@ -49,7 +49,7 @@ function Test-InstallerToolingSubset {
 }
 
 function Inspect-InstallerToolingTarget {
-    param([string] $Target, [string] $Source)
+    param([string] $Target, [string] $Source, [string] $InstallerHost = 'codex')
     $unsafe = { param($Reason) [pscustomobject]@{ Kind = 'unsafe'; Reason = $Reason; Version = $null } }
     if (-not [IO.Path]::IsPathRooted($Target) -or [IO.Path]::GetFileName($Target) -cne 'tooling') {
         return (& $unsafe 'target must be an absolute tooling directory')
@@ -73,7 +73,7 @@ function Inspect-InstallerToolingTarget {
     $parentState = Join-Path (Split-Path -Parent $Target) 'install-state.json'
     if (Test-Path -LiteralPath $parentState -PathType Leaf) {
         $combined = Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($parentState)) `
-            -WorkTarget (Join-Path (Split-Path -Parent $Target) 'work') -ToolingTarget $Target
+            -WorkTarget (Join-Path (Split-Path -Parent $Target) 'work') -ToolingTarget $Target -InstallerHost $InstallerHost
         if ($null -ne $combined) { $version = $combined.tooling_version }
     }
     if ($null -eq $version) { return [pscustomobject]@{ Kind = 'first-update'; Reason = ''; Version = $null } }

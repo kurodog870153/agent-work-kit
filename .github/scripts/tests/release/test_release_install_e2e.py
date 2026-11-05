@@ -48,7 +48,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
     def test_outer_digest_and_runner_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            archive = root / "work-v1.2.3-macos-arm64.zip"
+            archive = root / "agent-work-kit-v1.2.3-codex-macos-arm64.zip"
             checksums = root / "SHA256SUMS.txt"
             environment = {field: "value" for field in (
                 "runner_os", "cpu_architecture", "runner_image_name", "runner_image_version",
@@ -56,7 +56,8 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             )}
             environment["runner_label"] = "macos-latest"
             with zipfile.ZipFile(archive, "w") as stream:
-                stream.writestr("release-info.json", json.dumps({"tested_environment": environment}))
+                stream.writestr("release-info.json", json.dumps({"host": "codex", "target": "aarch64-apple-darwin",
+                                                                "version": "1.2.3", "tested_environment": environment}))
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             checksums.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
             verify_readme_download(archive, checksums, "macos-arm64")
@@ -64,8 +65,16 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "digest"):
                 verify_readme_download(archive, checksums, "macos-arm64")
             checksums.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
-            with self.assertRaisesRegex(ValueError, "runner label"):
+            with self.assertRaisesRegex(ValueError, "identity"):
                 verify_readme_download(archive, checksums, "windows-x64-msvc")
+            environment["runner_label"] = "windows-latest"
+            with zipfile.ZipFile(archive, "w") as stream:
+                stream.writestr("release-info.json", json.dumps({"host": "codex", "target": "aarch64-apple-darwin",
+                                                                "version": "1.2.3", "tested_environment": environment}))
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            checksums.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+            with self.assertRaisesRegex(ValueError, "runner label"):
+                verify_readme_download(archive, checksums, "macos-arm64")
 
 
 if __name__ == "__main__":

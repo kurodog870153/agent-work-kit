@@ -25,11 +25,11 @@ function Copy-InstallerWorkPayload {
 }
 
 function Test-InstallerWorkPayload {
-    param([string] $Path, [string] $Target)
+    param([string] $Path, [string] $Target, [string] $InstallerHost = 'codex')
     $installed = Join-Path $Path 'scripts/work.exe'
     & $installed --help | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'installed Work binary smoke test failed' }
-    if ($null -eq (Read-InstallerState -Raw ([IO.File]::ReadAllText((Join-Path $Path 'install-state.json'))) -InstallDir $Target)) {
+    if ($null -eq (Read-InstallerState -Raw ([IO.File]::ReadAllText((Join-Path $Path 'install-state.json'))) -InstallDir $Target -InstallerHost $InstallerHost)) {
         throw 'installed state is invalid'
     }
 }

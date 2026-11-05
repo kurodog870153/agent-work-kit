@@ -3,9 +3,11 @@ Set-StrictMode -Version Latest
 function Invoke-InstallerLocked {
     param(
         [Parameter(Mandatory = $true)][scriptblock] $Transaction,
-        [object[]] $Arguments = @()
+        [object[]] $Arguments = @(),
+        [ValidateSet('codex', 'claude')][string] $InstallerHost = 'codex'
     )
-    $mutex = [System.Threading.Mutex]::new($false, 'Global\CodexWorkflowKitWorkInstall')
+    $mutexName = if ($InstallerHost -eq 'codex') { 'Global\AgentWorkKitInstallCodex' } else { 'Global\AgentWorkKitInstallClaude' }
+    $mutex = [System.Threading.Mutex]::new($false, $mutexName)
     $owned = $false
     try {
         try {

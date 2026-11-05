@@ -26,7 +26,7 @@ jobs:
             entry="$(git ls-files --eol -- "$path")"
             [[ "$entry" =~ ^i/lf[[:space:]]+w/lf[[:space:]] ]] || { echo "Checkout changed line endings: $entry"; exit 1; }
           done
-          for path in os-scripts/windows/clean-codex-data.bat os-scripts/windows/install-work-from-source.bat os-scripts/windows/install-work-from-package.bat os-scripts/windows/install-work-from-github-release.bat; do
+          for path in os-scripts/windows/clean-codex-data.bat os-scripts/windows/install-agent-work-kit-from-source.bat os-scripts/windows/install-agent-work-kit-from-package.bat os-scripts/windows/install-agent-work-kit-from-github-release.bat; do
             entry="$(git ls-files --eol -- "$path")"
             [[ "$entry" =~ ^i/lf[[:space:]]+w/crlf[[:space:]] ]] || { echo "Checkout changed batch line endings: $entry"; exit 1; }
           done
@@ -152,9 +152,9 @@ jobs:
           }
           $batchPaths = @(
             'os-scripts/windows/clean-codex-data.bat',
-            'os-scripts/windows/install-work-from-source.bat',
-            'os-scripts/windows/install-work-from-package.bat',
-            'os-scripts/windows/install-work-from-github-release.bat'
+            'os-scripts/windows/install-agent-work-kit-from-source.bat',
+            'os-scripts/windows/install-agent-work-kit-from-package.bat',
+            'os-scripts/windows/install-agent-work-kit-from-github-release.bat'
           )
           foreach ($path in $batchPaths) {
             $entry = git ls-files --eol -- $path

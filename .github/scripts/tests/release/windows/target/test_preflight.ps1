@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 . (Join-Path $repoRoot 'os-scripts/windows/installer/target/preflight.ps1')
 $sourceWork = Join-Path $repoRoot 'skills/work'
-$scratch = Join-Path $repoRoot ('.issue95-preflight.' + [guid]::NewGuid().ToString('N'))
+$scratch = Join-Path $repoRoot ('.installer-test-preflight.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolvedScratch = (Resolve-Path -LiteralPath $scratch).Path
 if (-not $resolvedScratch.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
-    -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.issue95-preflight\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
+    -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.installer-test-preflight\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
 function Assert-Kind([string] $Expected, [object] $Result) {
     if ($Result.Kind -ne $Expected) { throw "Expected $Expected, got $($Result.Kind): $($Result.Reason)" }
 }

@@ -26,14 +26,14 @@ class InstallerEntryTests(unittest.TestCase):
         for platform, suffix in (("mac", "command"), ("windows", "bat")):
             directory = ROOT / "os-scripts" / platform
             for source in ("source", "package", "github-release"):
-                self.assertTrue((directory / f"install-work-from-{source}.{suffix}").is_file())
+                self.assertTrue((directory / f"install-agent-work-kit-from-{source}.{suffix}").is_file())
             for obsolete in (f"install-work.{suffix}", f"install-release.{suffix}"):
                 self.assertFalse((directory / obsolete).exists(), obsolete)
 
     def test_source_and_package_entries_use_shared_core(self):
         mac = ROOT / "os-scripts" / "mac"
-        source = (mac / "install-work-from-source.command").read_text(encoding="utf-8")
-        package = (mac / "install-work-from-package.command").read_text(encoding="utf-8")
+        source = (mac / "install-agent-work-kit-from-source.command").read_text(encoding="utf-8")
+        package = (mac / "install-agent-work-kit-from-package.command").read_text(encoding="utf-8")
         core = (mac / "installer" / "install" / "install-core.sh").read_text(encoding="utf-8")
         transaction = (mac / "installer" / "transaction" / "work.sh").read_text(encoding="utf-8")
         self.assertIn("installer_run source", source)
@@ -45,8 +45,8 @@ class InstallerEntryTests(unittest.TestCase):
         self.assertIn("previous", transaction)
 
         windows = ROOT / "os-scripts" / "windows"
-        source = (windows / "install-work-from-source.bat").read_text(encoding="utf-8")
-        package = (windows / "install-work-from-package.bat").read_text(encoding="utf-8")
+        source = (windows / "install-agent-work-kit-from-source.bat").read_text(encoding="utf-8")
+        package = (windows / "install-agent-work-kit-from-package.bat").read_text(encoding="utf-8")
         core = (windows / "installer" / "install" / "install-core.ps1").read_text(encoding="utf-8")
         transaction = (windows / "installer" / "transaction" / "work.ps1").read_text(encoding="utf-8")
         self.assertIn("install-core.ps1", source)

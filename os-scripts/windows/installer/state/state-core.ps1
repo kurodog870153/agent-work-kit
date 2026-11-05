@@ -4,11 +4,12 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'tooling-state.ps1')
 
 function Read-InstallerCombinedState {
-    param([string] $Raw, [string] $WorkTarget, [string] $ToolingTarget)
+    param([string] $Raw, [string] $WorkTarget, [string] $ToolingTarget, [string] $InstallerHost = 'codex')
     try { $value = ConvertFrom-Json -InputObject $Raw -ErrorAction Stop } catch { return $null }
     $parent = Split-Path -Parent $WorkTarget
     if ($value -isnot [pscustomobject] -or
-        (@($value.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ',') -cne 'global_agent_dir,skill_install_dir,status,tooling_version,version,work_version' -or
+        (@($value.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ',') -cne 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' -or
+        $value.host -cne $InstallerHost -or $value.host -cnotin @('codex', 'claude') -or
         $value.status -cnotin @('installing', 'installed') -or
         -not (Test-InstallerStateVersion $value.version) -or
         -not (Test-InstallerStateVersion $value.work_version) -or
@@ -24,7 +25,8 @@ function Read-InstallerCombinedState {
 
 function Write-InstallerCombinedState {
     param([string] $Parent, [string] $Version, [string] $WorkVersion, [string] $ToolingVersion,
-        [AllowNull()][string] $GlobalAgentDir, [string] $Status)
+        [AllowNull()][string] $GlobalAgentDir, [string] $Status, [string] $InstallerHost = 'codex')
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $target = Join-Path $Parent 'install-state.json'
     $temporary = Join-Path $Parent '.install-state.json.tmp'
     $backup = Join-Path $Parent '.install-state.json.previous'
@@ -35,7 +37,7 @@ function Write-InstallerCombinedState {
         throw 'unsafe parent install-state.json'
     }
     $value = [ordered]@{
-        version = $Version; work_version = $WorkVersion; tooling_version = $ToolingVersion
+        host = $InstallerHost; version = $Version; work_version = $WorkVersion; tooling_version = $ToolingVersion
         skill_install_dir = $Parent
         global_agent_dir = $(if ([string]::IsNullOrEmpty($GlobalAgentDir)) { $null } else { $GlobalAgentDir })
         status = $Status

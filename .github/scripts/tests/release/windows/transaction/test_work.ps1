@@ -6,11 +6,11 @@ function Test-InstallerLegacyWorkIdentity { param([string] $Target) return $true
 . (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/policy.ps1')
 . (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/transaction.ps1')
 $sourceWork = Join-Path $repoRoot 'skills/work'
-$scratch = Join-Path $repoRoot ('.issue95-transaction.' + [guid]::NewGuid().ToString('N'))
+$scratch = Join-Path $repoRoot ('.installer-test-transaction.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolvedScratch = (Resolve-Path -LiteralPath $scratch).Path
 if (-not $resolvedScratch.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
-    -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.issue95-transaction\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
+    -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.installer-test-transaction\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
 $target = Join-Path $scratch 'work'
 $required = @('SKILL.md', 'agents/openai.yaml', 'references/instruction-loading.md',
     'references/instructions/task/general/instructions.md',

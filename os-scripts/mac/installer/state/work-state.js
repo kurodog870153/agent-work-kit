@@ -31,17 +31,20 @@ function validVersion(value) {
     return typeof value === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(value);
 }
 
-function createState(templateRaw, version, skills, globalAgents, workDir, globalAgentsDir) {
+function createState(templateRaw, version, skills, globalAgents, workDir, globalAgentsDir, host) {
+    host = host || 'codex';
     var template = JSON.parse(templateRaw);
     if (!template || typeof template !== 'object' || Array.isArray(template) ||
-            Object.keys(template).sort().join(',') !== 'global_agent_dir,skill_install_dir,status,tooling_version,version,work_version' ||
+            Object.keys(template).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
             Object.keys(template).some(function (key) { return template[key] !== null; }) ||
+            (host !== 'codex' && host !== 'claude') ||
             !validVersion(version) || typeof workDir !== 'string' || workDir.charAt(0) !== '/' ||
             typeof globalAgents !== 'boolean' ||
             (globalAgents && (typeof globalAgentsDir !== 'string' || globalAgentsDir.charAt(0) !== '/'))) {
         throw new Error('invalid state input or template');
     }
     return {
+        host: host,
         version: version,
         skills: expandSkills(skills),
         work_dir: workDir,
@@ -49,12 +52,14 @@ function createState(templateRaw, version, skills, globalAgents, workDir, global
     };
 }
 
-function parseState(raw, workDir) {
+function parseState(raw, workDir, host) {
+    host = host || 'codex';
     var value;
     try { value = JSON.parse(raw); } catch (_) { return null; }
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     var keys = Object.keys(value).sort().join(',');
-    if (keys !== 'global_agents_dir,skills,version,work_dir' ||
+    if (keys !== 'global_agents_dir,host,skills,version,work_dir' ||
+            value.host !== host || (value.host !== 'codex' && value.host !== 'claude') ||
             !validVersion(value.version) || value.work_dir !== workDir ||
             (value.global_agents_dir !== null &&
                 (typeof value.global_agents_dir !== 'string' ||
@@ -67,8 +72,8 @@ function parseState(raw, workDir) {
     return value;
 }
 
-function resolveSettings(raw, workDir, skillsOverride, globalAgentsOverride) {
-    var state = parseState(raw, workDir);
+function resolveSettings(raw, workDir, skillsOverride, globalAgentsOverride, host) {
+    var state = parseState(raw, workDir, host);
     if (skillsOverride !== null && typeof skillsOverride !== 'string') throw new Error('invalid Skills override');
     if (globalAgentsOverride !== null && typeof globalAgentsOverride !== 'boolean') throw new Error('invalid Global AGENTS override');
     return {
@@ -80,29 +85,31 @@ function resolveSettings(raw, workDir, skillsOverride, globalAgentsOverride) {
 }
 
 function run(argv) {
-    if (argv[0] === 'create' && argv.length === 7) {
+    if (argv[0] === 'create' && (argv.length === 7 || argv.length === 8)) {
         if (argv[4] !== 'true' && argv[4] !== 'false') throw new Error('invalid Global AGENTS value');
-        return JSON.stringify(createState(argv[1], argv[2], argv[3], argv[4] === 'true', argv[5], argv[6]));
+        return JSON.stringify(createState(argv[1], argv[2], argv[3], argv[4] === 'true', argv[5], argv[6], argv[7]));
     }
     if (argv[0] === 'validate' && argv.length === 3) {
         var state = parseState(argv[1], argv[2]);
         return JSON.stringify({ valid: state !== null, state: state });
     }
-    if (argv[0] === 'settings' && argv.length === 5) {
+    if (argv[0] === 'settings' && (argv.length === 5 || argv.length === 6)) {
         var skillsOverride = argv[3] === '' ? null : argv[3];
         var globalOverride = argv[4] === '' ? null : argv[4] === 'true' ? true : argv[4] === 'false' ? false : undefined;
         if (globalOverride === undefined) throw new Error('invalid Global AGENTS override');
-        var settings = resolveSettings(argv[1], argv[2], skillsOverride, globalOverride);
-        var prior = parseState(argv[1], argv[2]);
+        var settings = resolveSettings(argv[1], argv[2], skillsOverride, globalOverride, argv[5]);
+        var prior = parseState(argv[1], argv[2], argv[5]);
         return [settings.has_valid_state ? '1' : '0', settings.skills.join(','),
             settings.global_agents ? '1' : '0', prior ? prior.version : '-',
             settings.global_agents_dir || '-'].join('\t');
     }
-    if (argv[0] === 'from-combined' && argv.length === 4) {
+    if (argv[0] === 'from-combined' && (argv.length === 4 || argv.length === 5)) {
+        var host = argv.length === 5 ? argv[4] : 'codex';
+        if (host !== 'codex' && host !== 'claude') throw new Error('invalid installer host');
         if (argv[1] === '-') return '';
         if (!validVersion(argv[1]) || argv[2].charAt(0) !== '/' ||
                 (argv[3] !== '-' && argv[3].charAt(0) !== '/')) throw new Error('invalid combined Work state');
-        return JSON.stringify({version: argv[1], skills: expandSkills('all'),
+        return JSON.stringify({host: host, version: argv[1], skills: expandSkills('all'),
             work_dir: argv[2], global_agents_dir: argv[3] === '-' ? null : argv[3]});
     }
     throw new Error('invalid Work state operation');

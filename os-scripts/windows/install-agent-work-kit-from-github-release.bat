@@ -2,12 +2,12 @@
 chcp 65001 <nul >nul
 setlocal DisableDelayedExpansion
 if "%~1"=="--help" if "%~2"=="" (
-    echo Usage: install-work-from-github-release.bat [installer options]
+    echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
     exit /b 0
 )
 if "%~1"=="-h" if "%~2"=="" (
-    echo Usage: install-work-from-github-release.bat [installer options]
+    echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
     exit /b 0
 )
@@ -34,7 +34,27 @@ $scratch = [string] $args[1]
 $cli = @()
 if ($args.Count -gt 2) { $cli = [string[]] $args[2..($args.Count - 1)] }
 $releaseTag = '__WORK_RELEASE_TAG__'
-$archiveName = "work-$releaseTag-windows-x64-msvc.zip"
+$selectedHost = $null
+for ($index = 0; $index -lt $cli.Count; $index++) {
+    if ($cli[$index] -cne '--host') { continue }
+    if ($null -ne $selectedHost -or $index + 1 -ge $cli.Count -or $cli[$index + 1] -cnotin @('codex', 'claude')) {
+        [Console]::Error.WriteLine('Error: invalid --host.')
+        exit 2
+    }
+    $selectedHost = $cli[$index + 1]
+    $index++
+}
+if ($null -eq $selectedHost) {
+    if ($cli -contains '--non-interactive') {
+        [Console]::Error.WriteLine('Error: --host is required in non-interactive mode.')
+        exit 2
+    }
+    $choice = Read-Host 'Select Host: 1) Codex, 2) Claude Code'
+    $selectedHost = switch ($choice) { '1' { 'codex' } '2' { 'claude' } default { $null } }
+    if ($null -eq $selectedHost) { [Console]::Error.WriteLine('Error: Host selection is required.'); exit 2 }
+    $cli += @('--host', $selectedHost)
+}
+$archiveName = "agent-work-kit-$releaseTag-$selectedHost-windows-x64-msvc.zip"
 $base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$releaseTag"
 function Clear-ReleaseStaleScratch {
     $parent = Split-Path -Path $scratch -Parent
@@ -136,12 +156,15 @@ try {
     } finally { $archive.Dispose() }
     $package = Join-Path $scratch 'package'
     [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $package)
-    $entryPath = Join-Path $package 'install-work-from-package.bat'
+    $entryPath = Join-Path $package 'install-agent-work-kit-from-package.bat'
     if (-not (Test-Path -LiteralPath $entryPath -PathType Leaf)) { throw 'Package entry is missing' }
     $infoPath = Join-Path $package 'release-info.json'
     if (-not (Test-Path -LiteralPath $infoPath -PathType Leaf)) { throw 'Package release metadata is missing' }
     $packageInfo = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json -ErrorAction Stop
-    if ($packageInfo.tag -cne $releaseTag) { throw 'Package Release tag does not match Downloader' }
+    if ($packageInfo.tag -cne $releaseTag -or $packageInfo.host -cne $selectedHost -or
+        $packageInfo.target -cne 'x86_64-pc-windows-msvc') {
+        throw 'Package Release identity does not match Downloader'
+    }
     & $entryPath @cli
     exit $LASTEXITCODE
 } catch {
