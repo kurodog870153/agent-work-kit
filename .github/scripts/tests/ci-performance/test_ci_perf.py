@@ -107,15 +107,56 @@ class PerformanceReportTests(unittest.TestCase):
     def test_five_matching_baselines_use_median_and_strict_threshold(self):
         base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "test_ids_sha256": "same", "status": "passed"}
         history = [{**base, "test_execution_seconds": seconds} for seconds in (8, 9, 10, 11, 50)]
-        self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13}, history)["status"], "normal")
+        normal = ci_perf.compare_reports({**base, "test_execution_seconds": 13}, history)
+        self.assertEqual(normal["status"], "normal")
+        self.assertIn("Total test execution (nextest + doc)", normal["message"])
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.01}, history)["status"], "regression")
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.0004}, history)["status"], "regression")
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 15}, history[:4])["status"], "insufficient")
         history[0] = {**history[0], "test_ids_sha256": "changed"}
-        self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 15}, history)["status"], "incomparable")
+        self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 15}, history)["status"], "unavailable")
         history[0] = {**history[0], "test_ids_sha256": "same", "status": "incomplete"}
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 15}, history)["status"], "insufficient")
         self.assertNotEqual(ci_perf.compatibility_key({**base, "doc_tests": {"passed": 0, "failed": 0, "ignored": 0}}), ci_perf.compatibility_key({**base, "doc_tests": {"passed": 1, "failed": 0, "ignored": 0}}))
+
+    def test_changed_scope_compares_shared_tests_and_reports_additions_and_removals(self):
+        base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "status": "passed", "doc_tests": {"passed": 1, "failed": 0, "ignored": 0}}
+        def report(shared, extra, seconds, scope):
+            return {**base, "test_ids_sha256": scope, "test_execution_seconds": 100, "tests": [
+                {"id": "shared", "duration_seconds": shared, "outcome": "passed"},
+                {"id": extra, "duration_seconds": seconds, "outcome": "passed"},
+            ]}
+        history = [report(value, "removed" if index == 0 else "older", 50, f"history-{index}") for index, value in enumerate((8, 9, 10, 11, 12))]
+        current = report(13.01, "added", 90, "current")
+        result = ci_perf.compare_reports(current, history)
+        self.assertEqual(result["status"], "regression")
+        self.assertEqual(result["median_seconds"], 10)
+        self.assertIn("Shared nextest tests (compared: 1; current tests excluded: 1; doc tests excluded)", result["message"])
+        self.assertIn("Added since latest main: 1; removed: 1", result["message"])
+        self.assertIn("- `added`", result["message"])
+        self.assertIn("- `removed`", result["message"])
+        self.assertNotIn("nextest + doc", result["message"])
+
+    def test_new_test_enters_shared_comparison_once_all_baselines_include_it(self):
+        base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "status": "passed", "test_execution_seconds": 100, "doc_tests": {"passed": 1, "failed": 0, "ignored": 0}}
+        def report(first, second, scope):
+            return {**base, "test_ids_sha256": scope, "tests": [
+                {"id": "original", "duration_seconds": first, "outcome": "passed"},
+                {"id": "new", "duration_seconds": second, "outcome": "passed"},
+            ]}
+        history = [report(5, value, f"history-{index}") for index, value in enumerate((5, 6, 7, 8, 9))]
+        result = ci_perf.compare_reports(report(5, 10, "current"), history)
+        self.assertEqual(result["status"], "normal")
+        self.assertEqual(result["median_seconds"], 12)
+        self.assertIn("Shared nextest tests (compared: 2; current tests excluded: 0; doc tests excluded)", result["message"])
+
+    def test_changed_scope_rejects_no_common_tests_or_invalid_timings(self):
+        base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "status": "passed", "test_execution_seconds": 10}
+        current = {**base, "test_ids_sha256": "current", "tests": [{"id": "current", "duration_seconds": 1, "outcome": "passed"}]}
+        history = [{**base, "test_ids_sha256": "history", "tests": [{"id": "history", "duration_seconds": 1, "outcome": "passed"}]} for _ in range(5)]
+        self.assertEqual(ci_perf.compare_reports(current, history)["status"], "incomparable")
+        history[0]["tests"][0]["duration_seconds"] = float("nan")
+        self.assertEqual(ci_perf.compare_reports(current, history)["status"], "unavailable")
 
     def test_artifact_redirect_does_not_forward_token_to_storage_host(self):
         request = urllib.request.Request("https://api.github.com/artifact", headers={"Authorization": "Bearer secret"})
@@ -133,7 +174,7 @@ class PerformanceReportTests(unittest.TestCase):
             with patch.dict("os.environ", {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}), patch.object(ci_perf, "api_json", return_value={"workflow_runs": runs}) as api, patch.object(ci_perf, "artifact_report", side_effect=lambda _repo, run_id, _name, _token: reports.get(run_id)), patch.object(ci_perf, "append_summary") as summary:
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=report, workflow="workflow.yml", artifact="rust-perf")), 0)
             self.assertIn("status=completed", api.call_args.args[0])
-            self.assertIn("效能退化警告", summary.call_args.args[0])
+            self.assertIn("Performance regression warning", summary.call_args.args[0])
 
     def test_history_skips_broken_artifact_before_selecting_five(self):
         base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "test_ids_sha256": "same", "status": "passed"}
@@ -147,7 +188,20 @@ class PerformanceReportTests(unittest.TestCase):
                 return reports[run_id]
             with patch.dict("os.environ", {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}), patch.object(ci_perf, "api_json", return_value={"workflow_runs": [{"id": index} for index in range(6)]}), patch.object(ci_perf, "artifact_report", side_effect=fetch), patch.object(ci_perf, "append_summary") as summary:
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=report, workflow="workflow.yml", artifact="rust-perf")), 0)
-            self.assertIn("效能退化警告", summary.call_args.args[0])
+            self.assertIn("Performance regression warning", summary.call_args.args[0])
+
+    def test_history_selects_changed_test_scopes_for_shared_comparison(self):
+        base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "status": "passed", "test_execution_seconds": 100}
+        def report(name, seconds):
+            return {**base, "test_ids_sha256": name, "tests": [{"id": "shared", "duration_seconds": seconds, "outcome": "passed"}, {"id": name, "duration_seconds": 1, "outcome": "passed"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "performance.json"
+            path.write_text(json.dumps(report("current", 13.01)), encoding="utf-8")
+            reports = {index: report(f"history-{index}", seconds) for index, seconds in enumerate((8, 9, 10, 11, 12), start=1)}
+            with patch.dict("os.environ", {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_TOKEN": "token"}), patch.object(ci_perf, "api_json", return_value={"workflow_runs": [{"id": index} for index in reports]}), patch.object(ci_perf, "artifact_report", side_effect=lambda _repo, run_id, _name, _token: reports[run_id]), patch.object(ci_perf, "append_summary") as summary:
+                self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=path, workflow="workflow.yml", artifact="rust-perf")), 0)
+            self.assertIn("Shared nextest tests (compared: 1", summary.call_args.args[0])
+            self.assertIn("Performance regression warning", summary.call_args.args[0])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 from release_package import DOWNLOADERS, PLATFORMS
@@ -25,10 +24,9 @@ def check_identity(root, repository, tag, expected_sha, *, require_latest_main=T
     if not SHA.fullmatch(expected_sha):
         raise ValueError("expected SHA must be a full commit hash")
     sys.path.insert(0, str(root / ".github/scripts/version-guard"))
-    from version_guard import validate_lock
+    from version_guard import checked_project_version
 
-    with (root / "rust/Cargo.toml").open("rb") as stream:
-        version = validate_lock(root, tomllib.load(stream))
+    version = checked_project_version(root)
     if tag != f"v{version}":
         raise ValueError(f"tag {tag} does not match project version {version}")
     checkout = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()

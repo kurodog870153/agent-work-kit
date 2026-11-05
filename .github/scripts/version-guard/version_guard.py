@@ -58,15 +58,19 @@ def project_version(root):
     return version
 
 
-def validate_workspace(root, baseline_version):
+def checked_project_version(root):
     rust = root / "rust"
     manifest = tomllib.loads((rust / "Cargo.toml").read_text(encoding="utf-8"))
-    version = project_version(root)
+    validate_lock(root, manifest)
+    return project_version(root)
+
+
+def validate_workspace(root, baseline_version):
+    version = checked_project_version(root)
     baseline = baseline_version.strip()
     if compare_versions(version, baseline) <= 0:
         raise ValueError(f"PR version {version} must be greater than main version {baseline}")
 
-    validate_lock(root, manifest)
     return version
 
 

@@ -1,4 +1,4 @@
-name: build and verify packages
+name: build and validate packages
 
 on:
   workflow_call:

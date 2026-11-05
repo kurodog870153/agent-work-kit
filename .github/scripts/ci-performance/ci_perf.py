@@ -255,7 +255,11 @@ def report_command(args):
 def compatibility_key(report):
     doc_tests = report.get("doc_tests")
     doc_count = tuple(doc_tests.get(key) for key in ("passed", "failed", "ignored")) if isinstance(doc_tests, dict) else None
-    return (*tuple(report.get(key) for key in ("schema_version", "config_id", "platform", "target", "runner_os", "runner_arch", "runner_image", "toolchain", "test_ids_sha256")), doc_count)
+    return (*environment_key(report), report.get("test_ids_sha256"), doc_count)
+
+
+def environment_key(report):
+    return tuple(report.get(key) for key in ("schema_version", "config_id", "platform", "target", "runner_os", "runner_arch", "runner_image", "toolchain"))
 
 
 def valid_time(value):
@@ -265,23 +269,65 @@ def valid_time(value):
         return False
 
 
+def passed_test_times(report):
+    tests = report.get("tests")
+    if not isinstance(tests, list) or not tests:
+        return None
+    result = {}
+    seen = set()
+    for test in tests:
+        if not isinstance(test, dict) or not isinstance(test.get("id"), str) or not test["id"] or test["id"] in seen:
+            return None
+        seen.add(test["id"])
+        seconds = test.get("duration_seconds")
+        if test.get("outcome") == "passed" and isinstance(seconds, (int, float)) and math.isfinite(seconds) and seconds >= 0:
+            result[test["id"]] = seconds
+        elif test.get("outcome") != "skipped":
+            return None
+    return result
+
+
 def compare_reports(current, previous):
     if len(previous) < 5:
-        return {"status": "insufficient", "message": "歷史資料不足：少於 5 筆成功 main 報告。"}
+        return {"status": "insufficient", "message": "Insufficient history: fewer than 5 successful main reports."}
     if current.get("status") != "passed" or not valid_time(current.get("test_execution_seconds")):
-        return {"status": "unavailable", "message": "本次測試未完成，無法比較效能。"}
+        return {"status": "unavailable", "message": "Current tests did not complete; performance cannot be compared."}
     key = compatibility_key(current)
     if any(item.get("status") != "passed" or not valid_time(item.get("test_execution_seconds")) for item in previous[:5]):
-        return {"status": "insufficient", "message": "歷史資料不足：少於 5 筆有效 main 報告。"}
-    if any(compatibility_key(item) != key for item in previous[:5]):
-        return {"status": "incomparable", "message": "歷史基準與本次測試範圍、工具鏈或 CI 設定不相容。"}
-    times = sorted(float(item["test_execution_seconds"]) for item in previous[:5])
+        return {"status": "insufficient", "message": "Insufficient history: fewer than 5 valid main reports."}
+    if any(environment_key(item) != environment_key(current) for item in previous[:5]):
+        return {"status": "incomparable", "message": "Historical baselines do not match the current toolchain or CI configuration."}
+    same_scope = all(compatibility_key(item) == key for item in previous[:5])
+    if same_scope:
+        current_seconds = current["test_execution_seconds"]
+        times = sorted(float(item["test_execution_seconds"]) for item in previous[:5])
+        scope = "Total test execution (nextest + doc)"
+        details = ""
+    else:
+        current_tests = passed_test_times(current)
+        historical_tests = [passed_test_times(item) for item in previous[:5]]
+        if current_tests is None or any(tests is None for tests in historical_tests):
+            return {"status": "unavailable", "message": "Per-test timing data is missing or invalid; shared tests cannot be compared."}
+        shared = set(current_tests).intersection(*(set(tests) for tests in historical_tests))
+        if not shared:
+            return {"status": "incomparable", "message": "No passing tests are shared by the current run and all 5 main reports."}
+        current_seconds = sum(current_tests[name] for name in shared)
+        times = sorted(sum(tests[name] for name in shared) for tests in historical_tests)
+        latest = set(historical_tests[0])
+        added = sorted(set(current_tests) - latest)
+        removed = sorted(latest - set(current_tests))
+        excluded = len(current_tests) - len(shared)
+        scope = f"Shared nextest tests (compared: {len(shared)}; current tests excluded: {excluded}; doc tests excluded)"
+        details = f" Added since latest main: {len(added)}; removed: {len(removed)}."
+        for label, names in (("Added tests", added), ("Removed tests", removed)):
+            if names:
+                details += "\n\n" + label + ":\n\n" + "\n".join(f"- `{name}`" for name in names)
     median = times[2]
-    if median <= 0:
-        return {"status": "unavailable", "message": "歷史中位數無效。"}
-    change = (float(current["test_execution_seconds"]) / median - 1) * 100
-    is_regression = Decimal(str(current["test_execution_seconds"])) > Decimal(str(median)) * Decimal("1.30")
-    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "change_percent": round(change, 2), "message": f"main 最近 5 次中位數 {median:.3f}s；本次差異 {change:+.2f}%。"}
+    if median <= 0 or not valid_time(current_seconds):
+        return {"status": "unavailable", "message": "Historical median is invalid."}
+    change = (float(current_seconds) / median - 1) * 100
+    is_regression = Decimal(str(current_seconds)) > Decimal(str(median)) * Decimal("1.30")
+    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "change_percent": round(change, 2), "message": f"{scope}: median of the latest 5 main reports {median:.3f}s; current change {change:+.2f}%.{details}"}
 
 
 def api_json(path, token):
@@ -336,7 +382,7 @@ def compare_command(args):
                     continue
                 if not isinstance(item, dict) or item.get("status") != "passed" or not valid_time(item.get("test_execution_seconds")):
                     continue
-                if compatibility_key(item) != compatibility_key(current):
+                if environment_key(item) != environment_key(current):
                     incompatible = True
                     continue
                 previous.append(item)
@@ -346,10 +392,10 @@ def compare_command(args):
                 break
         result = compare_reports(current, previous)
         if result["status"] == "insufficient" and incompatible:
-            result = {"status": "incomparable", "message": "可相容的成功 main 報告少於 5 筆；較近的基準與本次 CI 設定不相容。"}
+            result = {"status": "incomparable", "message": "Fewer than 5 compatible successful main reports; recent baselines do not match the current CI configuration."}
     except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError, zipfile.BadZipFile, json.JSONDecodeError) as error:
-        result = {"status": "unavailable", "message": f"歷史資料取得或統計失敗：{error}"}
-    append_summary("\n### main 歷史效能比較\n\n" + result["message"] + (" **效能退化警告**" if result["status"] == "regression" else "") + "\n")
+        result = {"status": "unavailable", "message": f"Could not retrieve or analyze historical reports: {error}"}
+    append_summary("\n### Performance comparison with main history\n\n" + result["message"] + (" **Performance regression warning**" if result["status"] == "regression" else "") + "\n")
     return 0
 
 
