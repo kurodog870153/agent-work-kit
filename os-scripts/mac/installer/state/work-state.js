@@ -89,8 +89,8 @@ function run(argv) {
         if (argv[4] !== 'true' && argv[4] !== 'false') throw new Error('invalid Global AGENTS value');
         return JSON.stringify(createState(argv[1], argv[2], argv[3], argv[4] === 'true', argv[5], argv[6], argv[7]));
     }
-    if (argv[0] === 'validate' && argv.length === 3) {
-        var state = parseState(argv[1], argv[2]);
+    if (argv[0] === 'validate' && (argv.length === 3 || argv.length === 4)) {
+        var state = parseState(argv[1], argv[2], argv[3]);
         return JSON.stringify({ valid: state !== null, state: state });
     }
     if (argv[0] === 'settings' && (argv.length === 5 || argv.length === 6)) {

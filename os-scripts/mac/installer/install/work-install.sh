@@ -29,6 +29,6 @@ installer_validate_payload() {
     [[ -x "$path/scripts/work" ]] || return 1
     "$path/scripts/work" --help >/dev/null 2>&1 || return 1
     validation="$(osascript -l JavaScript "$work_state_module" validate \
-        "$(cat -- "$path/install-state.json")" "$target")" || return 1
+        "$(cat -- "$path/install-state.json")" "$target" "$selected_host")" || return 1
     [[ "$validation" == *'"valid":true'* ]]
 }
