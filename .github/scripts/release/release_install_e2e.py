@@ -81,7 +81,7 @@ def verify_cli_entries(package, platform):
             raise AssertionError(f"{name} release CLI entry returned an invalid response")
 
 
-def run_installer(script, home, options=(), answers=None, extra_env=None, stream_output=False, *, host):
+def run_installer_for_host(script, home, options=(), answers=None, extra_env=None, stream_output=False, *, host):
     if tuple(options) not in (("--help",), ("-h",)) and "--host" not in options:
         options = ("--host", host, *options)
     environment = os.environ.copy()
@@ -157,7 +157,7 @@ def assert_no_target(result, home, target):
         raise AssertionError(f"rejected package changed the target: {result!r}")
 
 
-def assert_state(work, version, workspace_version, global_agents, global_dir=None, *, host):
+def assert_state_for_host(work, version, workspace_version, global_agents, global_dir=None, *, host):
     state = json.loads((work.parent / "install-state.json").read_text(encoding="utf-8"))
     if (state["host"] != host or state["version"] != version or state["work_version"] != workspace_version or
             state["tooling_version"] != workspace_version or
@@ -199,14 +199,11 @@ def exercise_package(package, root, platform, source_install=False):
     skill_path = ".agents/skills/work" if host == "codex" else ".claude/skills/work"
     instructions_path = ".codex/AGENTS.md" if host == "codex" else ".claude/CLAUDE.md"
     instructions_dir = ".codex" if host == "codex" else ".claude"
-    base_run_installer = run_installer
-    base_assert_state = assert_state
-
     def run_installer(script, home, options=(), answers=None, extra_env=None, stream_output=False):
-        return base_run_installer(script, home, options, answers, extra_env, stream_output, host=host)
+        return run_installer_for_host(script, home, options, answers, extra_env, stream_output, host=host)
 
     def assert_state(work, version, workspace_version, global_agents, global_dir=None):
-        return base_assert_state(work, version, workspace_version, global_agents, global_dir, host=host)
+        return assert_state_for_host(work, version, workspace_version, global_agents, global_dir, host=host)
     suffix = ".bat" if platform == "windows-x64-msvc" else ".command"
     script = package / f"install-agent-work-kit-from-package{suffix}"
     source = Path(__file__).resolve().parents[3] / "os-scripts" / (

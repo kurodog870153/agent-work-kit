@@ -12,10 +12,25 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import assert_state, run_installer, verify_readme_download
+from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
+    def test_both_platforms_pass_zip_host_into_native_installer(self):
+        for platform, suffix in (("macos-arm64", ".command"), ("windows-x64-msvc", ".bat")):
+            for host in ("codex", "claude"):
+                with self.subTest(platform=platform, host=host), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    package = root / "package"
+                    package.mkdir()
+                    (package / "release-info.json").write_text(json.dumps({"host": host}), encoding="utf-8")
+                    (package / f"install-agent-work-kit-from-package{suffix}").touch()
+                    with patch("release_install_e2e.run_installer_for_host",
+                               side_effect=RuntimeError("installer reached")) as installer:
+                        with self.assertRaisesRegex(RuntimeError, "installer reached"):
+                            exercise_package(package, root, platform)
+                    self.assertEqual(installer.call_args.kwargs["host"], host)
+
     def test_installer_output_is_retained_for_assertions(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -25,7 +40,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             else:
                 script = home / "installer.sh"
                 script.write_bytes(b"printf 'Version: test\\n'\nprintf 'diagnostic\\n' >&2\n")
-            code, stdout, stderr = run_installer(script, home, answers="y\n", host="codex")
+            code, stdout, stderr = run_installer_for_host(script, home, answers="y\n", host="codex")
             self.assertEqual(code, 0)
             self.assertIn(b"Version: test", stdout)
             self.assertIn(b"diagnostic", stderr)
@@ -39,7 +54,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                      "global_agent_dir": None, "status": "installed"}
             (work.parent / "install-state.json").write_text(json.dumps(state), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "unexpected Skills state"):
-                assert_state(work, "1.2.3", "1.2.3", False, host="codex")
+                assert_state_for_host(work, "1.2.3", "1.2.3", False, host="codex")
 
     def test_claude_host_is_passed_to_installer(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -50,7 +65,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             else:
                 script = home / "installer.sh"
                 script.write_bytes(b"printf '%s\\n' \"$*\"\n")
-            code, stdout, _ = run_installer(script, home, host="claude")
+            code, stdout, _ = run_installer_for_host(script, home, host="claude")
             self.assertEqual(code, 0)
             self.assertIn(b"--host claude", stdout)
 
@@ -64,7 +79,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             log = io.StringIO()
             with patch("release_install_e2e.subprocess.run", side_effect=interrupt):
                 with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
-                    run_installer(Path("installer"), Path(directory), host="codex")
+                    run_installer_for_host(Path("installer"), Path(directory), host="codex")
             self.assertIn("reason=KeyboardInterrupt", log.getvalue())
             self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
             self.assertIn("installer diagnostic", log.getvalue())
