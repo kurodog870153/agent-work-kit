@@ -2,8 +2,10 @@
 set -euo pipefail
 
 version=$(cat VERSION)
-zip="dist/agent-work-kit-v${version}-codex-macos-arm64.zip"
-echo "Verifying macOS release installation: ${zip}"
-sandbox-exec -p '(version 1)(allow default)(deny network*)' \
-  python3 -B .github/scripts/release/release_install_e2e.py \
-  --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
+for host in codex claude; do
+  zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
+  echo "Verifying macOS release installation: ${zip}"
+  sandbox-exec -p '(version 1)(allow default)(deny network*)' \
+    python3 -B .github/scripts/release/release_install_e2e.py \
+    --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
+done

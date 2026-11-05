@@ -32,7 +32,6 @@ function validVersion(value) {
 }
 
 function createState(templateRaw, version, skills, globalAgents, workDir, globalAgentsDir, host) {
-    host = host || 'codex';
     var template = JSON.parse(templateRaw);
     if (!template || typeof template !== 'object' || Array.isArray(template) ||
             Object.keys(template).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
@@ -53,7 +52,6 @@ function createState(templateRaw, version, skills, globalAgents, workDir, global
 }
 
 function parseState(raw, workDir, host) {
-    host = host || 'codex';
     var value;
     try { value = JSON.parse(raw); } catch (_) { return null; }
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -85,15 +83,15 @@ function resolveSettings(raw, workDir, skillsOverride, globalAgentsOverride, hos
 }
 
 function run(argv) {
-    if (argv[0] === 'create' && (argv.length === 7 || argv.length === 8)) {
+    if (argv[0] === 'create' && argv.length === 8) {
         if (argv[4] !== 'true' && argv[4] !== 'false') throw new Error('invalid Global AGENTS value');
         return JSON.stringify(createState(argv[1], argv[2], argv[3], argv[4] === 'true', argv[5], argv[6], argv[7]));
     }
-    if (argv[0] === 'validate' && (argv.length === 3 || argv.length === 4)) {
+    if (argv[0] === 'validate' && argv.length === 4) {
         var state = parseState(argv[1], argv[2], argv[3]);
         return JSON.stringify({ valid: state !== null, state: state });
     }
-    if (argv[0] === 'settings' && (argv.length === 5 || argv.length === 6)) {
+    if (argv[0] === 'settings' && argv.length === 6) {
         var skillsOverride = argv[3] === '' ? null : argv[3];
         var globalOverride = argv[4] === '' ? null : argv[4] === 'true' ? true : argv[4] === 'false' ? false : undefined;
         if (globalOverride === undefined) throw new Error('invalid Global AGENTS override');
@@ -103,8 +101,8 @@ function run(argv) {
             settings.global_agents ? '1' : '0', prior ? prior.version : '-',
             settings.global_agents_dir || '-'].join('\t');
     }
-    if (argv[0] === 'from-combined' && (argv.length === 4 || argv.length === 5)) {
-        var host = argv.length === 5 ? argv[4] : 'codex';
+    if (argv[0] === 'from-combined' && argv.length === 5) {
+        var host = argv[4];
         if (host !== 'codex' && host !== 'claude') throw new Error('invalid installer host');
         if (argv[1] === '-') return '';
         if (!validVersion(argv[1]) || argv[2].charAt(0) !== '/' ||

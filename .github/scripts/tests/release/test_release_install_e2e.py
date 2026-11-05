@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import run_installer, verify_readme_download
+from release_install_e2e import assert_state, run_installer, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
@@ -25,10 +25,34 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             else:
                 script = home / "installer.sh"
                 script.write_bytes(b"printf 'Version: test\\n'\nprintf 'diagnostic\\n' >&2\n")
-            code, stdout, stderr = run_installer(script, home, answers="y\n")
+            code, stdout, stderr = run_installer(script, home, answers="y\n", host="codex")
             self.assertEqual(code, 0)
             self.assertIn(b"Version: test", stdout)
             self.assertIn(b"diagnostic", stderr)
+
+    def test_claude_state_is_accepted_only_for_claude(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory) / "skills/work"
+            work.mkdir(parents=True)
+            state = {"host": "claude", "version": "1.2.3", "work_version": "1.2.3",
+                     "tooling_version": "1.2.3", "skill_install_dir": str(work.parent),
+                     "global_agent_dir": None, "status": "installed"}
+            (work.parent / "install-state.json").write_text(json.dumps(state), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "unexpected Skills state"):
+                assert_state(work, "1.2.3", "1.2.3", False, host="codex")
+
+    def test_claude_host_is_passed_to_installer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            if sys.platform == "win32":
+                script = home / "installer.bat"
+                script.write_bytes(b"@echo off\r\necho %*\r\n")
+            else:
+                script = home / "installer.sh"
+                script.write_bytes(b"printf '%s\\n' \"$*\"\n")
+            code, stdout, _ = run_installer(script, home, host="claude")
+            self.assertEqual(code, 0)
+            self.assertIn(b"--host claude", stdout)
 
     def test_interrupted_installer_logs_captured_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -40,7 +64,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             log = io.StringIO()
             with patch("release_install_e2e.subprocess.run", side_effect=interrupt):
                 with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
-                    run_installer(Path("installer"), Path(directory))
+                    run_installer(Path("installer"), Path(directory), host="codex")
             self.assertIn("reason=KeyboardInterrupt", log.getvalue())
             self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
             self.assertIn("installer diagnostic", log.getvalue())

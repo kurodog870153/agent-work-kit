@@ -4,8 +4,9 @@ function Invoke-InstallerLocked {
     param(
         [Parameter(Mandatory = $true)][scriptblock] $Transaction,
         [object[]] $Arguments = @(),
-        [ValidateSet('codex', 'claude')][string] $InstallerHost = 'codex'
+        [ValidateSet('codex', 'claude')][string] $InstallerHost
     )
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $mutexName = if ($InstallerHost -eq 'codex') { 'Global\AgentWorkKitInstallCodex' } else { 'Global\AgentWorkKitInstallClaude' }
     $mutex = [System.Threading.Mutex]::new($false, $mutexName)
     $owned = $false

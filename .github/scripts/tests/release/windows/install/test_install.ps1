@@ -11,7 +11,7 @@ $workspaceManifest = [IO.File]::ReadAllText((Join-Path $repoRoot 'rust/Cargo.tom
 $workspaceVersion = [regex]::Match($workspaceManifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$').Groups[1].Value
 if ([string]::IsNullOrEmpty($workspaceVersion)) { throw 'Rust workspace test version is missing' }
 function Write-TestReleaseInfo {
-    param([string] $Root, [string] $Version, [string] $InstallerHost = 'codex')
+    param([string] $Root, [string] $Version, [string] $InstallerHost)
     [IO.File]::WriteAllText((Join-Path $Root 'release-info.json'),
         ([ordered]@{ host = $InstallerHost; target = 'x86_64-pc-windows-msvc'; version = $Version; work_version = $workspaceVersion; tooling_version = $workspaceVersion } | ConvertTo-Json -Compress))
 }
@@ -57,7 +57,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'rust/target/release/tooling.exe') -Destination (Join-Path $root 'bin/tooling.exe')
     New-Item -ItemType Directory -Path (Join-Path $root 'instructions') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'instructions/global-instructions.md') -Destination (Join-Path $root 'instructions/global-instructions.md')
-    Write-TestReleaseInfo -Root $root -Version $baseVersion
+    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
     New-Item -ItemType Directory -Path (Join-Path $root 'installer/state') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/install-state.json') -Destination (Join-Path $root 'installer/state/install-state.json')
     $target = Join-Path $scratch 'installed/work'
@@ -119,7 +119,7 @@ try {
     if ($LASTEXITCODE -eq 0 -or [IO.File]::ReadAllText($parentState) -cne $codexStateBefore) {
         throw 'Claude took over Codex state'
     }
-    Write-TestReleaseInfo -Root $root -Version $baseVersion
+    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
     $legacyChildState = Join-Path $target 'install-state.json'
     [IO.File]::WriteAllText($legacyChildState, 'legacy state')
     if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
@@ -185,9 +185,9 @@ try {
     }
     & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'same-version reinstall failed' }
-    Write-TestReleaseInfo -Root $root -Version $olderVersion
+    Write-TestReleaseInfo -Root $root -Version $olderVersion -InstallerHost 'codex'
     if (-not (Test-CoreRejected -Core $core -Root $root -Target $target)) { throw 'downgrade was accepted' }
-    Write-TestReleaseInfo -Root $root -Version $baseVersion
+    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
     [IO.File]::WriteAllText((Join-Path $target 'unknown.txt'), 'keep')
     if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or [IO.File]::ReadAllText((Join-Path $target 'unknown.txt')) -cne 'keep') { throw 'unknown content was changed' }
     Remove-Item -LiteralPath (Join-Path $target 'unknown.txt')
@@ -217,11 +217,11 @@ try {
         $caseRoot = Join-Path $scratch "c$caseIndex"
         $crashTarget = Join-Path $caseRoot 'work'
         $crashGlobal = Join-Path $caseRoot 'global'
-        Write-TestReleaseInfo -Root $root -Version $baseVersion
+        Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
         & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $crashGlobal --skills-dir (Split-Path -Parent $crashTarget) | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "initial $point Work installation failed" }
         $globalBefore = (Get-FileHash -LiteralPath (Join-Path $crashGlobal 'AGENTS.md') -Algorithm SHA256).Hash
-        Write-TestReleaseInfo -Root $root -Version $nextVersion
+        Write-TestReleaseInfo -Root $root -Version $nextVersion -InstallerHost 'codex'
         $contents = [IO.File]::ReadAllText($transactionSource)
         $kill = '[Diagnostics.Process]::GetCurrentProcess().Kill()'
         switch ($point) {
@@ -270,13 +270,13 @@ try {
         $caseWork = Join-Path $caseRoot 'work'
         $caseGlobal = Join-Path $caseRoot 'global'
         [IO.File]::WriteAllBytes((Join-Path $root 'instructions/global-instructions.md'), $originalGlobalSource)
-        Write-TestReleaseInfo -Root $root -Version $baseVersion
+        Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
         & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $caseGlobal --skills-dir (Split-Path -Parent $caseWork) | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "$point initial combined installation failed" }
         $oldGlobalHash = (Get-FileHash -LiteralPath (Join-Path $caseGlobal 'AGENTS.md') -Algorithm SHA256).Hash
         [IO.File]::WriteAllText((Join-Path $root 'instructions/global-instructions.md'), "new Global AGENTS for $point`n")
         $newGlobalHash = (Get-FileHash -LiteralPath (Join-Path $root 'instructions/global-instructions.md') -Algorithm SHA256).Hash
-        Write-TestReleaseInfo -Root $root -Version $nextVersion
+        Write-TestReleaseInfo -Root $root -Version $nextVersion -InstallerHost 'codex'
         $contents = [IO.File]::ReadAllText($transactionSource)
         $kill = '[Diagnostics.Process]::GetCurrentProcess().Kill()'
         switch ($point) {

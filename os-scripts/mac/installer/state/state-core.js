@@ -26,11 +26,11 @@ function run(argv) {
         if (!workInfo || !validVersion(workInfo.work_version)) throw new Error('invalid Work release version');
         return workInfo.work_version;
     }
-    if (argv[0] === 'combined' && (argv.length === 5 || argv.length === 6)) {
+    if (argv[0] === 'combined' && argv.length === 6) {
         var combined;
         try { combined = JSON.parse(argv[1]); } catch (error) { return '-'; }
         var parent = argv[2].replace(/\/work$/, '');
-        var selectedHost = argv.length === 6 ? argv[5] : 'codex';
+        var selectedHost = argv[5];
         if (!combined || Object.keys(combined).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
                 (selectedHost !== 'codex' && selectedHost !== 'claude') || combined.host !== selectedHost ||
                 (combined.status !== 'installing' && combined.status !== 'installed') ||
@@ -46,8 +46,8 @@ function run(argv) {
         if (argv[4] === 'status') return combined.status;
         return '-';
     }
-    if (argv[0] === 'combined-create' && (argv.length === 7 || argv.length === 8)) {
-        var host = argv.length === 8 ? argv[7] : 'codex';
+    if (argv[0] === 'combined-create' && argv.length === 8) {
+        var host = argv[7];
         if (host !== 'codex' && host !== 'claude') throw new Error('invalid installer host');
         if (!validVersion(argv[1]) || !validVersion(argv[2]) || !validVersion(argv[3]) ||
                 argv[4].charAt(0) !== '/' ||

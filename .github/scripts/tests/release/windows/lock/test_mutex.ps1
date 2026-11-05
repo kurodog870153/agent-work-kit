@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 . (Join-Path $repoRoot 'os-scripts/windows/installer/lock/mutex.ps1')
-$result = Invoke-InstallerLocked -Transaction { param($value) "ok:$value" } -Arguments @('normal')
+$result = Invoke-InstallerLocked -Transaction { param($value) "ok:$value" } -Arguments @('normal') -InstallerHost 'codex'
 if ($result -ne 'ok:normal') { throw 'normal transaction failed' }
 $scratch = Join-Path $repoRoot ('.installer-test-lock.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
@@ -23,14 +23,14 @@ try {
     for ($attempt = 0; $attempt -lt 100 -and -not (Test-Path -LiteralPath $marker); $attempt++) { Start-Sleep -Milliseconds 100 }
     if (-not (Test-Path -LiteralPath $marker)) { throw 'lock holder did not start' }
     try {
-        $null = Invoke-InstallerLocked -Transaction { 'unexpected' }
+        $null = Invoke-InstallerLocked -Transaction { 'unexpected' } -InstallerHost 'codex'
         throw 'concurrent installation acquired lock'
     } catch {
         if ($_.Exception.Message -notmatch 'another Work installation') { throw }
     }
     Stop-Job $job
     $null = Wait-Job $job
-    $result = Invoke-InstallerLocked -Transaction { 'after-abandon' }
+    $result = Invoke-InstallerLocked -Transaction { 'after-abandon' } -InstallerHost 'codex'
     if ($result -ne 'after-abandon') { throw 'abandoned mutex was not recovered' }
     Write-Output 'Windows native lock cases passed.'
 } finally {

@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'tooling-state.ps1')
 
 function Read-InstallerCombinedState {
-    param([string] $Raw, [string] $WorkTarget, [string] $ToolingTarget, [string] $InstallerHost = 'codex')
+    param([string] $Raw, [string] $WorkTarget, [string] $ToolingTarget, [string] $InstallerHost)
     try { $value = ConvertFrom-Json -InputObject $Raw -ErrorAction Stop } catch { return $null }
     $parent = Split-Path -Parent $WorkTarget
     if ($value -isnot [pscustomobject] -or
@@ -25,7 +25,7 @@ function Read-InstallerCombinedState {
 
 function Write-InstallerCombinedState {
     param([string] $Parent, [string] $Version, [string] $WorkVersion, [string] $ToolingVersion,
-        [AllowNull()][string] $GlobalAgentDir, [string] $Status, [string] $InstallerHost = 'codex')
+        [AllowNull()][string] $GlobalAgentDir, [string] $Status, [string] $InstallerHost)
     if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $target = Join-Path $Parent 'install-state.json'
     $temporary = Join-Path $Parent '.install-state.json.tmp'

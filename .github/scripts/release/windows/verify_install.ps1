@@ -1,16 +1,18 @@
 $ErrorActionPreference = 'Stop'
 
 $version = (Get-Content VERSION -Raw).Trim()
-$zip = "dist/agent-work-kit-v${version}-codex-windows-x64-msvc.zip"
 $rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
 Write-Host "Enabling outbound network isolation for Windows release installation E2E."
 New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
 try {
     $active = Get-NetFirewallRule -Name $rule -ErrorAction Stop
     if ($active.Enabled -ne 'True' -or $active.Action -ne 'Block') { throw 'Network isolation rule is inactive' }
-    Write-Host "Network isolation active; verifying Windows release installation: $zip"
-    python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
-    if ($LASTEXITCODE -ne 0) { throw "Windows release installation E2E failed with exit code $LASTEXITCODE" }
+    foreach ($installerHost in @('codex', 'claude')) {
+        $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
+        Write-Host "Network isolation active; verifying Windows release installation: $zip"
+        python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
+        if ($LASTEXITCODE -ne 0) { throw "Windows release installation E2E failed for $installerHost with exit code $LASTEXITCODE" }
+    }
 } finally {
     Write-Host 'Removing Windows release E2E network isolation rule.'
     Remove-NetFirewallRule -Name $rule -ErrorAction Stop

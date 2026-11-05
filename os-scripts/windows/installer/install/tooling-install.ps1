@@ -49,7 +49,8 @@ function Test-InstallerToolingSubset {
 }
 
 function Inspect-InstallerToolingTarget {
-    param([string] $Target, [string] $Source, [string] $InstallerHost = 'codex')
+    param([string] $Target, [string] $Source, [string] $InstallerHost)
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $unsafe = { param($Reason) [pscustomobject]@{ Kind = 'unsafe'; Reason = $Reason; Version = $null } }
     if (-not [IO.Path]::IsPathRooted($Target) -or [IO.Path]::GetFileName($Target) -cne 'tooling') {
         return (& $unsafe 'target must be an absolute tooling directory')

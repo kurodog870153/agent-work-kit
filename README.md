@@ -22,10 +22,16 @@ Agent Work Kit（`agent-work-kit`）提供 Work 與 Tooling 兩個 Skill，協�
 
 ## 3. 使用方式
 
-在 Codex 對話中輸入：
+在 Codex 對話中以 `$work` 呼叫；在 Claude Code 對話中以 `/work` 呼叫。以下是 Codex 範例：
 
 ```text
 $work <mode> -- <request>
+```
+
+Claude Code 使用相同的模式與參數：
+
+```text
+/work <mode> -- <request>
 ```
 
 支援的模式：

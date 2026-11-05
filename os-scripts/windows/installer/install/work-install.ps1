@@ -25,7 +25,8 @@ function Copy-InstallerWorkPayload {
 }
 
 function Test-InstallerWorkPayload {
-    param([string] $Path, [string] $Target, [string] $InstallerHost = 'codex')
+    param([string] $Path, [string] $Target, [string] $InstallerHost)
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $installed = Join-Path $Path 'scripts/work.exe'
     & $installed --help | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'installed Work binary smoke test failed' }

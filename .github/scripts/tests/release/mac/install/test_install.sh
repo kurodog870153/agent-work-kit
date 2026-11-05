@@ -7,7 +7,7 @@ next_version="$base_major.$base_minor.$((base_patch + 1))"
 workspace_version="$(sed -n 's/^version = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$repo_root/rust/Cargo.toml")"
 [[ -n "$workspace_version" ]] || exit 1
 write_test_release_info() {
-    printf '{"host":"%s","target":"aarch64-apple-darwin","version":"%s","work_version":"%s","tooling_version":"%s"}\n' "${2:-codex}" "$1" "$workspace_version" "$workspace_version" > "$root/release-info.json"
+    printf '{"host":"%s","target":"aarch64-apple-darwin","version":"%s","work_version":"%s","tooling_version":"%s"}\n' "$2" "$1" "$workspace_version" "$workspace_version" > "$root/release-info.json"
 }
 scratch="$(mktemp -d "$repo_root/.installer-test-core.XXXXXX")"
 [[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-core.* ]] || exit 1
@@ -17,7 +17,7 @@ mkdir -p -- "$root/skills" "$root/bin" "$root/instructions" "$scratch/home" "$sc
 cp -R -- "$repo_root/skills/work" "$root/skills/work"
 cp -R -- "$repo_root/skills/tooling" "$root/skills/tooling"
 cp -- "$repo_root/instructions/global-instructions.md" "$root/instructions/global-instructions.md"
-write_test_release_info "$base_version"
+write_test_release_info "$base_version" codex
 mkdir -p -- "$root/installer/state"
 cp -- "$repo_root/os-scripts/common/installer/install-state.json" "$root/installer/state/install-state.json"
 cp -- "$repo_root/rust/target/release/work" "$root/bin/work"
@@ -72,7 +72,7 @@ bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$roo
     printf 'FAIL: Claude installation or Host isolation failed.\n' >&2; exit 1;
 }
 MSYS_NO_PATHCONV=1 node -e 'const fs=require("fs"); if(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).host!=="claude") process.exit(1)' "$claude_parent/install-state.json"
-write_test_release_info "$base_version"
+write_test_release_info "$base_version" codex
 printf 'legacy state\n' > "$target/install-state.json"
 if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
     --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1; then
@@ -236,7 +236,7 @@ if command -v cygpath >/dev/null 2>&1; then
     work_module_path="$(cygpath -w "$work_module_path")"
     state_path="$(cygpath -w "$state_path")"
 fi
-MSYS_NO_PATHCONV=1 node -e 'const core=require(process.argv[1]); const work=require(process.argv[2]); const fs=require("fs"); const raw=fs.readFileSync(process.argv[3],"utf8"); const target=process.argv[4]; const tooling=process.argv[5]; const version=core.run(["combined",raw,target,tooling,"work-version"]); const global=core.run(["combined",raw,target,tooling,"global-agent-dir"]); const state=JSON.parse(work.run(["from-combined",version,target,global])); if(state.skills.length!==14||state.global_agents_dir!==null) process.exit(1)' \
+MSYS_NO_PATHCONV=1 node -e 'const core=require(process.argv[1]); const work=require(process.argv[2]); const fs=require("fs"); const raw=fs.readFileSync(process.argv[3],"utf8"); const target=process.argv[4]; const tooling=process.argv[5]; const version=core.run(["combined",raw,target,tooling,"work-version","codex"]); const global=core.run(["combined",raw,target,tooling,"global-agent-dir","codex"]); const state=JSON.parse(work.run(["from-combined",version,target,global,"codex"])); if(state.skills.length!==14||state.global_agents_dir!==null) process.exit(1)' \
     "$module_path" "$work_module_path" "$state_path" "$target" "${target%/*}/tooling"
 rm -- "${target%/*}/install-state.json"
 if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
@@ -249,12 +249,12 @@ cp -- "$repo_root/os-scripts/common/installer/options.tsv" "$scratch/crash-insta
 for crash_point in staging first-rename second-rename before-verified after-verified; do
     crash_target="$scratch/crash-$crash_point/work"
     crash_global="$scratch/crash-$crash_point/global"
-    write_test_release_info "$base_version"
+    write_test_release_info "$base_version" codex
     bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
         --non-interactive --global-instructions yes --instructions-dir "$crash_global" \
         --skills-dir "${crash_target%/*}" >/dev/null
     global_before="$(shasum -a 256 "$crash_global/AGENTS.md")"
-    write_test_release_info "$next_version"
+    write_test_release_info "$next_version" codex
     cp -- "$repo_root/os-scripts/mac/installer/transaction/work.sh" "$scratch/crash-installer/transaction/work.sh"
     python3 -B - "$scratch/crash-installer/transaction/work.sh" "$crash_point" <<'PY'
 import pathlib
@@ -312,14 +312,14 @@ for global_crash in after-global during-work after-work-verified; do
     global_work="$global_case/work"
     global_agents="$global_case/global"
     cp -- "$scratch/original-AGENTS.md" "$root/instructions/global-instructions.md"
-    write_test_release_info "$base_version"
+    write_test_release_info "$base_version" codex
     bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
         --non-interactive --global-instructions yes --instructions-dir "$global_agents" \
         --skills-dir "${global_work%/*}" >/dev/null
     old_global_hash="$(shasum -a 256 "$global_agents/AGENTS.md" | cut -d ' ' -f1)"
     printf 'new Global AGENTS for %s\n' "$global_crash" > "$root/instructions/global-instructions.md"
     new_global_hash="$(shasum -a 256 "$root/instructions/global-instructions.md" | cut -d ' ' -f1)"
-    write_test_release_info "$next_version"
+    write_test_release_info "$next_version" codex
     cp -- "$repo_root/os-scripts/mac/installer/transaction/work.sh" "$scratch/crash-installer/transaction/work.sh"
     python3 -B - "$scratch/crash-installer/transaction/work.sh" "$global_crash" <<'PY'
 import pathlib

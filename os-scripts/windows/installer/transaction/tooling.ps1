@@ -85,8 +85,9 @@ function Restore-InstallerInterruptedTooling {
 
 function Invoke-InstallerToolingTransaction {
     param([string] $Target, [string] $Source, [string] $Version, [string] $Binary, [string] $StateJson,
-        [bool] $NonInteractive, [bool] $Confirmed, [string] $InstallerHost = 'codex')
+        [bool] $NonInteractive, [bool] $Confirmed, [string] $InstallerHost)
     Restore-InstallerInterruptedTooling -Target $Target -Source $Source -Version $Version -Binary $Binary
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $inspection = Inspect-InstallerToolingTarget -Target $Target -Source $Source -InstallerHost $InstallerHost
     if ($inspection.Kind -notin @('new', 'managed') -and
         -not ($inspection.Kind -eq 'first-update' -and -not $NonInteractive -and $Confirmed)) {
