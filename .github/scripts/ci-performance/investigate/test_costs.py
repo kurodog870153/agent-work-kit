@@ -11,12 +11,37 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from report_charts import bar_chart
+
 
 SLOW_STORAGE_TESTS = (
     "carried_native_validation_recovers_each_attempt_start_boundary_without_reexecution",
     "correction_staging_recovers_immutable_artifact_and_exact_invalidation",
     "attempt_close_staging_recovers_completed_stopped_and_blocked_transitions",
 )
+
+
+def investigation_charts(results, threads):
+    runs = results["test_runs"]
+    slow = [(f"{name} / {runner}", item) for name, runners in results["slow_tests"].items()
+            for runner, item in runners.items()]
+    native = [(f"{name} / {stage}", timing["sum_seconds"])
+              for name, item in runs.items() for stage, timing in item["cli_timings"].items()]
+    native.extend((f"{name} / outside CLI timer", item["outside_cli_seconds"])
+                  for name, item in runs.items() if "outside_cli_seconds" in item)
+    return {
+        "runs": bar_chart("Test run wall time", [(name, item["seconds"]) for name, item in runs.items()]),
+        "slow": bar_chart("Slow storage wall time", [(name, item["seconds"]) for name, item in slow]),
+        "setup": bar_chart("Slow storage setup time", [
+            (name, item["internal_timings"].get("storage_case_setup", {}).get("sum_seconds"))
+            for name, item in slow
+        ]),
+        "native": bar_chart("Native Work command stages", native),
+        "parallel": bar_chart("Nextest wall time by thread count", [
+            (str(count), runs[f"nextest_{count}"]["seconds"]) for count in threads
+        ]),
+    }
 
 
 def test_count_from_log(log_text, runner):
@@ -157,6 +182,7 @@ def run(args):
     results["diagnostics"] = diagnostics
     results["status"] = "failed" if diagnostics else "passed"
     (output / "investigation.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    charts = investigation_charts(results, args.threads)
     summary = [
         f"## Rust test investigation: {results['platform']}",
         "",
@@ -167,6 +193,7 @@ def run(args):
         "| --- | ---: | ---: | ---: |",
     ]
     summary.extend(f"| {name} | {item['test_count']} | {item['seconds']} | {item['exit_code']} |" for name, item in results["test_runs"].items())
+    summary.extend(["", charts["runs"]])
     summary.extend(["", "| Nextest run | PASS lines | Sum of test seconds | Median test seconds |", "| --- | ---: | ---: | ---: |"])
     summary.extend(
         f"| {name} | {item['individual_tests']['count']} | {item['individual_tests']['sum_seconds']} | {item['individual_tests']['median_seconds']} |"
@@ -179,6 +206,7 @@ def run(args):
             skill_copy = item["internal_timings"].get("historical_skill_copy", {}).get("sum_seconds", "n/a")
             native = item["internal_timings"].get("storage_native_command", {}).get("sum_seconds", "n/a")
             summary.append(f"| {test_name} | {runner} | {item['seconds']} | {setup} | {skill_copy} | {native} |")
+    summary.extend(["", charts["slow"], "", charts["setup"]])
     summary.extend(["", "| Run | Internal step | Calls | Sum seconds | Median seconds |", "| --- | --- | ---: | ---: | ---: |"])
     for name, item in results["test_runs"].items():
         summary.extend(
@@ -193,6 +221,7 @@ def run(args):
         )
         if "outside_cli_seconds" in item:
             summary.append(f"| {name} | outside CLI timer (startup, serialization, exit, capture) | n/a | {item['outside_cli_seconds']} | n/a |")
+    summary.extend(["", charts["native"]])
     summary.extend(["", "CLI stages overlap: dispatch includes Git, file I/O, and command logic; outside CLI timer includes process startup, response serialization, exit, and output capture. Artifact file reads are aggregated per process, so their median is unavailable. These values do not isolate startup or all file reads."])
     summary.extend(["", "### Parallelism comparison", "", "| Threads | Tests | Wall seconds | Speedup vs 1 thread |", "| ---: | ---: | ---: | ---: |"])
     baseline = results["test_runs"].get("nextest_1", {}).get("seconds")
@@ -200,6 +229,7 @@ def run(args):
         item = results["test_runs"][f"nextest_{threads}"]
         speedup = round(baseline / item["seconds"], 2) if baseline and item["seconds"] else "n/a"
         summary.append(f"| {threads} | {item['test_count']} | {item['seconds']} | {speedup} |")
+    summary.extend(["", charts["parallel"]])
     summary.extend(["", "Parallelism results cover process_boundary only; they do not establish the best setting for the full workspace."])
     if diagnostics:
         summary.extend(["", "Diagnostics: " + "; ".join(diagnostics)])

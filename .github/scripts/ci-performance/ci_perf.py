@@ -225,10 +225,12 @@ def summary(report):
         lines.append("Only recorded phases are charted.\n")
     lines.append("Cargo compile timing report: " + ("included in Rust performance artifact" if report["compile_timings_available"] else "unavailable"))
     lines.extend(["", f"Test execution (nextest + doc): {report['test_execution_seconds']} s", "", "### Slowest tests", "", "| Test | Seconds | Result |", "| --- | ---: | --- |"])
-    for test in sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]:
+    slowest = sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]
+    for test in slowest:
         lines.append(f"| `{test['id']}` | {test['duration_seconds']:.3f} | {test['outcome']} |")
     if not report["tests"]:
         lines.append("| Unavailable | n/a | incomplete |")
+    lines.extend(["", bar_chart("Slowest test durations", [(test["id"], test["duration_seconds"]) for test in slowest])])
     if report["diagnostics"]:
         lines.extend(["", "Diagnostics: " + "; ".join(report["diagnostics"])])
     return "\n".join(lines) + "\n"

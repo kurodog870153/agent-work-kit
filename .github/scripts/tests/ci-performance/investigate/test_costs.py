@@ -14,6 +14,24 @@ SPEC.loader.exec_module(INVESTIGATE)
 
 
 class InvestigationLogTests(unittest.TestCase):
+    def test_investigation_charts_cover_all_requested_measurements(self):
+        results = {
+            "test_runs": {
+                "nextest_1": {"seconds": 20, "cli_timings": {"total": {"sum_seconds": 8}}, "outside_cli_seconds": 4},
+                "nextest_2": {"seconds": 12, "cli_timings": {"total": {"sum_seconds": 7}}},
+            },
+            "slow_tests": {
+                "recovery": {"cargo": {"seconds": 10, "internal_timings": {"storage_case_setup": {"sum_seconds": 3}}}},
+            },
+        }
+        charts = INVESTIGATE.investigation_charts(results, [1, 2])
+        self.assertIn("| nextest_1 | 20.000 |", charts["runs"])
+        self.assertIn("| recovery / cargo | 10.000 |", charts["slow"])
+        self.assertIn("| recovery / cargo | 3.000 |", charts["setup"])
+        self.assertIn("| nextest_1 / total | 8.000 |", charts["native"])
+        self.assertIn("| nextest_1 / outside CLI timer | 4.000 |", charts["native"])
+        self.assertIn("| 2 | 12.000 |", charts["parallel"])
+
     def test_cargo_and_nextest_counts_and_internal_steps(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)

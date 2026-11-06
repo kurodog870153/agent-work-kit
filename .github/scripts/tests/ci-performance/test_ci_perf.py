@@ -47,6 +47,8 @@ class PerformanceReportTests(unittest.TestCase):
             self.assertIn("included in Rust performance artifact", ci_perf.summary(report))
             self.assertIn('"compile" : 2.5', ci_perf.summary(report))
             self.assertIn("```mermaid", ci_perf.summary(report))
+            self.assertIn("### Slowest test durations", ci_perf.summary(report))
+            self.assertIn("| binary::suite::case | 1.250 |", ci_perf.summary(report))
 
     def test_successful_doc_command_with_no_test_binaries_reports_zero_tests(self):
         with tempfile.TemporaryDirectory() as directory:
