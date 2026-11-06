@@ -25,7 +25,7 @@ def test_count_from_log(log_text, runner):
     if runner == "cargo":
         matches = re.findall(r"^test result: (?:ok|FAILED)\. (\d+) passed;", log_text, re.MULTILINE)
     elif runner == "nextest":
-        matches = re.findall(r"^\s*Summary \[\s*[\d.]+s\]\s+(\d+) tests run", log_text, re.MULTILINE)
+        matches = re.findall(r"^\s*Summary \[\s*[\d.]+s\]\s+(\d+) tests? run", log_text, re.MULTILINE)
     else:
         raise ValueError(f"unknown test runner: {runner}")
     return int(matches[-1]) if matches else None

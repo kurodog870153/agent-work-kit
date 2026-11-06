@@ -37,6 +37,10 @@ class InvestigationLogTests(unittest.TestCase):
             INVESTIGATE.test_count_from_log("test result: ok. 1 passed; 0 failed;\n", "nextest")
         )
 
+    def test_nextest_single_test_summary(self):
+        log = "PASS [  0.002s] work-infrastructure::lib one_test\nSummary [  0.010s] 1 test run: 1 passed\n"
+        self.assertEqual(INVESTIGATE.test_count_from_log(log, "nextest"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
