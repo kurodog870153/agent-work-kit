@@ -43,7 +43,7 @@ def expected_assets(version):
             | {Path(path).name for path in DOWNLOADERS.values()} | {"SHA256SUMS.txt"})
 
 
-def check_assets(repository, tag, directory, *, published):
+def check_assets(repository, tag, directory, *, published, expected_title=None, expected_notes=None):
     if published:
         release = api(f"repos/{repository}/releases/tags/{tag}")
     else:
@@ -54,6 +54,10 @@ def check_assets(repository, tag, directory, *, published):
         release = matches[0]
     if release["tag_name"] != tag or bool(release["draft"]) == published or release["prerelease"]:
         raise ValueError("release state or tag is incorrect")
+    if expected_title is not None and release.get("name") != expected_title:
+        raise ValueError("release title does not match GitHub-generated title")
+    if expected_notes is not None and (release.get("body") or "").replace("\r\n", "\n").strip() != expected_notes.strip():
+        raise ValueError("release notes do not match generated description and commit list")
     names = expected_assets(tag.removeprefix("v"))
     assets = release["assets"]
     if {asset["name"] for asset in assets} != names or len(assets) != len(names):
@@ -110,6 +114,20 @@ def release_notes(root, repository, tag, expected_sha):
     return baseline_tag, baseline_label, commits, notes
 
 
+def generate_release_content(repository, tag, previous_tag):
+    options = ["--method", "POST", "-f", f"tag_name={tag}"]
+    if previous_tag:
+        options.extend(["-f", f"previous_tag_name={previous_tag}"])
+    generated = api(f"repos/{repository}/releases/generate-notes", *options)
+    summary = generated.get("name")
+    description = generated.get("body")
+    if not isinstance(summary, str) or not summary.strip() or "\n" in summary or "\r" in summary:
+        raise ValueError("GitHub did not generate a valid one-line release title")
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("GitHub did not generate a release description")
+    return f"{tag}: {summary.strip()}", description.strip()
+
+
 def check_first_publish_attempt(repository, tag, expected_sha, run_id, run_attempt):
     if not SHA.fullmatch(expected_sha) or not run_id.isdecimal() or run_attempt != "1":
         raise ValueError("release rerun or invalid run identity is forbidden")
@@ -133,6 +151,7 @@ def main():
     parser.add_argument("--expected-sha")
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--notes-file", type=Path)
+    parser.add_argument("--title-file", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--run-attempt")
     args = parser.parse_args()
@@ -144,13 +163,15 @@ def main():
         elif args.action == "immutable":
             check_immutable(args.repository)
         elif args.action == "notes":
-            if not args.notes_file:
-                raise ValueError("notes action requires --notes-file")
-            _, baseline_label, commits, notes = release_notes(root, args.repository, args.tag, args.expected_sha)
-            args.notes_file.write_text(notes, encoding="utf-8")
+            if not args.notes_file or not args.title_file:
+                raise ValueError("notes action requires --notes-file and --title-file")
+            baseline_tag, baseline_label, commits, notes = release_notes(root, args.repository, args.tag, args.expected_sha)
+            title, description = generate_release_content(args.repository, args.tag, baseline_tag)
+            args.notes_file.write_text(description + "\n\n" + notes, encoding="utf-8")
+            args.title_file.write_text(title + "\n", encoding="utf-8")
             summary = (
                 f"### Release notes comparison\n\nBaseline: {baseline_label}\n\n"
-                f"Target: {args.tag} ({args.expected_sha})\n\n"
+                f"Target: {args.tag} ({args.expected_sha})\n\nTitle: {title}\n\n"
                 f"Included commits: {len(commits)}\n\n"
             )
             if summary_path := os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -160,7 +181,18 @@ def main():
         elif args.action == "first-attempt":
             check_first_publish_attempt(args.repository, args.tag, args.expected_sha, args.run_id or "", args.run_attempt or "")
         else:
-            check_assets(args.repository, args.tag, args.directory, published=args.action == "assets-published")
+            expected_title = None
+            expected_notes = None
+            if args.action == "assets-draft":
+                if not args.title_file or not args.notes_file:
+                    raise ValueError("assets-draft action requires --title-file and --notes-file")
+                expected_title = args.title_file.read_text(encoding="utf-8").strip()
+                expected_notes = args.notes_file.read_text(encoding="utf-8")
+                if not expected_title:
+                    raise ValueError("release title file is empty")
+            check_assets(args.repository, args.tag, args.directory,
+                         published=args.action == "assets-published", expected_title=expected_title,
+                         expected_notes=expected_notes)
     except (KeyError, OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Release gate failed: {error}", file=sys.stderr)
         return 1
