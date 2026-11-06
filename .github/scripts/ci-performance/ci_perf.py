@@ -192,6 +192,7 @@ def build_report(directory, junit, metadata, min_doc_tests=0):
         "config_id": CONFIG_ID,
         **metadata,
         "phases": phases,
+        "compile_timings_available": (Path(directory) / "compile-timings.html").is_file(),
         "tests": tests,
         "test_count": len(tests),
         "test_ids_sha256": scope_hash,
@@ -215,6 +216,8 @@ def summary(report):
         phase = report["phases"][name]
         seconds = phase["duration_seconds"]
         lines.append(f"| {name} | {seconds if seconds is not None else 'n/a'} | {phase['status']} |")
+    lines.append("")
+    lines.append("Cargo compile timing report: " + ("included in Rust performance artifact" if report["compile_timings_available"] else "unavailable"))
     lines.extend(["", f"Test execution (nextest + doc): {report['test_execution_seconds']} s", "", "### Slowest tests", "", "| Test | Seconds | Result |", "| --- | ---: | --- |"])
     for test in sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]:
         lines.append(f"| `{test['id']}` | {test['duration_seconds']:.3f} | {test['outcome']} |")

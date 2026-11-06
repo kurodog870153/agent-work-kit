@@ -47,6 +47,7 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 use std::{fs, path::PathBuf};
 
+use ci_timing::{log_test_timing, test_timing_enabled};
 use serde_json::Value;
 use serde_json::json;
 use work_flow::error::ExitCode;
@@ -137,18 +138,25 @@ fn installed_executable() -> &'static PathBuf {
 fn run(arguments: &[String]) -> Output {
     let executable = installed_executable();
     let started = std::time::Instant::now();
-    let output = Command::new(executable)
-        .args(arguments)
-        .output()
-        .expect("launch work");
+    let mut command = Command::new(executable);
+    command.args(arguments);
+    if test_timing_enabled() {
+        command.env("AWK_CLI_TIMING", "1");
+    }
+    let mut output = command.output().expect("launch work");
+    if test_timing_enabled() {
+        let mut application_stderr = Vec::new();
+        for line in output.stderr.split_inclusive(|byte| *byte == b'\n') {
+            if line.starts_with(b"AWK_CLI_TIMING ") || line.starts_with(b"AWK_CLI_TIMING_AGG ") {
+                eprint!("{}", String::from_utf8_lossy(line));
+            } else {
+                application_stderr.extend_from_slice(line);
+            }
+        }
+        output.stderr = application_stderr;
+    }
     log_test_timing("native_work_command", started);
     output
-}
-
-fn log_test_timing(label: &str, started: std::time::Instant) {
-    if std::env::var_os("AWK_TEST_TIMING").is_some() {
-        eprintln!("AWK_TEST_TIMING {label} {}", started.elapsed().as_micros());
-    }
 }
 
 fn rebind_current_diagnostics_fixture(root: &Path) {

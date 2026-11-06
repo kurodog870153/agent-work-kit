@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "ci-performance/investigate.py"
+MODULE_PATH = Path(__file__).resolve().parents[3] / "ci-performance/investigate/test_costs.py"
 SPEC = importlib.util.spec_from_file_location("ci_perf_investigate", MODULE_PATH)
 INVESTIGATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(INVESTIGATE)
@@ -18,7 +18,7 @@ class InvestigationLogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
             cargo = INVESTIGATE.timed_command(
-                "cargo", [sys.executable, "-c", "print('test result: ok. 1 passed; 0 failed;\\nAWK_TEST_TIMING git_init 2000\\ntest result: ok. 2 passed; 0 failed;')"],
+                "cargo", [sys.executable, "-c", "print('test result: ok. 1 passed; 0 failed;\\nAWK_TEST_TIMING git_init 2000\\nAWK_CLI_TIMING total 3000\\nAWK_CLI_TIMING dispatch 1000\\nAWK_CLI_TIMING_AGG artifact_file_read 4 2000\\ntest result: ok. 2 passed; 0 failed;')"],
                 output, output, "cargo",
             )
             nextest = INVESTIGATE.timed_command(
@@ -27,6 +27,10 @@ class InvestigationLogTests(unittest.TestCase):
             )
             self.assertEqual(cargo["test_count"], 2)
             self.assertEqual(cargo["internal_timings"]["git_init"]["sum_seconds"], 0.002)
+            self.assertEqual(cargo["cli_timings"]["total"]["sum_seconds"], 0.003)
+            self.assertEqual(cargo["cli_timings"]["dispatch"]["sum_seconds"], 0.001)
+            self.assertEqual(cargo["cli_timings"]["artifact_file_read"]["count"], 4)
+            self.assertEqual(cargo["cli_timings"]["artifact_file_read"]["sum_seconds"], 0.002)
             self.assertEqual(nextest["test_count"], 2)
             self.assertEqual(nextest["individual_tests"]["count"], 2)
             self.assertEqual(nextest["individual_tests"]["sum_seconds"], 0.005)
@@ -40,7 +44,6 @@ class InvestigationLogTests(unittest.TestCase):
     def test_nextest_single_test_summary(self):
         log = "PASS [  0.002s] work-infrastructure::lib one_test\nSummary [  0.010s] 1 test run: 1 passed\n"
         self.assertEqual(INVESTIGATE.test_count_from_log(log, "nextest"), 1)
-
 
 if __name__ == "__main__":
     unittest.main()

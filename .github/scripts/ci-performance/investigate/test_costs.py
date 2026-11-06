@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Collect comparable Rust test and filesystem timing evidence on CI runners."""
+"""Collect comparable Rust test timing evidence on CI runners."""
 
 import argparse
 import json
 import os
 from pathlib import Path
 import re
-import shutil
 import statistics
 import subprocess
 import sys
-import tempfile
 import time
 
 
@@ -49,6 +47,13 @@ def timed_command(name, command, output, cwd, runner, environment=None):
     internal = {}
     for label, micros in re.findall(r"AWK_TEST_TIMING (\w+) (\d+)", log_text):
         internal.setdefault(label, []).append(int(micros) / 1_000_000)
+    cli = {}
+    for label, micros in re.findall(r"AWK_CLI_TIMING (\w+) (\d+)", log_text):
+        cli.setdefault(label, {"samples": [], "count": 0, "sum_seconds": 0})["samples"].append(int(micros) / 1_000_000)
+    for label, count, micros in re.findall(r"AWK_CLI_TIMING_AGG (\w+) (\d+) (\d+)", log_text):
+        timing = cli.setdefault(label, {"samples": [], "count": 0, "sum_seconds": 0})
+        timing["count"] += int(count)
+        timing["sum_seconds"] += int(micros) / 1_000_000
     record = {
         "command": command,
         "seconds": seconds,
@@ -58,8 +63,19 @@ def timed_command(name, command, output, cwd, runner, environment=None):
                     "median_seconds": round(statistics.median(samples), 6)}
             for label, samples in internal.items()
         },
+        "cli_timings": {
+            label: {"count": len(timing["samples"]) + timing["count"],
+                    "sum_seconds": round(sum(timing["samples"]) + timing["sum_seconds"], 3),
+                    "median_seconds": round(statistics.median(timing["samples"]), 6)
+                    if timing["samples"] and not timing["count"] else "n/a"}
+            for label, timing in cli.items()
+        },
     }
     record["test_count"] = test_count_from_log(log_text, runner)
+    outer = record["internal_timings"].get("native_work_command", {}).get("sum_seconds")
+    inner = record["cli_timings"].get("total", {}).get("sum_seconds")
+    if outer is not None and inner is not None:
+        record["outside_cli_seconds"] = round(max(0, outer - inner), 3)
     durations = [float(value) for value in re.findall(r"^\s*PASS\s+\[\s*([\d.]+)s\]", log_text, re.MULTILINE)] if runner == "nextest" else []
     if durations:
         record["individual_tests"] = {
@@ -71,22 +87,8 @@ def timed_command(name, command, output, cwd, runner, environment=None):
     return record
 
 
-def probe_operation(name, repetitions, operation):
-    samples = []
-    for index in range(repetitions):
-        start = time.perf_counter()
-        operation(index)
-        samples.append(round(time.perf_counter() - start, 6))
-    result = {
-        "samples_seconds": samples,
-        "median_seconds": round(statistics.median(samples), 6),
-    }
-    print(f"{name}: median={result['median_seconds']:.6f}s, n={repetitions}", flush=True)
-    return result
-
-
 def run(args):
-    workspace = Path(__file__).resolve().parents[3]
+    workspace = Path(__file__).resolve().parents[4]
     rust = workspace / "rust"
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -105,55 +107,12 @@ def run(args):
         "toolchain": os.environ.get("RUSTUP_TOOLCHAIN", "unknown"),
         "platform": "windows" if sys.platform == "win32" else "macos" if sys.platform == "darwin" else sys.platform,
         "target": args.target or "native",
-        "repetitions": args.repetitions,
         "test_scope": "work-cli process_boundary integration test",
         "test_runs": {},
         "slow_tests": {},
-        "operations": {},
     }
-
-    source = workspace / "rust/crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project"
-    references = workspace / "skills/work/references"
-    with tempfile.TemporaryDirectory(prefix="awk-perf-") as scratch:
-        scratch = Path(scratch)
-
-        def git_init(index):
-            directory = scratch / f"git-{index}"
-            directory.mkdir()
-            completed = subprocess.run(
-                ["git", "init", "--quiet", str(directory)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            if completed.returncode:
-                raise RuntimeError(f"git init failed: {completed.stderr.decode(errors='replace')}")
-
-        results["operations"]["git_init"] = probe_operation("git_init", args.repetitions, git_init)
-        for label, fixture in (("project_fixture_copy", source), ("references_copy", references)):
-            if not fixture.is_dir():
-                raise FileNotFoundError(fixture)
-            results["operations"][label] = probe_operation(
-                label,
-                args.repetitions,
-                lambda index, fixture=fixture, label=label: shutil.copytree(
-                    fixture, scratch / f"{label}-{index}"
-                ),
-            )
-
     if not binary.is_file():
         raise FileNotFoundError(f"Build the work-cli test target first: {binary}")
-    results["operations"]["native_work_help"] = probe_operation(
-        "native_work_help",
-        args.repetitions,
-        lambda _index: subprocess.run(
-            [str(binary), "--help"],
-            cwd=rust,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            check=True,
-        ),
-    )
 
     environment = {**os.environ, "AWK_TEST_TIMING": "1", "CARGO_TERM_COLOR": "never"}
     cargo = ["cargo", "test", "--locked", "-p", "work-cli", "--test", "process_boundary", *target_args, "--", "--test-threads=1", "--nocapture"]
@@ -185,6 +144,10 @@ def run(args):
     for name, item in results["test_runs"].items():
         if item["exit_code"] != 0:
             diagnostics.append(f"{name} exited with {item['exit_code']}")
+        outer_count = item["internal_timings"].get("native_work_command", {}).get("count")
+        inner_count = item["cli_timings"].get("total", {}).get("count")
+        if outer_count and inner_count != outer_count:
+            diagnostics.append(f"{name} CLI timing count does not match native command count")
         if name.startswith("nextest_") and item.get("individual_tests", {}).get("count") != item["test_count"]:
             diagnostics.append(f"{name} PASS lines do not match its summary count")
     for test_name, runners in results["slow_tests"].items():
@@ -222,9 +185,22 @@ def run(args):
             f"| {name} | {label} | {timing['count']} | {timing['sum_seconds']} | {timing['median_seconds']} |"
             for label, timing in item["internal_timings"].items()
         )
-    summary.extend(["", "| Operation | Median seconds | Samples |", "| --- | ---: | ---: |"])
-    summary.extend(f"| {name} | {item['median_seconds']} | {args.repetitions} |" for name, item in results["operations"].items())
-    summary.extend(["", "Operation probes are standalone filesystem and process baselines, not timings inside the Rust tests."])
+    summary.extend(["", "### Native Work command breakdown", "", "| Run | Stage | Calls | Sum seconds | Median seconds |", "| --- | --- | ---: | ---: | ---: |"])
+    for name, item in results["test_runs"].items():
+        summary.extend(
+            f"| {name} | {label} | {timing['count']} | {timing['sum_seconds']} | {timing['median_seconds']} |"
+            for label, timing in item["cli_timings"].items()
+        )
+        if "outside_cli_seconds" in item:
+            summary.append(f"| {name} | outside CLI timer (startup, serialization, exit, capture) | n/a | {item['outside_cli_seconds']} | n/a |")
+    summary.extend(["", "CLI stages overlap: dispatch includes Git, file I/O, and command logic; outside CLI timer includes process startup, response serialization, exit, and output capture. Artifact file reads are aggregated per process, so their median is unavailable. These values do not isolate startup or all file reads."])
+    summary.extend(["", "### Parallelism comparison", "", "| Threads | Tests | Wall seconds | Speedup vs 1 thread |", "| ---: | ---: | ---: | ---: |"])
+    baseline = results["test_runs"].get("nextest_1", {}).get("seconds")
+    for threads in args.threads:
+        item = results["test_runs"][f"nextest_{threads}"]
+        speedup = round(baseline / item["seconds"], 2) if baseline and item["seconds"] else "n/a"
+        summary.append(f"| {threads} | {item['test_count']} | {item['seconds']} | {speedup} |")
+    summary.extend(["", "Parallelism results cover process_boundary only; they do not establish the best setting for the full workspace."])
     if diagnostics:
         summary.extend(["", "Diagnostics: " + "; ".join(diagnostics)])
     markdown = "\n".join(summary) + "\n"
@@ -240,11 +216,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--target", default="")
-    parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--threads", type=int, nargs="+", default=[1, 2, 4, 8])
     args = parser.parse_args()
-    if args.repetitions < 1 or not args.threads or any(value < 1 for value in args.threads):
-        parser.error("repetitions and thread counts must be positive")
+    if not args.threads or any(value < 1 for value in args.threads):
+        parser.error("thread counts must be positive")
     return run(args)
 
 

@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ci-timing = { path = "../../common/ci-timing" }
 skill-api = { path = "../../skill/skill-api" }
 work-feature = { path = "../work-feature" }
 work-model = { path = "../work-model" }

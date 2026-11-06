@@ -30,11 +30,14 @@ class PerformanceReportTests(unittest.TestCase):
             for phase in ci_perf.PHASES:
                 (root / f"{phase}.json").write_text(json.dumps({"phase": phase, "duration_seconds": 2.5, "exit_code": 0}), encoding="utf-8")
             (root / "doc.log").write_text("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n", encoding="utf-8")
+            (root / "compile-timings.html").write_text("report", encoding="utf-8")
             (root / "junit.xml").write_text('<testsuites><testsuite name="binary"><testcase classname="suite" name="case" time="1.25" /></testsuite></testsuites>', encoding="utf-8")
             report = ci_perf.build_report(root, root / "junit.xml", {"platform": "macos", "commit": "abc", "toolchain": "1.85.0"})
             self.assertEqual(report["status"], "passed")
             self.assertEqual(report["test_execution_seconds"], 5.0)
             self.assertEqual(report["doc_tests"]["passed"], 1)
+            self.assertTrue(report["compile_timings_available"])
+            self.assertIn("included in Rust performance artifact", ci_perf.summary(report))
 
     def test_successful_doc_command_with_no_test_binaries_reports_zero_tests(self):
         with tempfile.TemporaryDirectory() as directory:

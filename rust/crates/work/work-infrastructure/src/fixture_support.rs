@@ -1,13 +1,8 @@
 //! Artifact builders used by process boundary integration tests.
 
+use ci_timing::log_test_timing;
 use serde_json::Value;
 pub use work_operations::derivation::graph::ArtifactNode;
-
-pub(crate) fn log_test_timing(label: &str, started: std::time::Instant) {
-    if std::env::var_os("AWK_TEST_TIMING").is_some() {
-        eprintln!("AWK_TEST_TIMING {label} {}", started.elapsed().as_micros());
-    }
-}
 
 /// Prepare a complete case in memory. Protected entries include historical raw
 /// evidence and deliberate negative-test damage; callers explicitly select them.

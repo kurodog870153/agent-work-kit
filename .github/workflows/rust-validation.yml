@@ -61,7 +61,10 @@ jobs:
       - name: Compile Rust tests
         id: mac_test_compile
         continue-on-error: true
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run
+        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --timings
+      - name: Investigate Rust compilation
+        if: steps.mac_test_compile.outcome == 'success'
+        run: python3 -B ../.github/scripts/ci-performance/investigate/compile.py --directory .ci-perf
       - name: Run Rust unit and integration tests
         if: steps.mac_test_compile.outcome == 'success'
         continue-on-error: true
@@ -72,7 +75,10 @@ jobs:
         run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
       - name: Investigate Rust test costs
         if: steps.mac_test_compile.outcome == 'success'
-        run: python3 -B ../.github/scripts/ci-performance/investigate.py --output .ci-perf/investigation --repetitions 10
+        run: python3 -B ../.github/scripts/ci-performance/investigate/test_costs.py --output .ci-perf/investigation
+      - name: Probe Rust fixture and process costs
+        if: steps.mac_test_compile.outcome == 'success'
+        run: python3 -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10
       - name: Report Rust performance
         if: always()
         run: python3 ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform macos --target native
@@ -197,7 +203,10 @@ jobs:
       - name: Compile Rust tests
         id: windows_test_compile
         continue-on-error: true
-        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --timings --target $env:WORK_RUST_TARGET
+      - name: Investigate Rust compilation
+        if: steps.windows_test_compile.outcome == 'success'
+        run: python -B ../.github/scripts/ci-performance/investigate/compile.py --directory .ci-perf --target $env:WORK_RUST_TARGET
       - name: Run Rust unit and integration tests
         if: steps.windows_test_compile.outcome == 'success'
         continue-on-error: true
@@ -208,7 +217,10 @@ jobs:
         run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
       - name: Investigate Rust test costs
         if: steps.windows_test_compile.outcome == 'success'
-        run: python -B ../.github/scripts/ci-performance/investigate.py --output .ci-perf/investigation --repetitions 10 --target $env:WORK_RUST_TARGET
+        run: python -B ../.github/scripts/ci-performance/investigate/test_costs.py --output .ci-perf/investigation --target $env:WORK_RUST_TARGET
+      - name: Probe Rust fixture and process costs
+        if: steps.windows_test_compile.outcome == 'success'
+        run: python -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10 --target $env:WORK_RUST_TARGET
       - name: Report Rust performance
         if: always()
         run: python ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform windows --target $env:WORK_RUST_TARGET --min-doc-tests 1
