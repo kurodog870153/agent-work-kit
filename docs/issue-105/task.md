@@ -32,7 +32,7 @@
 
 每項任務只有一個可驗收成果。任務中列出的檔案是預計修改範圍；寫入前須重新讀取實際內容與相同引用，跨檔案不可分割的變更須同組套用。各任務完成時執行直接相關測試；後續整體驗收不取代前面任務的驗證。
 
-本次授權依序執行 Windows 與 macOS 全部任務。Windows 環境可執行的 macOS 邏輯測試照常執行；需要 macOS ARM64 主機或實際 Host 的驗收若無法執行，保留未完成並記錄原因，不以靜態檢查代替。
+本次授權依序執行 Windows 與 macOS 全部任務。Windows 環境可執行的 macOS 邏輯測試照常執行；需要 macOS ARM64 主機或實際 Codex Host 的驗收若無法執行，保留未完成並記錄原因，不以靜態檢查代替。Claude Code Skill 使用模擬驗收。
 
 執行紀錄（Windows 主機）：四套件封裝單元測試、Release 相關 35 項 Python 測試、Windows 安裝核心與 Package 入口 fixture、Windows 鎖及 Tooling 交易測試、Downloader／入口 9 項測試均通過；其中 1 項 macOS 測試略過。Windows 核心 fixture 涵蓋兩個 Host 的 Source 安裝；兩個 Host 的實際 ZIP Downloader 端到端測試通過，含 Package／Downloader 中斷復原。Claude 首次重啟測試揭露 Tooling 交易缺少 Host 傳遞，修正後完整重驗通過。macOS 四個安裝腳本 Bash 語法、CLI 解析、Global Instructions policy／交易及 Node 狀態測試通過；macOS 原生鎖測試在 Windows 編譯器因缺少 POSIX API 無法執行，目標預檢需 macOS binary，原生安裝及實際 Host 載入亦尚未驗證。Host CLI 模式測試通過，尚不能替代實際 Host 載入。發布工作流 YAML 可解析，遠端 CI 尚未執行。曾因沙箱拒絕檔案操作而在沙箱外重跑 Windows fixture；失敗執行留下的暫存目錄未擅自清理。
 
@@ -190,13 +190,17 @@
 
 - [ ] Codex 能載入 Work、Tooling Skill 並完成代表性 CLI 操作；相關回歸與實測證據齊備。
 
-### 18. 驗證 Claude Code 的 Skill 載入與 CLI 操作
+驗證紀錄（Windows，2026-11-06）：`cargo build --release -p work-cli -p tooling-cli` 通過。在隔離目錄啟動 Codex CLI，Host 顯示 `work`、`tooling` 兩個 Skill；但唯讀讀取 Skill 檔案的命令被執行政策拒絕，兩份 Bootstrap 與 CLI 均未由 Codex 執行。F05 保持未完成。
 
-相依：任務 13、15、16。在實際 Claude Code 中載入 Work、Tooling Skill 並操作共用 CLI；驗證共享來源在此 Host 的載入行為。
+### 18. 模擬驗證 Claude Code 的 Skill 安裝與 CLI 操作
 
-預計檔案：必要的 `rust/crates/{work,tooling}/*/tests/` 與既有驗收記錄。執行相關 Rust 回歸並記錄 Claude Code 實測結果。
+相依：任務 13。使用隔離的 Claude Code Windows 目標模擬安裝 Work、Tooling Skill 並操作共用 CLI；核對兩個 Skill、安裝狀態、規範檔案與 Host 隔離。不要求啟動 Claude Code；macOS 原生安裝與雙 Host 交替驗收仍由任務 15、16 負責。
 
-- [ ] Claude Code 能載入 Work、Tooling Skill 並完成代表性 CLI 操作；相關回歸與實測證據齊備。
+預計檔案：必要的 `.github/scripts/tests/release/windows/`、`rust/crates/{work,tooling}/*/tests/` 與既有驗收記錄。執行安裝模擬與相關 CLI 回歸，記錄結果。
+
+- [x] Claude Code 目標的 Work、Tooling Skill 模擬安裝與代表性 CLI 操作通過；相關回歸與模擬證據齊備。
+
+驗證紀錄（Windows，2026-11-06）：`.github/scripts/tests/release/windows/install/test_install.ps1` 通過，涵蓋 Claude 目標安裝、`CLAUDE.md`、Host 狀態與隔離。在獨立的 `.claude/skills/` 模擬目標中，Work `contract list` 回傳 `success`／`work-contract-catalog`，Tooling `policy discover --node .` 回傳 `success` 與三個直接子節點。此項為模擬驗收，未啟動 Claude Code。
 
 ### 19. 更新使用與復原文件
 
