@@ -57,5 +57,15 @@ class InstallerEntryTests(unittest.TestCase):
         self.assertIn("prepared", transaction)
         self.assertIn("previous", transaction)
 
+    def test_global_instructions_modules_loaded_by_both_cores_exist(self):
+        for platform, suffix in (("mac", "sh"), ("windows", "ps1")):
+            installer = ROOT / "os-scripts" / platform / "installer"
+            core = (installer / "install" / f"install-core.{suffix}").read_text(encoding="utf-8")
+            for module in ("policy", "transaction"):
+                relative = f"global-instructions/{module}.{suffix}"
+                with self.subTest(platform=platform, module=module):
+                    self.assertIn(relative, core)
+                    self.assertTrue((installer / relative).is_file())
+
 if __name__ == "__main__":
     unittest.main()

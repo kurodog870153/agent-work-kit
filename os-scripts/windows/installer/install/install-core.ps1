@@ -11,7 +11,7 @@ $CliArgs = @()
 if ($args.Count -gt 4) { $CliArgs = [string[]] $args[4..($args.Count - 1)] }
 $installerRoot = Split-Path -Parent $PSScriptRoot
 foreach ($module in @('cli/parse-options.ps1', 'state/state-core.ps1', 'target/preflight.ps1', 'lock/mutex.ps1',
-    'transaction/work.ps1', 'install/work-install.ps1', 'install/tooling-install.ps1', 'transaction/tooling.ps1', 'install/migration-cleanup.ps1', 'global-agents/policy.ps1', 'global-agents/transaction.ps1')) {
+    'transaction/work.ps1', 'install/work-install.ps1', 'install/tooling-install.ps1', 'transaction/tooling.ps1', 'install/migration-cleanup.ps1', 'global-instructions/policy.ps1', 'global-instructions/transaction.ps1')) {
     . (Join-Path $installerRoot $module)
 }
 
