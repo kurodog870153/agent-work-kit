@@ -210,7 +210,9 @@ def summary(report):
     lines = [
         f"## Rust performance: {report['platform']}",
         "",
-        f"Result: **{report['status']}** · commit `{report['commit']}` · toolchain `{report['toolchain']}`",
+        f"Result: **{report['status']}** · commit `{report['commit']}` · toolchain `{report['toolchain']}` · target `{report.get('target', 'native')}`",
+        "",
+        "### Phase durations",
         "",
         "| Phase | Seconds | Result |",
         "| --- | ---: | --- |",
@@ -220,7 +222,7 @@ def summary(report):
         seconds = phase["duration_seconds"]
         lines.append(f"| {name} | {seconds if seconds is not None else 'n/a'} | {phase['status']} |")
     lines.append("")
-    lines.append(pie_chart("Rust phase time", [(name, report["phases"][name]["duration_seconds"]) for name in PHASES]))
+    lines.append(pie_chart("Phase durations chart", [(name, report["phases"][name]["duration_seconds"]) for name in PHASES]).replace("### ", "#### ", 1))
     if any(report["phases"][name]["duration_seconds"] is None for name in PHASES):
         lines.append("Only recorded phases are charted.\n")
     lines.append("Cargo compile timing report: " + ("included in Rust performance artifact" if report["compile_timings_available"] else "unavailable"))
@@ -230,7 +232,7 @@ def summary(report):
         lines.append(f"| `{test['id']}` | {test['duration_seconds']:.3f} | {test['outcome']} |")
     if not report["tests"]:
         lines.append("| Unavailable | n/a | incomplete |")
-    lines.extend(["", bar_chart("Slowest test durations", [(test["id"], test["duration_seconds"]) for test in slowest])])
+    lines.extend(["", bar_chart("Slowest test durations", [(test["id"], test["duration_seconds"]) for test in slowest]).replace("### ", "#### ", 1)])
     if report["diagnostics"]:
         lines.extend(["", "Diagnostics: " + "; ".join(report["diagnostics"])])
     return "\n".join(lines) + "\n"
@@ -243,6 +245,25 @@ def append_summary(text):
             output.write(text)
     else:
         print(text)
+
+
+def environment_command(args):
+    lines = [
+        f"## Rust validation: {args.platform}",
+        "",
+        "### Runner environment",
+        "",
+        f"| Field | Value |",
+        "| --- | --- |",
+        f"| Checkout commit | `{subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        f"| Runner | {os.environ.get('RUNNER_OS', 'unknown')} / {os.environ.get('RUNNER_ARCH', 'unknown')} / {os.environ.get('ImageOS', 'unknown')} |",
+        f"| Rust target | `{args.target}` |",
+        f"| Rust compiler | `{subprocess.run(['rustc', '--version'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        f"| Cargo | `{subprocess.run(['cargo', '--version'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        "",
+    ]
+    append_summary("\n".join(lines))
+    return 0
 
 
 def report_command(args):
@@ -426,6 +447,9 @@ def enforce_command(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
+    environment_parser = commands.add_parser("environment")
+    environment_parser.add_argument("--platform", required=True)
+    environment_parser.add_argument("--target", required=True)
     measure_parser = commands.add_parser("measure")
     measure_parser.add_argument("--directory", required=True)
     measure_parser.add_argument("--phase", choices=PHASES, required=True)
@@ -446,7 +470,7 @@ def main():
     enforce_parser.add_argument("--junit", required=True)
     enforce_parser.add_argument("--min-doc-tests", type=int, default=0)
     args = parser.parse_args()
-    return {"measure": measure, "report": report_command, "compare": compare_command, "enforce": enforce_command}[args.action](args)
+    return {"environment": environment_command, "measure": measure, "report": report_command, "compare": compare_command, "enforce": enforce_command}[args.action](args)
 
 
 if __name__ == "__main__":

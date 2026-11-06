@@ -189,25 +189,27 @@ def run(args):
         f"Event: `{results['event']}`; commit: `{results['commit']}`; toolchain: `{results['toolchain']}`.",
         f"Scope: `{results['test_scope']}`; target: `{results['target']}`; result: **{results['status']}**.",
         "",
+        "### Test run wall time",
+        "",
         "| Run | Tests | Seconds | Exit |",
         "| --- | ---: | ---: | ---: |",
     ]
     summary.extend(f"| {name} | {item['test_count']} | {item['seconds']} | {item['exit_code']} |" for name, item in results["test_runs"].items())
-    summary.extend(["", charts["runs"]])
-    summary.extend(["", "| Nextest run | PASS lines | Sum of test seconds | Median test seconds |", "| --- | ---: | ---: | ---: |"])
+    summary.extend(["", charts["runs"].replace("### ", "#### ", 1)])
+    summary.extend(["", "### Nextest test durations", "", "| Nextest run | PASS lines | Sum of test seconds | Median test seconds |", "| --- | ---: | ---: | ---: |"])
     summary.extend(
         f"| {name} | {item['individual_tests']['count']} | {item['individual_tests']['sum_seconds']} | {item['individual_tests']['median_seconds']} |"
         for name, item in results["test_runs"].items() if "individual_tests" in item
     )
-    summary.extend(["", "### Slow storage tests", "", "| Test | Runner | Seconds | Setup sum seconds | Historical skill copy sum seconds | Native command sum seconds |", "| --- | --- | ---: | ---: | ---: | ---: |"])
+    summary.extend(["", "### Slow storage wall time", "", "| Test | Runner | Seconds | Setup sum seconds | Historical skill copy sum seconds | Native command sum seconds |", "| --- | --- | ---: | ---: | ---: | ---: |"])
     for test_name, runners in results["slow_tests"].items():
         for runner, item in runners.items():
             setup = item["internal_timings"].get("storage_case_setup", {}).get("sum_seconds", "n/a")
             skill_copy = item["internal_timings"].get("historical_skill_copy", {}).get("sum_seconds", "n/a")
             native = item["internal_timings"].get("storage_native_command", {}).get("sum_seconds", "n/a")
             summary.append(f"| {test_name} | {runner} | {item['seconds']} | {setup} | {skill_copy} | {native} |")
-    summary.extend(["", charts["slow"], "", charts["setup"]])
-    summary.extend(["", "| Run | Internal step | Calls | Sum seconds | Median seconds |", "| --- | --- | ---: | ---: | ---: |"])
+    summary.extend(["", charts["slow"].replace("### ", "#### ", 1), "", charts["setup"].replace("### ", "#### ", 1)])
+    summary.extend(["", "### Internal test steps", "", "| Run | Internal step | Calls | Sum seconds | Median seconds |", "| --- | --- | ---: | ---: | ---: |"])
     for name, item in results["test_runs"].items():
         summary.extend(
             f"| {name} | {label} | {timing['count']} | {timing['sum_seconds']} | {timing['median_seconds']} |"
@@ -221,7 +223,7 @@ def run(args):
         )
         if "outside_cli_seconds" in item:
             summary.append(f"| {name} | outside CLI timer (startup, serialization, exit, capture) | n/a | {item['outside_cli_seconds']} | n/a |")
-    summary.extend(["", charts["native"]])
+    summary.extend(["", charts["native"].replace("### ", "#### ", 1)])
     summary.extend(["", "CLI stages overlap: dispatch includes Git, file I/O, and command logic; outside CLI timer includes process startup, response serialization, exit, and output capture. Artifact file reads are aggregated per process, so their median is unavailable. These values do not isolate startup or all file reads."])
     summary.extend(["", "### Parallelism comparison", "", "| Threads | Tests | Wall seconds | Speedup vs 1 thread |", "| ---: | ---: | ---: | ---: |"])
     baseline = results["test_runs"].get("nextest_1", {}).get("seconds")
@@ -229,7 +231,7 @@ def run(args):
         item = results["test_runs"][f"nextest_{threads}"]
         speedup = round(baseline / item["seconds"], 2) if baseline and item["seconds"] else "n/a"
         summary.append(f"| {threads} | {item['test_count']} | {item['seconds']} | {speedup} |")
-    summary.extend(["", charts["parallel"]])
+    summary.extend(["", charts["parallel"].replace("### ", "#### ", 1)])
     summary.extend(["", "Parallelism results cover process_boundary only; they do not establish the best setting for the full workspace."])
     if diagnostics:
         summary.extend(["", "Diagnostics: " + "; ".join(diagnostics)])
@@ -243,6 +245,8 @@ def run(args):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
     parser.add_argument("--target", default="")

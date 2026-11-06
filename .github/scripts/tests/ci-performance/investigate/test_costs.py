@@ -1,10 +1,13 @@
 """Verify that investigation logs retain comparable test evidence."""
 
 import importlib.util
+import io
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).resolve().parents[3] / "ci-performance/investigate/test_costs.py"
@@ -14,6 +17,16 @@ SPEC.loader.exec_module(INVESTIGATE)
 
 
 class InvestigationLogTests(unittest.TestCase):
+    def test_main_prints_unicode_with_legacy_console_encoding(self):
+        output = io.BytesIO()
+        console = io.TextIOWrapper(output, encoding="cp1252")
+        with patch.object(sys, "stdout", console), patch.object(sys, "argv", ["test_costs.py", "--output", "unused"]), patch.object(
+            INVESTIGATE, "run", side_effect=lambda args: print("█") or 0
+        ):
+            self.assertEqual(INVESTIGATE.main(), 0)
+            console.flush()
+        self.assertEqual(output.getvalue(), f"█{os.linesep}".encode("utf-8"))
+
     def test_investigation_charts_cover_all_requested_measurements(self):
         results = {
             "test_runs": {

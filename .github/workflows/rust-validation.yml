@@ -41,17 +41,7 @@ jobs:
           tool: nextest@0.9.148
           fallback: none
       - name: Record runner environment
-        run: |
-          commit="$(git rev-parse HEAD)"
-          {
-            echo '## Work Rust macOS runner'
-            echo "Checkout commit: $commit"
-            echo "Runner: $RUNNER_OS / $RUNNER_ARCH / ${ImageOS:-unknown}"
-            sw_vers
-            uname -m
-            rustc --version
-            cargo --version
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 -B ../.github/scripts/ci-performance/ci_perf.py environment --platform macos --target native
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Check all Rust targets
@@ -184,16 +174,7 @@ jobs:
           tool: nextest@0.9.148
           fallback: none
       - name: Record runner environment
-        run: |
-          "Runner: $env:RUNNER_OS / $env:RUNNER_ARCH" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "Rust target: $env:WORK_RUST_TARGET" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          $commit = git rev-parse HEAD
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "Checkout commit: $commit" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          rustc --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: python -B ../.github/scripts/ci-performance/ci_perf.py environment --platform windows --target $env:WORK_RUST_TARGET
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Check all Rust targets
