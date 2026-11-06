@@ -19,6 +19,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from report_charts import bar_chart, pie_chart
+
 
 SCHEMA_VERSION = 1
 CONFIG_ID = "nextest-0.9.148-workspace-locked-ci-doc-v1"
@@ -217,6 +220,9 @@ def summary(report):
         seconds = phase["duration_seconds"]
         lines.append(f"| {name} | {seconds if seconds is not None else 'n/a'} | {phase['status']} |")
     lines.append("")
+    lines.append(pie_chart("Rust phase time", [(name, report["phases"][name]["duration_seconds"]) for name in PHASES]))
+    if any(report["phases"][name]["duration_seconds"] is None for name in PHASES):
+        lines.append("Only recorded phases are charted.\n")
     lines.append("Cargo compile timing report: " + ("included in Rust performance artifact" if report["compile_timings_available"] else "unavailable"))
     lines.extend(["", f"Test execution (nextest + doc): {report['test_execution_seconds']} s", "", "### Slowest tests", "", "| Test | Seconds | Result |", "| --- | ---: | --- |"])
     for test in sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]:
@@ -330,7 +336,7 @@ def compare_reports(current, previous):
         return {"status": "unavailable", "message": "Historical median is invalid."}
     change = (float(current_seconds) / median - 1) * 100
     is_regression = Decimal(str(current_seconds)) > Decimal(str(median)) * Decimal("1.30")
-    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "change_percent": round(change, 2), "message": f"{scope}: median of the latest 5 main reports {median:.3f}s; current change {change:+.2f}%.{details}"}
+    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "current_seconds": current_seconds, "change_percent": round(change, 2), "message": f"{scope}: median of the latest 5 main reports {median:.3f}s; current change {change:+.2f}%.{details}"}
 
 
 def api_json(path, token):
@@ -398,7 +404,10 @@ def compare_command(args):
             result = {"status": "incomparable", "message": "Fewer than 5 compatible successful main reports; recent baselines do not match the current CI configuration."}
     except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError, zipfile.BadZipFile, json.JSONDecodeError) as error:
         result = {"status": "unavailable", "message": f"Could not retrieve or analyze historical reports: {error}"}
-    append_summary("\n### Performance comparison with main history\n\n" + result["message"] + (" **Performance regression warning**" if result["status"] == "regression" else "") + "\n")
+    comparison = ""
+    if result["status"] in ("normal", "regression"):
+        comparison = "\n" + bar_chart("Current versus main median", [("Current", result["current_seconds"]), ("Main median", result["median_seconds"])])
+    append_summary("\n### Performance comparison with main history\n\n" + result["message"] + (" **Performance regression warning**" if result["status"] == "regression" else "") + "\n" + comparison)
     return 0
 
 

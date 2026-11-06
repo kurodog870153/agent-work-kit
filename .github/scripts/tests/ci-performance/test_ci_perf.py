@@ -13,6 +13,13 @@ import ci_perf
 
 
 class PerformanceReportTests(unittest.TestCase):
+    def test_chart_omits_missing_measurements_and_scales_comparison(self):
+        self.assertIn("No measured data available", ci_perf.pie_chart("Phases", [("compile", None)]))
+        self.assertIn('"test" : 2.5', ci_perf.pie_chart("Phases", [("compile", None), ("test", 2.5)]))
+        chart = ci_perf.bar_chart("Comparison", [("Current", 10), ("Main median", 5)])
+        self.assertIn("| Current | 10.000 | " + "█" * 20, chart)
+        self.assertIn("| Main median | 5.000 | " + "█" * 10, chart)
+
     def test_measure_displays_unicode_when_console_starts_as_cp1252(self):
         with tempfile.TemporaryDirectory() as directory:
             console_bytes = io.BytesIO()
@@ -38,6 +45,8 @@ class PerformanceReportTests(unittest.TestCase):
             self.assertEqual(report["doc_tests"]["passed"], 1)
             self.assertTrue(report["compile_timings_available"])
             self.assertIn("included in Rust performance artifact", ci_perf.summary(report))
+            self.assertIn('"compile" : 2.5', ci_perf.summary(report))
+            self.assertIn("```mermaid", ci_perf.summary(report))
 
     def test_successful_doc_command_with_no_test_binaries_reports_zero_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -112,6 +121,7 @@ class PerformanceReportTests(unittest.TestCase):
         history = [{**base, "test_execution_seconds": seconds} for seconds in (8, 9, 10, 11, 50)]
         normal = ci_perf.compare_reports({**base, "test_execution_seconds": 13}, history)
         self.assertEqual(normal["status"], "normal")
+        self.assertEqual(normal["current_seconds"], 13)
         self.assertIn("Total test execution (nextest + doc)", normal["message"])
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.01}, history)["status"], "regression")
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.0004}, history)["status"], "regression")
@@ -178,6 +188,8 @@ class PerformanceReportTests(unittest.TestCase):
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=report, workflow="workflow.yml", artifact="rust-perf")), 0)
             self.assertIn("status=completed", api.call_args.args[0])
             self.assertIn("Performance regression warning", summary.call_args.args[0])
+            self.assertIn("| Current | 13.010 |", summary.call_args.args[0])
+            self.assertIn("| Main median | 10.000 |", summary.call_args.args[0])
 
     def test_history_skips_broken_artifact_before_selecting_five(self):
         base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "test_ids_sha256": "same", "status": "passed"}
@@ -205,6 +217,7 @@ class PerformanceReportTests(unittest.TestCase):
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=path, workflow="workflow.yml", artifact="rust-perf")), 0)
             self.assertIn("Shared nextest tests (compared: 1", summary.call_args.args[0])
             self.assertIn("Performance regression warning", summary.call_args.args[0])
+            self.assertIn("| Current | 13.010 |", summary.call_args.args[0])
 
 
 if __name__ == "__main__":

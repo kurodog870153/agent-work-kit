@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
 from release_publication_checks import expected_assets
-from release_verification_report import build_report, main, required_checks, workflow_stage_statuses
+from release_verification_report import build_report, check_chart_counts, main, required_checks, workflow_stage_statuses
 from release_post_publish_checks import main as post_publish_main, verify
 
 
@@ -196,6 +196,10 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             self.assertEqual(report["stages"]["post_publish_verify"], "failure")
             summary = summary_path.read_text(encoding="utf-8")
             self.assertIn("Release verification: failure", summary)
+            self.assertIn("### Release stage results", summary)
+            self.assertIn('"failure" : 1', summary)
+            self.assertIn("### Asset check results", summary)
+            self.assertIn(f'"missing" : {len(required_checks("1.2.3")) - 1}', summary)
             self.assertIn("signature rejected", summary)
             self.assertEqual(report["checks"][0]["asset"], "agent-work-kit-v1.2.3-codex-macos-arm64.zip")
 
@@ -217,6 +221,7 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             report = build_report("1.2.3", "a" * 40, "https://example.invalid/run", stages, expected, actual, checks)
             self.assertEqual(report["result"], "success")
             self.assertTrue(report["attestation_verified"])
+            self.assertEqual(check_chart_counts("1.2.3", checks)["missing"], 0)
             missing = [item for item in checks if item["check"] != "download_url_latest"]
             report = build_report("1.2.3", "a" * 40, "https://example.invalid/run", stages, expected, actual, missing)
             self.assertEqual(report["result"], "failure")

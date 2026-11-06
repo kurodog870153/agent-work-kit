@@ -242,7 +242,7 @@ mod tests {
     use serde_json::Value;
 
     #[test]
-    fn portable_path_identity_matches_current_contract_unicode_16() {
+    fn portable_path_identity_matches_current_contract() {
         assert_eq!(portable_path_identity("Straße/CAFÉ"), "strasse/café");
         assert_eq!(
             portable_path_identity("STRASSE/cafe\u{301}"),
