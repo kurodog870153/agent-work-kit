@@ -37,10 +37,10 @@ pub fn log_cli_timing(label: &str, started: Instant) {
 }
 
 pub fn flush_cli_timings() {
-    if cli_timing_enabled() {
-        if let Some(timing) = FILE_READ_TIMING.get() {
-            let (count, micros) = *timing.lock().expect("timing lock");
-            eprintln!("AWK_CLI_TIMING_AGG artifact_file_read {count} {micros}");
-        }
+    if cli_timing_enabled()
+        && let Some(timing) = FILE_READ_TIMING.get()
+    {
+        let (count, micros) = *timing.lock().expect("timing lock");
+        eprintln!("AWK_CLI_TIMING_AGG artifact_file_read {count} {micros}");
     }
 }
