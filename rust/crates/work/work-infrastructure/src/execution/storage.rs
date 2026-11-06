@@ -7070,7 +7070,7 @@ mod tests {
         for boundary in boundaries {
             let case_started = std::time::Instant::now();
             let (storage, writer, _) = receipt_case_with_validation(false, false, Some(0));
-            crate::fixture_support::log_test_timing("storage_case_setup", case_started);
+            ci_timing::log_test_timing("storage_case_setup", case_started);
             let repo = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
             let instructions = crate::hierarchy_catalog::LocalHierarchyCatalog {
                 skill_root: crate::fixture_support::historical_task_skill_root(
@@ -7128,7 +7128,7 @@ mod tests {
                     preview["approved_sha256"].as_str().unwrap(),
                 )
                 .unwrap();
-            crate::fixture_support::log_test_timing("storage_native_command", command_started);
+            ci_timing::log_test_timing("storage_native_command", command_started);
             finish_record_from_project(
                 &sources,
                 &adapter,
@@ -8151,7 +8151,7 @@ mod tests {
                 } else {
                     started_staging_case()
                 };
-                crate::fixture_support::log_test_timing("storage_case_setup", case_started);
+                ci_timing::log_test_timing("storage_case_setup", case_started);
                 let execution = context.target().execution_dir;
                 let index_path = format!("{execution}/index.json");
                 let attempt_path = format!("{execution}/TASK-001/ATTEMPT-001/attempt.json");
@@ -8456,7 +8456,7 @@ mod tests {
             for boundary in &boundaries {
                 let case_started = std::time::Instant::now();
                 let (storage, context) = completed_staging_case_with_downstream(true);
-                crate::fixture_support::log_test_timing("storage_case_setup", case_started);
+                ci_timing::log_test_timing("storage_case_setup", case_started);
                 assert_eq!(
                     context.task_context().contract["tasks"]
                         .as_array()
