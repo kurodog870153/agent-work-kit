@@ -3,6 +3,12 @@
 use serde_json::Value;
 pub use work_operations::derivation::graph::ArtifactNode;
 
+pub(crate) fn log_test_timing(label: &str, started: std::time::Instant) {
+    if std::env::var_os("AWK_TEST_TIMING").is_some() {
+        eprintln!("AWK_TEST_TIMING {label} {}", started.elapsed().as_micros());
+    }
+}
+
 /// Prepare a complete case in memory. Protected entries include historical raw
 /// evidence and deliberate negative-test damage; callers explicitly select them.
 /// No file is written, including when derivation or evidence validation fails.
@@ -61,6 +67,7 @@ pub fn rebind_current_fixture_collection(
     skill_root: &std::path::Path,
     relative_index: &str,
 ) -> Result<(), String> {
+    let started = std::time::Instant::now();
     let index_path = project_root.join(relative_index);
     let mut index: Value =
         serde_json::from_slice(&std::fs::read(&index_path).map_err(|error| error.to_string())?)
@@ -155,6 +162,7 @@ pub fn rebind_current_fixture_collection(
     if let (Some(path), Some(raw)) = (execution_path, execution_raw) {
         std::fs::write(path, raw).map_err(|error| error.to_string())?;
     }
+    log_test_timing("fixture_rebind", started);
     Ok(())
 }
 
@@ -321,6 +329,7 @@ pub fn copy_fixture_sources(
     fixture: &std::path::Path,
     root: &std::path::Path,
 ) -> Result<(), std::io::Error> {
+    let started = std::time::Instant::now();
     if !fixture.is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -368,6 +377,7 @@ pub fn copy_fixture_sources(
         std::fs::create_dir_all(path.parent().expect("Snapshot parent"))?;
         std::fs::write(path, raw)?;
     }
+    log_test_timing("fixture_sources_copy", started);
     Ok(())
 }
 
@@ -537,6 +547,7 @@ pub fn historical_task_skill_root(
 fn historical_task_skill_root_uncached(
     current: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
+    let started = std::time::Instant::now();
     fn copy(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
         std::fs::create_dir_all(target)?;
         for entry in std::fs::read_dir(source)? {
@@ -560,14 +571,17 @@ fn historical_task_skill_root_uncached(
     ));
     copy(&current.join("references"), &root.join("references"))?;
     restore_historical_task_instructions(&root)?;
+    log_test_timing("historical_skill_copy", started);
     Ok(root)
 }
 
 pub fn historical_execute_skill_root(
     current: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
+    let started = std::time::Instant::now();
     let root = historical_task_skill_root_uncached(current)?;
     restore_historical_execute_instructions(&root)?;
+    log_test_timing("historical_execute_restore", started);
     Ok(root)
 }
 
@@ -1295,11 +1309,18 @@ fn file_transaction_fixture_configured(
             "Fixture baseline",
         ],
     ] {
+        let started = std::time::Instant::now();
+        let timing_label = if args[0] == "init" {
+            "git_init"
+        } else {
+            "git_other"
+        };
         let output = std::process::Command::new("git")
             .args(args)
             .current_dir(root)
             .output()
             .map_err(|e| e.to_string())?;
+        log_test_timing(timing_label, started);
         if !output.status.success() {
             return Err(String::from_utf8_lossy(&output.stderr).into());
         }

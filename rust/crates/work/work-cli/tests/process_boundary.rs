@@ -101,6 +101,7 @@ fn project_root() -> String {
 fn installed_executable() -> &'static PathBuf {
     static INSTALLED: OnceLock<PathBuf> = OnceLock::new();
     INSTALLED.get_or_init(|| {
+        let started = std::time::Instant::now();
         fn copy_tree(source: &Path, destination: &Path) {
             fs::create_dir_all(destination).unwrap();
             for entry in fs::read_dir(source).unwrap() {
@@ -128,15 +129,26 @@ fn installed_executable() -> &'static PathBuf {
             &PathBuf::from(project_root()).join("skills/work/references"),
             &skill.join("references"),
         );
+        log_test_timing("installed_executable_copy", started);
         binary
     })
 }
 
 fn run(arguments: &[String]) -> Output {
-    Command::new(installed_executable())
+    let executable = installed_executable();
+    let started = std::time::Instant::now();
+    let output = Command::new(executable)
         .args(arguments)
         .output()
-        .expect("launch work")
+        .expect("launch work");
+    log_test_timing("native_work_command", started);
+    output
+}
+
+fn log_test_timing(label: &str, started: std::time::Instant) {
+    if std::env::var_os("AWK_TEST_TIMING").is_some() {
+        eprintln!("AWK_TEST_TIMING {label} {}", started.elapsed().as_micros());
+    }
 }
 
 fn rebind_current_diagnostics_fixture(root: &Path) {
@@ -316,14 +328,14 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
         )
         .unwrap();
         fs::write(root.join("original"), b"before").unwrap();
-        assert!(
-            Command::new("git")
-                .args(["init", "--quiet"])
-                .current_dir(&root)
-                .status()
-                .unwrap()
-                .success()
-        );
+        let started = std::time::Instant::now();
+        let initialized = Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&root)
+            .status()
+            .unwrap();
+        log_test_timing("git_init", started);
+        assert!(initialized.success());
         let collection = work_flow::task::validate_collection(
             &work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog {
                 skill_root: installed_executable()
@@ -875,11 +887,13 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
     }
     work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
     fs::write(root.join("src.txt"), b"source\n").unwrap();
+    let started = std::time::Instant::now();
     let initialized = Command::new("git")
         .args(["init", "--quiet"])
         .current_dir(&root)
         .output()
         .unwrap();
+    log_test_timing("git_init", started);
     assert!(
         initialized.status.success(),
         "{}",
