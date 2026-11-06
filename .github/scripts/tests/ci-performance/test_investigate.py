@@ -18,18 +18,24 @@ class InvestigationLogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary)
             cargo = INVESTIGATE.timed_command(
-                "cargo", [sys.executable, "-c", "print('AWK_TEST_TIMING git_init 2000\\ntest result: ok. 2 passed; 0 failed;')"],
-                output, output,
+                "cargo", [sys.executable, "-c", "print('test result: ok. 1 passed; 0 failed;\\nAWK_TEST_TIMING git_init 2000\\ntest result: ok. 2 passed; 0 failed;')"],
+                output, output, "cargo",
             )
             nextest = INVESTIGATE.timed_command(
-                "nextest", [sys.executable, "-c", "print('PASS [  0.002s] test_one\\nPASS [  0.003s] test_two\\nSummary [  0.010s] 2 tests run: 2 passed')"],
-                output, output,
+                "nextest", [sys.executable, "-c", "print('test result: ok. 1 passed; 0 failed;\\nPASS [  0.002s] test_one\\nPASS [  0.003s] test_two\\nSummary [  0.010s] 2 tests run: 2 passed')"],
+                output, output, "nextest",
             )
             self.assertEqual(cargo["test_count"], 2)
             self.assertEqual(cargo["internal_timings"]["git_init"]["sum_seconds"], 0.002)
             self.assertEqual(nextest["test_count"], 2)
+            self.assertEqual(nextest["individual_tests"]["count"], 2)
             self.assertEqual(nextest["individual_tests"]["sum_seconds"], 0.005)
             self.assertIn("AWK_TEST_TIMING", (output / "cargo.log").read_text(encoding="utf-8"))
+
+    def test_nextest_requires_its_own_summary(self):
+        self.assertIsNone(
+            INVESTIGATE.test_count_from_log("test result: ok. 1 passed; 0 failed;\n", "nextest")
+        )
 
 
 if __name__ == "__main__":

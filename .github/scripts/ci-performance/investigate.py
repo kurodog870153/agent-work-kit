@@ -21,7 +21,17 @@ SLOW_STORAGE_TESTS = (
 )
 
 
-def timed_command(name, command, output, cwd, environment=None):
+def test_count_from_log(log_text, runner):
+    if runner == "cargo":
+        matches = re.findall(r"^test result: (?:ok|FAILED)\. (\d+) passed;", log_text, re.MULTILINE)
+    elif runner == "nextest":
+        matches = re.findall(r"^\s*Summary \[\s*[\d.]+s\]\s+(\d+) tests run", log_text, re.MULTILINE)
+    else:
+        raise ValueError(f"unknown test runner: {runner}")
+    return int(matches[-1]) if matches else None
+
+
+def timed_command(name, command, output, cwd, runner, environment=None):
     print(f"{name}: started", flush=True)
     started = time.perf_counter()
     log_path = output / f"{name}.log"
@@ -49,10 +59,8 @@ def timed_command(name, command, output, cwd, environment=None):
             for label, samples in internal.items()
         },
     }
-    cargo_count = re.search(r"test result: ok\. (\d+) passed;", log_text)
-    nextest_count = re.search(r"Summary \[\s*[\d.]+s\]\s+(\d+) tests run", log_text)
-    record["test_count"] = int(cargo_count.group(1)) if cargo_count else int(nextest_count.group(1)) if nextest_count else None
-    durations = [float(value) for value in re.findall(r"\bPASS\s+\[\s*([\d.]+)s\]", log_text)]
+    record["test_count"] = test_count_from_log(log_text, runner)
+    durations = [float(value) for value in re.findall(r"^\s*PASS\s+\[\s*([\d.]+)s\]", log_text, re.MULTILINE)] if runner == "nextest" else []
     if durations:
         record["individual_tests"] = {
             "count": len(durations),
@@ -149,14 +157,14 @@ def run(args):
 
     environment = {**os.environ, "AWK_TEST_TIMING": "1", "CARGO_TERM_COLOR": "never"}
     cargo = ["cargo", "test", "--locked", "-p", "work-cli", "--test", "process_boundary", *target_args, "--", "--test-threads=1", "--nocapture"]
-    results["test_runs"]["cargo_test_1"] = timed_command("cargo_test_1", cargo, output, rust, environment)
+    results["test_runs"]["cargo_test_1"] = timed_command("cargo_test_1", cargo, output, rust, "cargo", environment)
     for threads in args.threads:
         nextest = [
             "cargo", "nextest", "run", "--locked", "-p", "work-cli", "--test", "process_boundary",
             *target_args, "--no-fail-fast", "--test-threads", str(threads), "--success-output", "immediate",
         ]
         name = f"nextest_{threads}"
-        results["test_runs"][name] = timed_command(name, nextest, output, rust, environment)
+        results["test_runs"][name] = timed_command(name, nextest, output, rust, "nextest", environment)
 
     for test_name in SLOW_STORAGE_TESTS:
         results["slow_tests"][test_name] = {}
@@ -167,12 +175,24 @@ def run(args):
                          *target_args, "--test-threads", "1", "--success-output", "immediate", test_name]),
         ):
             results["slow_tests"][test_name][runner] = timed_command(
-                f"slow_{test_name}_{runner}", command, output, rust, environment
+                f"slow_{test_name}_{runner}", command, output, rust, runner, environment
             )
 
+    diagnostics = []
     counts = [item["test_count"] for item in results["test_runs"].values()]
-    slow_results = [item for runners in results["slow_tests"].values() for item in runners.values()]
-    results["status"] = "passed" if all(item["exit_code"] == 0 for item in results["test_runs"].values()) and None not in counts and len(set(counts)) == 1 and counts[0] > 0 and all(item["exit_code"] == 0 and item["test_count"] == 1 for item in slow_results) else "failed"
+    if None in counts or len(set(counts)) != 1 or counts[0] == 0:
+        diagnostics.append("Process boundary test counts differ or are missing")
+    for name, item in results["test_runs"].items():
+        if item["exit_code"] != 0:
+            diagnostics.append(f"{name} exited with {item['exit_code']}")
+        if name.startswith("nextest_") and item.get("individual_tests", {}).get("count") != item["test_count"]:
+            diagnostics.append(f"{name} PASS lines do not match its summary count")
+    for test_name, runners in results["slow_tests"].items():
+        for runner, item in runners.items():
+            if item["exit_code"] != 0 or item["test_count"] != 1:
+                diagnostics.append(f"{test_name} {runner} did not pass exactly one test")
+    results["diagnostics"] = diagnostics
+    results["status"] = "failed" if diagnostics else "passed"
     (output / "investigation.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     summary = [
         f"## Rust test investigation: {results['platform']}",
@@ -184,9 +204,9 @@ def run(args):
         "| --- | ---: | ---: | ---: |",
     ]
     summary.extend(f"| {name} | {item['test_count']} | {item['seconds']} | {item['exit_code']} |" for name, item in results["test_runs"].items())
-    summary.extend(["", "| Nextest run | Sum of test seconds | Median test seconds |", "| --- | ---: | ---: |"])
+    summary.extend(["", "| Nextest run | PASS lines | Sum of test seconds | Median test seconds |", "| --- | ---: | ---: | ---: |"])
     summary.extend(
-        f"| {name} | {item['individual_tests']['sum_seconds']} | {item['individual_tests']['median_seconds']} |"
+        f"| {name} | {item['individual_tests']['count']} | {item['individual_tests']['sum_seconds']} | {item['individual_tests']['median_seconds']} |"
         for name, item in results["test_runs"].items() if "individual_tests" in item
     )
     summary.extend(["", "### Slow storage tests", "", "| Test | Runner | Seconds | Setup sum seconds | Historical skill copy sum seconds | Native command sum seconds |", "| --- | --- | ---: | ---: | ---: | ---: |"])
@@ -205,6 +225,8 @@ def run(args):
     summary.extend(["", "| Operation | Median seconds | Samples |", "| --- | ---: | ---: |"])
     summary.extend(f"| {name} | {item['median_seconds']} | {args.repetitions} |" for name, item in results["operations"].items())
     summary.extend(["", "Operation probes are standalone filesystem and process baselines, not timings inside the Rust tests."])
+    if diagnostics:
+        summary.extend(["", "Diagnostics: " + "; ".join(diagnostics)])
     markdown = "\n".join(summary) + "\n"
     (output / "summary.md").write_text(markdown, encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
