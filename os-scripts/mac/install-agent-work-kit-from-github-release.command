@@ -2,7 +2,7 @@
 set -uo pipefail
 export LC_ALL=C
 
-release_tag=__WORK_RELEASE_TAG__
+release_tag=__AGENT_WORK_KIT_RELEASE_TAG__
 release_base="https://github.com/kurodog870153/agent-work-kit/releases/download/$release_tag"
 checksum=SHA256SUMS.txt
 
@@ -51,18 +51,18 @@ scratch_root="${TMPDIR:-/tmp}"
 release_cleanup_stale() {
     local entry marker kind pid name lsof_output status
     [[ -x /usr/sbin/lsof ]] || return 0
-    for entry in "$scratch_root"/work-release.*; do
-        [[ -d "$entry" && ! -L "$entry" && "${entry##*/}" =~ ^work-release\.[A-Za-z0-9]{8}$ ]] || continue
-        marker="$entry/.work-release-owner"
+    for entry in "$scratch_root"/agent-work-kit-release.*; do
+        [[ -d "$entry" && ! -L "$entry" && "${entry##*/}" =~ ^agent-work-kit-release\.[A-Za-z0-9]{8}$ ]] || continue
+        marker="$entry/.agent-work-kit-release-owner"
         [[ -f "$marker" && ! -L "$marker" ]] || continue
         read -r kind pid < "$marker" || continue
-        [[ "$kind" == work-release-v1 && "$pid" =~ ^[0-9]+$ ]] || continue
+        [[ "$kind" == agent-work-kit-release-v1 && "$pid" =~ ^[0-9]+$ ]] || continue
         kill -0 "$pid" 2>/dev/null && continue
         [[ -z "$(find "$entry" -type l -print -quit)" ]] || continue
         for name in "$entry"/* "$entry"/.[!.]*; do
             [[ -e "$name" || -L "$name" ]] || continue
             case "${name##*/}" in
-                .work-release-owner|SHA256SUMS.txt|package|agent-work-kit-v*-codex-macos-arm64.zip|agent-work-kit-v*-claude-macos-arm64.zip) ;;
+                .agent-work-kit-release-owner|SHA256SUMS.txt|package|agent-work-kit-v*-codex-macos-arm64.zip|agent-work-kit-v*-claude-macos-arm64.zip) ;;
                 *) printf 'Warning: unknown Downloader temporary entry retained: %s\n' "$entry" >&2; continue 2 ;;
             esac
         done
@@ -74,9 +74,9 @@ release_cleanup_stale() {
     done
 }
 release_cleanup_stale
-scratch="$(mktemp -d "$scratch_root/work-release.XXXXXXXX")" || exit 1
-[[ -d "$scratch" && ! -L "$scratch" && "${scratch##*/}" == work-release.* ]] || exit 1
-printf 'work-release-v1 %s\n' "$$" > "$scratch/.work-release-owner" || exit 1
+scratch="$(mktemp -d "$scratch_root/agent-work-kit-release.XXXXXXXX")" || exit 1
+[[ -d "$scratch" && ! -L "$scratch" && "${scratch##*/}" == agent-work-kit-release.* ]] || exit 1
+printf 'agent-work-kit-release-v1 %s\n' "$$" > "$scratch/.agent-work-kit-release-owner" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 
 download() {

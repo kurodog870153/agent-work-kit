@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: work-release-${{ github.ref }}
+  group: agent-work-kit-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

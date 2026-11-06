@@ -54,10 +54,10 @@ class ReleasePackageTests(unittest.TestCase):
             self.assertEqual(names, {Path(path).name for path in DOWNLOADERS.values()})
             for relative in DOWNLOADERS.values():
                 source = (repository / relative).read_bytes()
-                self.assertIn(b"__WORK_RELEASE_TAG__", source)
-                self.assertNotIn(b"WORK_RELEASE_TEST_MODE", source)
-                self.assertNotIn(b"WORK_RELEASE_TEST_BASE_URL", source)
-                self.assertEqual((output / Path(relative).name).read_bytes(), source.replace(b"__WORK_RELEASE_TAG__", f"v{version}".encode("ascii")))
+                self.assertIn(b"__AGENT_WORK_KIT_RELEASE_TAG__", source)
+                self.assertNotIn(b"AGENT_WORK_KIT_RELEASE_TEST_MODE", source)
+                self.assertNotIn(b"AGENT_WORK_KIT_RELEASE_TEST_BASE_URL", source)
+                self.assertEqual((output / Path(relative).name).read_bytes(), source.replace(b"__AGENT_WORK_KIT_RELEASE_TAG__", f"v{version}".encode("ascii")))
             with self.assertRaisesRegex(ValueError, "already exists"):
                 build_downloaders(repository, output)
             with patch("release_package.checked_version", return_value=next_version):
@@ -65,7 +65,7 @@ class ReleasePackageTests(unittest.TestCase):
                     paths = build_downloaders(repository, Path(other))
                     for path in paths:
                         self.assertIn(f"v{next_version}".encode("ascii"), path.read_bytes())
-                        self.assertNotIn(b"__WORK_RELEASE_TAG__", path.read_bytes())
+                        self.assertNotIn(b"__AGENT_WORK_KIT_RELEASE_TAG__", path.read_bytes())
 
     def test_records_actual_tested_environment(self):
         workspace_version = checked_workspace_version(Path(__file__).resolve().parents[4])

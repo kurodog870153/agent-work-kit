@@ -11,7 +11,7 @@ if "%~1"=="-h" if "%~2"=="" (
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
     exit /b 0
 )
-set "scratch=%TEMP%\work-release-%RANDOM%%RANDOM%%RANDOM%"
+set "scratch=%TEMP%\agent-work-kit-release-%RANDOM%%RANDOM%%RANDOM%"
 if exist "%scratch%" exit /b 1
 mkdir "%scratch%" || exit /b 1
 set "marker_line="
@@ -33,7 +33,7 @@ if ($args.Count -lt 2 -or $args[0] -cne '-Scratch') { exit 2 }
 $scratch = [string] $args[1]
 $cli = @()
 if ($args.Count -gt 2) { $cli = [string[]] $args[2..($args.Count - 1)] }
-$releaseTag = '__WORK_RELEASE_TAG__'
+$releaseTag = '__AGENT_WORK_KIT_RELEASE_TAG__'
 $selectedHost = $null
 for ($index = 0; $index -lt $cli.Count; $index++) {
     if ($cli[$index] -cne '--host') { continue }
@@ -59,19 +59,19 @@ $base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$rele
 function Clear-ReleaseStaleScratch {
     $parent = Split-Path -Path $scratch -Parent
     foreach ($folder in @(Get-ChildItem -LiteralPath $parent -Directory -Force -ErrorAction SilentlyContinue)) {
-        if ($folder.FullName -ceq $scratch -or $folder.Name -cnotmatch '^work-release-[0-9]+$' -or
+        if ($folder.FullName -ceq $scratch -or $folder.Name -cnotmatch '^agent-work-kit-release-[0-9]+$' -or
             ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
-        $marker = Join-Path $folder.FullName '.work-release-owner'
+        $marker = Join-Path $folder.FullName '.agent-work-kit-release-owner'
         if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { continue }
         $markerItem = Get-Item -LiteralPath $marker -Force
         if (($markerItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
         $record = [IO.File]::ReadAllText($marker).Trim()
-        if ($record -cnotmatch '^work-release-v1\|([0-9]+)$') { continue }
+        if ($record -cnotmatch '^agent-work-kit-release-v1\|([0-9]+)$') { continue }
         if (Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue) { continue }
         try { $lock = [IO.File]::Open($marker, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
         catch { continue }
         try {
-            $allowed = @('.work-release-owner', 'download.ps1', 'SHA256SUMS.txt', $archiveName, 'package')
+            $allowed = @('.agent-work-kit-release-owner', 'download.ps1', 'SHA256SUMS.txt', $archiveName, 'package')
             $safe = $true
             $stack = [System.Collections.Generic.Stack[object]]::new()
             foreach ($item in @(Get-ChildItem -LiteralPath $folder.FullName -Force)) {
@@ -93,7 +93,7 @@ function Clear-ReleaseStaleScratch {
         } finally { $lock.Dispose() }
         if (-not $safe) { Write-Warning "Downloader temporary directory retained: $($folder.FullName)"; continue }
         try {
-            foreach ($name in @('package', $archiveName, 'SHA256SUMS.txt', 'download.ps1', '.work-release-owner')) {
+            foreach ($name in @('package', $archiveName, 'SHA256SUMS.txt', 'download.ps1', '.agent-work-kit-release-owner')) {
                 $itemPath = Join-Path $folder.FullName $name
                 if (Test-Path -LiteralPath $itemPath) {
                     Remove-Item -LiteralPath $itemPath -Recurse -Force -ErrorAction Stop
@@ -118,8 +118,8 @@ function Get-ReleaseAsset {
 try {
     if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'this downloader requires Windows x64' }
     Clear-ReleaseStaleScratch
-    $ownerPath = Join-Path $scratch '.work-release-owner'
-    [IO.File]::WriteAllText($ownerPath, "work-release-v1|$PID")
+    $ownerPath = Join-Path $scratch '.agent-work-kit-release-owner'
+    [IO.File]::WriteAllText($ownerPath, "agent-work-kit-release-v1|$PID")
     $ownerHandle = [IO.File]::Open($ownerPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $checksumPath = Get-ReleaseAsset -Name 'SHA256SUMS.txt'
     $archivePath = Get-ReleaseAsset -Name $archiveName

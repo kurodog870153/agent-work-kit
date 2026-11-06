@@ -81,6 +81,8 @@ assert.strictEqual(state.run(['settings', raw, created.work_dir, 'web', 'false',
     '1\tgeneral,web\t0\t1.2.3\t/tmp/全域 有空白');
 assert.throws(() => state.run(['settings', raw, created.work_dir, '', 'invalid']));
 assert.strictEqual(core.run(['release-version', '{"version":"1.2.3"}']), '1.2.3');
+assert.strictEqual(core.run(['release-work-version', '{"work_version":"1.2.3"}']), '1.2.3');
+assert.strictEqual(core.run(['release-tooling-version', '{"tooling_version":"1.2.3"}']), '1.2.3');
 assert.strictEqual(core.run(['release-host', '{"host":"claude","target":"aarch64-apple-darwin"}']), 'claude');
 assert.strictEqual(core.run(['release-target', '{"host":"codex","target":"aarch64-apple-darwin"}']), 'aarch64-apple-darwin');
 assert.throws(() => core.run(['release-host', '{"target":"aarch64-apple-darwin"}']));

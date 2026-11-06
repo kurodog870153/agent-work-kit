@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $version = (Get-Content VERSION -Raw).Trim()
-$rule = "work-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
+$rule = "agent-work-kit-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
 Write-Host "Enabling outbound network isolation for Windows release installation E2E."
 New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
 try {

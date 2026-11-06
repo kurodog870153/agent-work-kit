@@ -16,12 +16,12 @@ function run(argv) {
         if (!info || !validVersion(info.version)) throw new Error('invalid release version');
         return info.version;
     }
-    if (argv[0] === 'tooling-release-version' && argv.length === 2) {
+    if (argv[0] === 'release-tooling-version' && argv.length === 2) {
         var toolingInfo = JSON.parse(argv[1]);
         if (!toolingInfo || !validVersion(toolingInfo.tooling_version)) throw new Error('invalid Tooling release version');
         return toolingInfo.tooling_version;
     }
-    if (argv[0] === 'work-release-version' && argv.length === 2) {
+    if (argv[0] === 'release-work-version' && argv.length === 2) {
         var workInfo = JSON.parse(argv[1]);
         if (!workInfo || !validVersion(workInfo.work_version)) throw new Error('invalid Work release version');
         return workInfo.work_version;

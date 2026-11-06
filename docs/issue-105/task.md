@@ -222,7 +222,7 @@
 
 - [ ] 現行引用不再誤導使用者；相關檢查通過，歷史資料未被改寫。
 
-命名盤點：`docs/release/` 標題已改為 Agent Work Kit Release。兩平台安裝器模組及對應測試目錄已改為 `global-instructions`，封裝清單與 CI 引用同步更新。舊 CLI 參數只留在拒絕測試，作為不相容行為的驗證。
+命名盤點：`docs/release/` 標題已改為 Agent Work Kit Release。兩平台安裝器模組及對應測試目錄已改為 `global-instructions`，封裝清單與 CI 引用同步更新。Downloader 暫存目錄、owner marker、測試環境變數、Release tag 佔位符與發布工作流群組已改用 Agent Work Kit 命名；舊暫存目錄及舊 owner 不由新版清理程序接管。舊 CLI 參數只留在拒絕測試，作為不相容行為的驗證。
 
 ## 執行邊界
 

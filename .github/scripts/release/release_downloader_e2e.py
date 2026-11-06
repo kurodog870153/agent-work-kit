@@ -33,10 +33,10 @@ def make_crash_package(archive_path, root, platform):
     content = script.read_text(encoding="utf-8")
     if platform == "windows-x64-msvc":
         needle = "            Move-Item -LiteralPath $targetPath -Destination $previous -ErrorAction Stop\n"
-        injection = "            if ($env:WORK_RELEASE_CRASH_ONCE -eq '1') { [Diagnostics.Process]::GetCurrentProcess().Kill() }\n"
+        injection = "            if ($env:AGENT_WORK_KIT_RELEASE_CRASH_ONCE -eq '1') { [Diagnostics.Process]::GetCurrentProcess().Kill() }\n"
     else:
         needle = '        mv -- "$final" "$previous" || return 1\n'
-        injection = '        if [[ "${WORK_RELEASE_CRASH_ONCE:-}" == 1 ]]; then kill -9 $$; fi\n'
+        injection = '        if [[ "${AGENT_WORK_KIT_RELEASE_CRASH_ONCE:-}" == 1 ]]; then kill -9 $$; fi\n'
     if content.count(needle) != 1:
         raise AssertionError("public Package crash injection point is ambiguous")
     script.write_text(content.replace(needle, needle + injection), encoding="utf-8")
@@ -60,7 +60,7 @@ def exercise_public_crash(entry, target, home, environment, platform, version, h
     command = (["cmd.exe", "/D", "/C", str(entry)] if platform == "windows-x64-msvc"
                else ["/bin/bash", str(entry)]) + options
     def invoke(crash=False):
-        env = {**environment, "WORK_RELEASE_CRASH_ONCE": "1" if crash else "0"}
+        env = {**environment, "AGENT_WORK_KIT_RELEASE_CRASH_ONCE": "1" if crash else "0"}
         return subprocess.run(command, cwd=home, env=env, stdin=subprocess.DEVNULL,
                               capture_output=True, timeout=180)
 
@@ -99,7 +99,7 @@ def main():
     if args.platform == "windows-x64-msvc" and sys.platform != "win32":
         parser.error("Windows runner required")
     verify_readme_download(args.zip, args.checksums, args.platform)
-    with tempfile.TemporaryDirectory(prefix="work-downloader-e2e-") as directory:
+    with tempfile.TemporaryDirectory(prefix="agent-work-kit-downloader-e2e-") as directory:
         root = Path(directory).resolve()
         with zipfile.ZipFile(args.zip) as archive:
             info = json.loads(archive.read("release-info.json"))
@@ -122,8 +122,8 @@ def main():
             environment.update({
                 "HOME": str(home), "USERPROFILE": str(home),
                 "TMPDIR": str(scratch), "TEMP": str(scratch), "TMP": str(scratch),
-                "WORK_RELEASE_TEST_MODE": "1",
-                "WORK_RELEASE_TEST_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+                "AGENT_WORK_KIT_RELEASE_TEST_MODE": "1",
+                "AGENT_WORK_KIT_RELEASE_TEST_BASE_URL": f"http://127.0.0.1:{server.server_port}",
             })
             repo = Path(__file__).resolve().parents[3]
             downloaders = {path.name: path for path in build_test_downloaders(repo, root / "downloaders")}
@@ -138,12 +138,12 @@ def main():
             entry_command = command[:4] if args.platform == "windows-x64-msvc" else command[:2]
             help_result = subprocess.run(entry_command + ["--help"], cwd=home, env=environment,
                                          stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
-            if help_result.returncode or list(scratch.glob("work-release*")):
+            if help_result.returncode or list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError(f"Downloader help did not exit cleanly without temporary files: "
                                      f"{help_result.returncode}, {help_result.stdout!r}, {help_result.stderr!r}")
             short_help = subprocess.run(entry_command + ["-h"], cwd=home, env=environment,
                                         stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
-            if short_help.returncode or short_help.stdout != help_result.stdout or list(scratch.glob("work-release*")):
+            if short_help.returncode or short_help.stdout != help_result.stdout or list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("Downloader short help did not match zero-download help")
             result = subprocess.run(command, cwd=home, env=environment, stdin=subprocess.DEVNULL,
                                     capture_output=True, timeout=180)
@@ -186,7 +186,7 @@ def main():
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
             binary = target / "scripts" / ("work.exe" if sys.platform == "win32" else "work")
             subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
-            if list(scratch.glob("work-release*")):
+            if list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("Downloader retained temporary files")
             if (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
                 raise AssertionError("disabled Global AGENTS created a target")
@@ -202,7 +202,7 @@ def main():
             exercise_public_crash(entry, root / "downloader-crash/work", home,
                                   environment, args.platform, info["version"], info["host"])
             print(f"Public Downloader interruption recovery passed: {args.platform}", flush=True)
-            if list(scratch.glob("work-release*")) or (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
+            if list(scratch.glob("agent-work-kit-release*")) or (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
                 raise AssertionError("public crash recovery retained downloader scratch or Global AGENTS")
         finally:
             server.shutdown()

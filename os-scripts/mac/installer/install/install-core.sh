@@ -306,8 +306,8 @@ if [[ "$mode" == source ]]; then
 else
     release_info="$(cat -- "$root/release-info.json")" || exit 1
     version="$(osascript -l JavaScript "$state_module" release-version "$release_info")" || exit 1
-    work_version="$(osascript -l JavaScript "$state_module" work-release-version "$release_info")" || exit 1
-    tooling_version="$(osascript -l JavaScript "$state_module" tooling-release-version "$release_info")" || exit 1
+    work_version="$(osascript -l JavaScript "$state_module" release-work-version "$release_info")" || exit 1
+    tooling_version="$(osascript -l JavaScript "$state_module" release-tooling-version "$release_info")" || exit 1
     binary="$root/bin/work"
     tooling_binary="$root/bin/tooling"
 fi

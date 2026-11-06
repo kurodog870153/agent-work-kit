@@ -72,7 +72,7 @@ DOWNLOADERS = {
     "macos-arm64": "os-scripts/mac/install-agent-work-kit-from-github-release.command",
     "windows-x64-msvc": "os-scripts/windows/install-agent-work-kit-from-github-release.bat",
 }
-DOWNLOADER_TAG_PLACEHOLDER = b"__WORK_RELEASE_TAG__"
+DOWNLOADER_TAG_PLACEHOLDER = b"__AGENT_WORK_KIT_RELEASE_TAG__"
 
 
 def checked_version(repository):
@@ -135,7 +135,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
     if target.exists():
         raise ValueError(f"release ZIP already exists: {target}")
     output.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".work-release-", dir=output) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".agent-work-kit-release-", dir=output) as temporary:
         stage = Path(temporary)
         for path in tracked_skill_files(repository):
             copy_asset(repository, stage, path, path)
