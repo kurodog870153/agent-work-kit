@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd -P)"
-scratch="$(mktemp -d "$repo_root/.issue95-lock.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.issue95-lock.* ]] || exit 1
+scratch="$(mktemp -d "$repo_root/.installer-test-lock.XXXXXX")"
+[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-lock.* ]] || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 cc -std=c11 -Wall -Wextra -Werror -o "$scratch/work-install-lock" "$repo_root/os-scripts/mac/installer/lock/native-lock.c"
 helper="$scratch/work-install-lock"

@@ -87,6 +87,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-timing"
+version = "2.1.1"
+
+[[package]]
 name = "clap"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -454,7 +458,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "skill-api"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -466,14 +470,14 @@ dependencies = [
 
 [[package]]
 name = "skill-feature"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "skill-infrastructure"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -484,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "skill-model"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -492,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "skill-operations"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde_json",
  "sha2",
@@ -536,7 +540,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tooling-cli"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "clap",
  "serde",
@@ -546,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "tooling-feature"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -555,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "tooling-flow"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "skill-api",
@@ -565,15 +569,15 @@ dependencies = [
 
 [[package]]
 name = "tooling-infrastructure"
-version = "2.1.0"
+version = "2.1.1"
 
 [[package]]
 name = "tooling-model"
-version = "2.1.0"
+version = "2.1.1"
 
 [[package]]
 name = "tooling-operations"
-version = "2.1.0"
+version = "2.1.1"
 
 [[package]]
 name = "typenum"
@@ -589,9 +593,9 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.24"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5033c97c4262335cded6d6fc3e5c18ab755e1a3dc96376350f3d8e9f009ad956"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
 dependencies = [
  "tinyvec",
 ]
@@ -717,8 +721,9 @@ dependencies = [
 
 [[package]]
 name = "work-cli"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
+ "ci-timing",
  "clap",
  "serde",
  "serde_json",
@@ -729,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "work-feature"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -740,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "work-flow"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde_json",
  "work-feature",
@@ -749,9 +754,10 @@ dependencies = [
 
 [[package]]
 name = "work-infrastructure"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "chrono",
+ "ci-timing",
  "fs4",
  "getrandom",
  "serde",
@@ -765,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "work-model"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -774,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "work-operations"
-version = "2.1.0"
+version = "2.1.1"
 dependencies = [
  "base64",
  "caseless",

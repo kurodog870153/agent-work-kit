@@ -19,6 +19,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from report_charts import bar_chart, pie_chart
+
 
 SCHEMA_VERSION = 1
 CONFIG_ID = "nextest-0.9.148-workspace-locked-ci-doc-v1"
@@ -192,6 +195,7 @@ def build_report(directory, junit, metadata, min_doc_tests=0):
         "config_id": CONFIG_ID,
         **metadata,
         "phases": phases,
+        "compile_timings_available": (Path(directory) / "compile-timings.html").is_file(),
         "tests": tests,
         "test_count": len(tests),
         "test_ids_sha256": scope_hash,
@@ -206,7 +210,9 @@ def summary(report):
     lines = [
         f"## Rust performance: {report['platform']}",
         "",
-        f"Result: **{report['status']}** · commit `{report['commit']}` · toolchain `{report['toolchain']}`",
+        f"Result: **{report['status']}** · commit `{report['commit']}` · toolchain `{report['toolchain']}` · target `{report.get('target', 'native')}`",
+        "",
+        "### Phase durations",
         "",
         "| Phase | Seconds | Result |",
         "| --- | ---: | --- |",
@@ -215,11 +221,18 @@ def summary(report):
         phase = report["phases"][name]
         seconds = phase["duration_seconds"]
         lines.append(f"| {name} | {seconds if seconds is not None else 'n/a'} | {phase['status']} |")
+    lines.append("")
+    lines.append(pie_chart("Phase durations chart", [(name, report["phases"][name]["duration_seconds"]) for name in PHASES]).replace("### ", "#### ", 1))
+    if any(report["phases"][name]["duration_seconds"] is None for name in PHASES):
+        lines.append("Only recorded phases are charted.\n")
+    lines.append("Cargo compile timing report: " + ("included in Rust performance artifact" if report["compile_timings_available"] else "unavailable"))
     lines.extend(["", f"Test execution (nextest + doc): {report['test_execution_seconds']} s", "", "### Slowest tests", "", "| Test | Seconds | Result |", "| --- | ---: | --- |"])
-    for test in sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]:
+    slowest = sorted(report["tests"], key=lambda item: item["duration_seconds"], reverse=True)[:10]
+    for test in slowest:
         lines.append(f"| `{test['id']}` | {test['duration_seconds']:.3f} | {test['outcome']} |")
     if not report["tests"]:
         lines.append("| Unavailable | n/a | incomplete |")
+    lines.extend(["", bar_chart("Slowest test durations", [(test["id"], test["duration_seconds"]) for test in slowest]).replace("### ", "#### ", 1)])
     if report["diagnostics"]:
         lines.extend(["", "Diagnostics: " + "; ".join(report["diagnostics"])])
     return "\n".join(lines) + "\n"
@@ -232,6 +245,25 @@ def append_summary(text):
             output.write(text)
     else:
         print(text)
+
+
+def environment_command(args):
+    lines = [
+        f"## Rust validation: {args.platform}",
+        "",
+        "### Runner environment",
+        "",
+        f"| Field | Value |",
+        "| --- | --- |",
+        f"| Checkout commit | `{subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        f"| Runner | {os.environ.get('RUNNER_OS', 'unknown')} / {os.environ.get('RUNNER_ARCH', 'unknown')} / {os.environ.get('ImageOS', 'unknown')} |",
+        f"| Rust target | `{args.target}` |",
+        f"| Rust compiler | `{subprocess.run(['rustc', '--version'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        f"| Cargo | `{subprocess.run(['cargo', '--version'], capture_output=True, text=True, check=True).stdout.strip()}` |",
+        "",
+    ]
+    append_summary("\n".join(lines))
+    return 0
 
 
 def report_command(args):
@@ -327,7 +359,7 @@ def compare_reports(current, previous):
         return {"status": "unavailable", "message": "Historical median is invalid."}
     change = (float(current_seconds) / median - 1) * 100
     is_regression = Decimal(str(current_seconds)) > Decimal(str(median)) * Decimal("1.30")
-    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "change_percent": round(change, 2), "message": f"{scope}: median of the latest 5 main reports {median:.3f}s; current change {change:+.2f}%.{details}"}
+    return {"status": "regression" if is_regression else "normal", "median_seconds": median, "current_seconds": current_seconds, "change_percent": round(change, 2), "message": f"{scope}: median of the latest 5 main reports {median:.3f}s; current change {change:+.2f}%.{details}"}
 
 
 def api_json(path, token):
@@ -395,7 +427,10 @@ def compare_command(args):
             result = {"status": "incomparable", "message": "Fewer than 5 compatible successful main reports; recent baselines do not match the current CI configuration."}
     except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError, zipfile.BadZipFile, json.JSONDecodeError) as error:
         result = {"status": "unavailable", "message": f"Could not retrieve or analyze historical reports: {error}"}
-    append_summary("\n### Performance comparison with main history\n\n" + result["message"] + (" **Performance regression warning**" if result["status"] == "regression" else "") + "\n")
+    comparison = ""
+    if result["status"] in ("normal", "regression"):
+        comparison = "\n" + bar_chart("Current versus main median", [("Current", result["current_seconds"]), ("Main median", result["median_seconds"])])
+    append_summary("\n### Performance comparison with main history\n\n" + result["message"] + (" **Performance regression warning**" if result["status"] == "regression" else "") + "\n" + comparison)
     return 0
 
 
@@ -412,6 +447,9 @@ def enforce_command(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
+    environment_parser = commands.add_parser("environment")
+    environment_parser.add_argument("--platform", required=True)
+    environment_parser.add_argument("--target", required=True)
     measure_parser = commands.add_parser("measure")
     measure_parser.add_argument("--directory", required=True)
     measure_parser.add_argument("--phase", choices=PHASES, required=True)
@@ -432,7 +470,7 @@ def main():
     enforce_parser.add_argument("--junit", required=True)
     enforce_parser.add_argument("--min-doc-tests", type=int, default=0)
     args = parser.parse_args()
-    return {"measure": measure, "report": report_command, "compare": compare_command, "enforce": enforce_command}[args.action](args)
+    return {"environment": environment_command, "measure": measure, "report": report_command, "compare": compare_command, "enforce": enforce_command}[args.action](args)
 
 
 if __name__ == "__main__":

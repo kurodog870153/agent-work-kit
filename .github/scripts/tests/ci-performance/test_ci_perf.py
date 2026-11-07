@@ -13,6 +13,26 @@ import ci_perf
 
 
 class PerformanceReportTests(unittest.TestCase):
+    def test_environment_summary_uses_same_fields_for_both_platforms(self):
+        with patch.object(ci_perf.subprocess, "run", side_effect=[SimpleNamespace(stdout="abc\n"), SimpleNamespace(stdout="rustc 1.85\n"), SimpleNamespace(stdout="cargo 1.85\n")] * 2), patch.object(ci_perf, "append_summary") as append:
+            for platform, target in (("macos", "native"), ("windows", "x86_64-pc-windows-msvc")):
+                self.assertEqual(ci_perf.environment_command(SimpleNamespace(platform=platform, target=target)), 0)
+        summaries = [call.args[0] for call in append.call_args_list]
+        for summary in summaries:
+            self.assertIn("### Runner environment\n\n| Field | Value |", summary)
+            self.assertIn("| Checkout commit | `abc` |", summary)
+            self.assertIn("| Rust compiler | `rustc 1.85` |", summary)
+            self.assertIn("| Cargo | `cargo 1.85` |", summary)
+        self.assertIn("## Rust validation: macos", summaries[0])
+        self.assertIn("## Rust validation: windows", summaries[1])
+
+    def test_chart_omits_missing_measurements_and_scales_comparison(self):
+        self.assertIn("No measured data available", ci_perf.pie_chart("Phases", [("compile", None)]))
+        self.assertIn('"test" : 2.5', ci_perf.pie_chart("Phases", [("compile", None), ("test", 2.5)]))
+        chart = ci_perf.bar_chart("Comparison", [("Current", 10), ("Main median", 5)])
+        self.assertIn("| Current | 10.000 | " + "█" * 20, chart)
+        self.assertIn("| Main median | 5.000 | " + "█" * 10, chart)
+
     def test_measure_displays_unicode_when_console_starts_as_cp1252(self):
         with tempfile.TemporaryDirectory() as directory:
             console_bytes = io.BytesIO()
@@ -30,11 +50,22 @@ class PerformanceReportTests(unittest.TestCase):
             for phase in ci_perf.PHASES:
                 (root / f"{phase}.json").write_text(json.dumps({"phase": phase, "duration_seconds": 2.5, "exit_code": 0}), encoding="utf-8")
             (root / "doc.log").write_text("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n", encoding="utf-8")
+            (root / "compile-timings.html").write_text("report", encoding="utf-8")
             (root / "junit.xml").write_text('<testsuites><testsuite name="binary"><testcase classname="suite" name="case" time="1.25" /></testsuite></testsuites>', encoding="utf-8")
             report = ci_perf.build_report(root, root / "junit.xml", {"platform": "macos", "commit": "abc", "toolchain": "1.85.0"})
             self.assertEqual(report["status"], "passed")
             self.assertEqual(report["test_execution_seconds"], 5.0)
             self.assertEqual(report["doc_tests"]["passed"], 1)
+            self.assertTrue(report["compile_timings_available"])
+            summary = ci_perf.summary(report)
+            self.assertIn("included in Rust performance artifact", summary)
+            self.assertIn('"compile" : 2.5', summary)
+            self.assertIn("```mermaid", summary)
+            self.assertIn("#### Slowest test durations", summary)
+            self.assertIn("| binary::suite::case | 1.250 |", summary)
+            self.assertLess(summary.index("### Phase durations"), summary.index("| Phase | Seconds | Result |"))
+            self.assertLess(summary.index("| Phase | Seconds | Result |"), summary.index("#### Phase durations chart"))
+            self.assertLess(summary.index("| Test | Seconds | Result |"), summary.index("#### Slowest test durations"))
 
     def test_successful_doc_command_with_no_test_binaries_reports_zero_tests(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -109,6 +140,7 @@ class PerformanceReportTests(unittest.TestCase):
         history = [{**base, "test_execution_seconds": seconds} for seconds in (8, 9, 10, 11, 50)]
         normal = ci_perf.compare_reports({**base, "test_execution_seconds": 13}, history)
         self.assertEqual(normal["status"], "normal")
+        self.assertEqual(normal["current_seconds"], 13)
         self.assertIn("Total test execution (nextest + doc)", normal["message"])
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.01}, history)["status"], "regression")
         self.assertEqual(ci_perf.compare_reports({**base, "test_execution_seconds": 13.0004}, history)["status"], "regression")
@@ -175,6 +207,8 @@ class PerformanceReportTests(unittest.TestCase):
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=report, workflow="workflow.yml", artifact="rust-perf")), 0)
             self.assertIn("status=completed", api.call_args.args[0])
             self.assertIn("Performance regression warning", summary.call_args.args[0])
+            self.assertIn("| Current | 13.010 |", summary.call_args.args[0])
+            self.assertIn("| Main median | 10.000 |", summary.call_args.args[0])
 
     def test_history_skips_broken_artifact_before_selecting_five(self):
         base = {"schema_version": 1, "config_id": ci_perf.CONFIG_ID, "platform": "macos", "target": "native", "runner_os": "macOS", "runner_arch": "ARM64", "runner_image": "macos15", "toolchain": "1.85.0", "test_ids_sha256": "same", "status": "passed"}
@@ -202,6 +236,7 @@ class PerformanceReportTests(unittest.TestCase):
                 self.assertEqual(ci_perf.compare_command(SimpleNamespace(report=path, workflow="workflow.yml", artifact="rust-perf")), 0)
             self.assertIn("Shared nextest tests (compared: 1", summary.call_args.args[0])
             self.assertIn("Performance regression warning", summary.call_args.args[0])
+            self.assertIn("| Current | 13.010 |", summary.call_args.args[0])
 
 
 if __name__ == "__main__":

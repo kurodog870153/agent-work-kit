@@ -1,10 +1,10 @@
 kind	name	path
 option	--help
 option	-h
-option	--global-agent
-option	--no-global-agent
-option	--skills-install-dir
-option	--global-agent-install-dir
+option	--host
+option	--skills-dir
+option	--instructions-dir
+option	--global-instructions
 option	--non-interactive
 option	--dry-run
 option	--verbose

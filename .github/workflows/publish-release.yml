@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: work-release-${{ github.ref }}
+  group: agent-work-kit-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -88,7 +88,7 @@ jobs:
 
   verify-and-attest-release-assets:
     name: verify and attest release assets
-    needs: [validate-release-publication, package-ci]
+    needs: package-ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -97,8 +97,8 @@ jobs:
       attestations: write
       artifact-metadata: write
     outputs:
-      tag: ${{ needs.validate-release-publication.outputs.tag }}
-      version: ${{ needs.validate-release-publication.outputs.version }}
+      tag: ${{ needs.package-ci.outputs.tag }}
+      version: ${{ needs.package-ci.outputs.version }}
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
     steps:
       - uses: actions/checkout@v7
@@ -118,7 +118,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.validate-release-publication.outputs.tag }}
+          TAG: ${{ needs.package-ci.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Verify ZIPs and create outer checksums
@@ -130,16 +130,18 @@ jobs:
       - uses: actions/attest@v4
         with:
           subject-path: |
-            dist/work-v${{ needs.validate-release-publication.outputs.version }}-macos-arm64.zip
-            dist/work-v${{ needs.validate-release-publication.outputs.version }}-windows-x64-msvc.zip
-            dist/install-work-from-github-release.command
-            dist/install-work-from-github-release.bat
+            dist/agent-work-kit-v${{ needs.package-ci.outputs.version }}-codex-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.package-ci.outputs.version }}-claude-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.package-ci.outputs.version }}-codex-windows-x64-msvc.zip
+            dist/agent-work-kit-v${{ needs.package-ci.outputs.version }}-claude-windows-x64-msvc.zip
+            dist/install-agent-work-kit-from-github-release.command
+            dist/install-agent-work-kit-from-github-release.bat
             dist/SHA256SUMS.txt
-      - name: Verify all five build attestations
+      - name: Verify all seven build attestations
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.validate-release-publication.outputs.tag }}
+          TAG: ${{ needs.package-ci.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           for asset in dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt; do
@@ -197,7 +199,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
-        run: python3 .github/scripts/release/release_publication_checks.py notes --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --notes-file release-notes.md
+        run: python3 .github/scripts/release/release_publication_checks.py notes --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --notes-file release-notes.md --title-file release-title.txt
       - name: Check immutable releases setting
         env:
           GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
@@ -208,7 +210,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
-        run: gh release create "$TAG" dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --notes-file release-notes.md
+        run: gh release create "$TAG" dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --title "$(cat release-title.txt)" --notes-file release-notes.md
       - name: Verify draft and source identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -216,7 +218,7 @@ jobs:
           TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          python3 .github/scripts/release/release_publication_checks.py assets-draft --repository "$REPOSITORY" --tag "$TAG" --directory dist
+          python3 .github/scripts/release/release_publication_checks.py assets-draft --repository "$REPOSITORY" --tag "$TAG" --directory dist --title-file release-title.txt --notes-file release-notes.md
           python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Recheck immutable releases setting
         env:

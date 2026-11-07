@@ -1,12 +1,12 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/policy.ps1')
-. (Join-Path $repoRoot 'os-scripts/windows/installer/global-agents/transaction.ps1')
-$scratch = Join-Path $repoRoot ('.issue95-global-transaction.' + [guid]::NewGuid().ToString('N'))
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/policy.ps1')
+. (Join-Path $repoRoot 'os-scripts/windows/installer/global-instructions/transaction.ps1')
+$scratch = Join-Path $repoRoot ('.installer-test-global-transaction.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolved = (Resolve-Path -LiteralPath $scratch).Path
 if (-not $resolved.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
-    -not ([IO.Path]::GetFileName($resolved) -match '^\.issue95-global-transaction\.[0-9a-f]{32}$')) { throw 'unsafe cleanup path' }
+    -not ([IO.Path]::GetFileName($resolved) -match '^\.installer-test-global-transaction\.[0-9a-f]{32}$')) { throw 'unsafe cleanup path' }
 try {
     $source = Join-Path $scratch 'source.md'
     $target = Join-Path $scratch 'AGENTS.md'

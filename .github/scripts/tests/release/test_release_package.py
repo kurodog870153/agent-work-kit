@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package, checked_version, checked_workspace_version, tracked_skill_files
+from release_package import DOWNLOADERS, PLATFORMS, build_downloaders, build_package, checked_version, checked_workspace_version, tracked_skill_files, write_outer_checksums
 
 
 class ReleasePackageTests(unittest.TestCase):
@@ -54,10 +54,10 @@ class ReleasePackageTests(unittest.TestCase):
             self.assertEqual(names, {Path(path).name for path in DOWNLOADERS.values()})
             for relative in DOWNLOADERS.values():
                 source = (repository / relative).read_bytes()
-                self.assertIn(b"__WORK_RELEASE_TAG__", source)
-                self.assertNotIn(b"WORK_RELEASE_TEST_MODE", source)
-                self.assertNotIn(b"WORK_RELEASE_TEST_BASE_URL", source)
-                self.assertEqual((output / Path(relative).name).read_bytes(), source.replace(b"__WORK_RELEASE_TAG__", f"v{version}".encode("ascii")))
+                self.assertIn(b"__AGENT_WORK_KIT_RELEASE_TAG__", source)
+                self.assertNotIn(b"AGENT_WORK_KIT_RELEASE_TEST_MODE", source)
+                self.assertNotIn(b"AGENT_WORK_KIT_RELEASE_TEST_BASE_URL", source)
+                self.assertEqual((output / Path(relative).name).read_bytes(), source.replace(b"__AGENT_WORK_KIT_RELEASE_TAG__", f"v{version}".encode("ascii")))
             with self.assertRaisesRegex(ValueError, "already exists"):
                 build_downloaders(repository, output)
             with patch("release_package.checked_version", return_value=next_version):
@@ -65,7 +65,7 @@ class ReleasePackageTests(unittest.TestCase):
                     paths = build_downloaders(repository, Path(other))
                     for path in paths:
                         self.assertIn(f"v{next_version}".encode("ascii"), path.read_bytes())
-                        self.assertNotIn(b"__WORK_RELEASE_TAG__", path.read_bytes())
+                        self.assertNotIn(b"__AGENT_WORK_KIT_RELEASE_TAG__", path.read_bytes())
 
     def test_records_actual_tested_environment(self):
         workspace_version = checked_workspace_version(Path(__file__).resolve().parents[4])
@@ -74,10 +74,12 @@ class ReleasePackageTests(unittest.TestCase):
             repository = root / "repository"
             output = root / "output"
             repository.mkdir()
-            sources = ["AGENTS.md", "LICENSE", "docs/release/README.md",
+            sources = ["instructions/global-instructions.md", "LICENSE", "docs/release/README.md",
                        "os-scripts/common/installer/options.tsv", "os-scripts/common/installer/install-state.json"]
             config = PLATFORMS["macos-arm64"]
-            sources.extend((config["installer"], *config["modules"]))
+            for platform_config in PLATFORMS.values():
+                sources.extend((platform_config["installer"], *platform_config["modules"]))
+            sources = list(dict.fromkeys(sources))
             for name in sources:
                 path = repository / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +115,31 @@ class ReleasePackageTests(unittest.TestCase):
                     self.assertTrue(check)
                     Path(command[command.index("-o") + 1]).write_bytes(b"native lock helper")
                 run.side_effect = compile_helper
-                archive_path = build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, environment)
+                archive_path = build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, environment, "codex")
+                archives = {("macos-arm64", "codex"): archive_path}
+                for platform in PLATFORMS:
+                    for host in ("codex", "claude"):
+                        if (platform == "macos-arm64" and host == "codex"):
+                            continue
+                        platform_environment = {**environment, "runner_label": PLATFORMS[platform]["runner_label"]}
+                        archives[(platform, host)] = build_package(
+                            repository, output, platform, binary, tooling_binary,
+                            "a" * 40, platform_environment, host)
+            self.assertEqual({path.name for path in archives.values()}, {
+                f"agent-work-kit-v1.2.3-{host}-{platform}.zip"
+                for platform in PLATFORMS for host in ("codex", "claude")
+            })
+            for (platform, host), path in archives.items():
+                with zipfile.ZipFile(path) as archive:
+                    identity = json.loads(archive.read("release-info.json"))
+                    self.assertEqual(identity["host"], host)
+                    self.assertEqual(identity["target"], PLATFORMS[platform]["target"])
+                    self.assertEqual(archive.read("instructions/global-instructions.md"),
+                                     b"instructions/global-instructions.md")
+            with patch("release_package.checked_version", return_value="1.2.3"):
+                build_downloaders(Path(__file__).resolve().parents[4], output)
+                checksum_path = write_outer_checksums(repository, output)
+            self.assertEqual(len(checksum_path.read_text(encoding="ascii").splitlines()), 6)
             with zipfile.ZipFile(archive_path) as archive:
                 info = json.loads(archive.read("release-info.json"))
                 self.assertEqual(archive.read("bin/work-install-lock"), b"native lock helper")
@@ -128,6 +154,7 @@ class ReleasePackageTests(unittest.TestCase):
                     relative = Path(source).relative_to("os-scripts/mac/installer")
                     self.assertEqual(archive.read(Path("installer", relative).as_posix()), source.encode())
             self.assertEqual(info["version"], "1.2.3")
+            self.assertEqual(info["host"], "codex")
             self.assertEqual(info["work_version"], workspace_version)
             self.assertEqual(info["tooling_version"], workspace_version)
             self.assertEqual(info["tested_environment"], environment)
@@ -138,11 +165,11 @@ class ReleasePackageTests(unittest.TestCase):
                 incomplete = environment.copy()
                 incomplete[field] = ""
                 with self.subTest(field=field), self.assertRaises(ValueError):
-                    build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, incomplete)
+                    build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, incomplete, "codex")
             wrong_label = environment.copy()
             wrong_label["runner_label"] = "windows-latest"
             with self.assertRaises(ValueError):
-                build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, wrong_label)
+                build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, wrong_label, "codex")
 
 
 if __name__ == "__main__":

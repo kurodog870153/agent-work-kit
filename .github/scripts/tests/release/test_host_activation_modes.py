@@ -46,7 +46,7 @@ def policy_node(path, body):
 
 def run(work, tooling, evidence=None):
     global MODE
-    with tempfile.TemporaryDirectory(prefix="issue103-host-modes-") as directory:
+    with tempfile.TemporaryDirectory(prefix="host-modes-") as directory:
         project = Path(directory)
         repository = Path(__file__).resolve().parents[4]
 
@@ -90,15 +90,15 @@ def run(work, tooling, evidence=None):
 
         work_only = expect(
             invoke(work_only_binary, "--project-root", project / "work-only", "workflow", "status",
-                   "--requirement-id", "issue103-host-mode", "--user-config-root", project / "work-only"),
+                   "--requirement-id", "host-mode", "--user-config-root", project / "work-only"),
             0, "work-cli-result", "ok",
         )
         assert work_only["data"]["status"] == "source_required"
         no_formal_task = expect(
             invoke(work_only_binary, "--project-root", project / "work-only", "execute", "record-begin",
                    "--user-config-root", project / "work-only", "--task-path",
-                   "outputs/work/tasks/issue103-host-mode/index.json",
-                   "--execution-dir", "outputs/work/executions/issue103-host-mode",
+                   "outputs/work/tasks/host-mode/index.json",
+                   "--execution-dir", "outputs/work/executions/host-mode",
                    "--task-id", "TASK-001", "--record-id", "CMD-001"),
             5, "work-cli-result", "file_not_found",
         )
@@ -144,7 +144,7 @@ def run(work, tooling, evidence=None):
         assert missing["status"] == "rejected"
         after_tooling_failure = expect(
             invoke(joint_work_binary, "--project-root", project / "joint", "workflow", "status",
-                   "--requirement-id", "issue103-host-mode", "--user-config-root", project / "joint"),
+                   "--requirement-id", "host-mode", "--user-config-root", project / "joint"),
             0, "work-cli-result", "ok",
         )
         assert after_tooling_failure["data"] == work_only["data"]
@@ -179,7 +179,7 @@ def run(work, tooling, evidence=None):
         }
         after_drift = expect(
             invoke(joint_work_binary, "--project-root", project / "joint", "workflow", "status",
-                   "--requirement-id", "issue103-host-mode", "--user-config-root", project / "joint"),
+                   "--requirement-id", "host-mode", "--user-config-root", project / "joint"),
             0, "work-cli-result", "ok",
         )
         assert after_drift["data"] == work_only["data"]
