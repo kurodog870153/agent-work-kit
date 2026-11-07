@@ -1,6 +1,7 @@
 """Tests for release publication gates."""
 
 import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,10 +10,39 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_publication_checks import check_assets, check_first_publish_attempt, check_identity, check_immutable, expected_assets, release_notes
+from release_publication_checks import check_assets, check_first_publish_attempt, check_identity, check_immutable, expected_assets, generate_release_content, main, release_notes
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_github_generated_title_uses_published_baseline(self):
+        with patch("release_publication_checks.api", return_value={"name": "Changes", "body": "## What's Changed\n\n- Fix"}) as mocked_api:
+            self.assertEqual(generate_release_content("owner/repo", "v1.2.3", "v1.2.2"),
+                             ("v1.2.3: Changes", "## What's Changed\n\n- Fix"))
+            mocked_api.assert_called_once_with(
+                "repos/owner/repo/releases/generate-notes", "--method", "POST",
+                "-f", "tag_name=v1.2.3", "-f", "previous_tag_name=v1.2.2",
+            )
+        for name in (None, " ", "two\nlines"):
+            with self.subTest(name=name), patch("release_publication_checks.api", return_value={"name": name, "body": "Description"}):
+                with self.assertRaisesRegex(ValueError, "valid one-line release title"):
+                    generate_release_content("owner/repo", "v1.2.3", None)
+        with patch("release_publication_checks.api", return_value={"name": "Changes", "body": " "}):
+            with self.assertRaisesRegex(ValueError, "release description"):
+                generate_release_content("owner/repo", "v1.2.3", None)
+
+    def test_notes_action_writes_generated_title_separately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            notes_file = Path(directory) / "notes.md"
+            title_file = Path(directory) / "title.txt"
+            argv = ["release_publication_checks.py", "notes", "--repository", "owner/repo", "--tag", "v1.2.3",
+                    "--expected-sha", "a" * 40, "--notes-file", str(notes_file), "--title-file", str(title_file)]
+            with patch.object(sys, "argv", argv), patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}), \
+                 patch("release_publication_checks.release_notes", return_value=("v1.2.2", "v1.2.2 (sha)", ["change"], "custom notes\n")), \
+                 patch("release_publication_checks.generate_release_content", return_value=("v1.2.3: Changes", "Generated description")):
+                self.assertEqual(main(), 0)
+            self.assertEqual(notes_file.read_text(encoding="utf-8"), "Generated description\n\ncustom notes\n")
+            self.assertEqual(title_file.read_text(encoding="utf-8"), "v1.2.3: Changes\n")
+
     def test_published_identity_does_not_depend_on_newer_main(self):
         sha = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
@@ -121,8 +151,8 @@ class ReleaseGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check_immutable("owner/repo")
 
-    def test_draft_requires_exact_five_assets_and_digests(self):
-        self.assertEqual(len(expected_assets("1.0.0")), 5)
+    def test_draft_requires_exact_seven_assets_and_digests(self):
+        self.assertEqual(len(expected_assets("1.0.0")), 7)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             assets = []
@@ -130,10 +160,15 @@ class ReleaseGateTests(unittest.TestCase):
                 data = name.encode("ascii")
                 (root / name).write_bytes(data)
                 assets.append({"name": name, "size": len(data), "digest": "sha256:" + hashlib.sha256(data).hexdigest()})
-            release = {"tag_name": "v1.0.0", "draft": True, "prerelease": False, "assets": assets}
+            release = {"tag_name": "v1.0.0", "name": "v1.0.0: Changes", "body": "Generated description\n\ncustom notes\n", "draft": True, "prerelease": False, "assets": assets}
             with patch("release_publication_checks.api", return_value=[[release]]) as mocked_api:
-                check_assets("owner/repo", "v1.0.0", root, published=False)
+                check_assets("owner/repo", "v1.0.0", root, published=False, expected_title="v1.0.0: Changes",
+                             expected_notes="Generated description\n\ncustom notes\n")
                 mocked_api.assert_called_with("repos/owner/repo/releases?per_page=100", "--paginate", "--slurp")
+                with self.assertRaisesRegex(ValueError, "release title"):
+                    check_assets("owner/repo", "v1.0.0", root, published=False, expected_title="wrong title")
+                with self.assertRaisesRegex(ValueError, "release notes"):
+                    check_assets("owner/repo", "v1.0.0", root, published=False, expected_notes="wrong notes")
                 assets[0]["digest"] = "sha256:" + "0" * 64
                 with self.assertRaises(ValueError):
                     check_assets("owner/repo", "v1.0.0", root, published=False)

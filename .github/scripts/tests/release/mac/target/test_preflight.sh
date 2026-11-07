@@ -5,8 +5,8 @@ source "$repo_root/os-scripts/mac/installer/target/preflight.sh"
 source_work="$repo_root/skills/work"
 binary="$repo_root/rust/target/release/work"
 [[ -x "$binary" ]] || { printf 'native Work binary is required for preflight fixture\n' >&2; exit 1; }
-scratch="$(mktemp -d "$repo_root/.issue95-preflight.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.issue95-preflight.* ]] || exit 1
+scratch="$(mktemp -d "$repo_root/.installer-test-preflight.XXXXXX")"
+[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-preflight.* ]] || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 target="$scratch/work"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }

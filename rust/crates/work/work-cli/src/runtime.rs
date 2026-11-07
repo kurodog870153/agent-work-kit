@@ -99,6 +99,7 @@ impl TaskCollectionRepository for TaskInputOverlay<'_> {
 }
 
 fn root_path(raw: &str) -> Result<PathBuf, WorkError> {
+    let started = std::time::Instant::now();
     let path = Path::new(raw).canonicalize().map_err(|_| {
         WorkError::new(
             ExitCode::IoFailure,
@@ -115,10 +116,12 @@ fn root_path(raw: &str) -> Result<PathBuf, WorkError> {
             json!({"path":path}),
         ));
     }
+    ci_timing::log_cli_timing("root_resolution", started);
     Ok(path)
 }
 
 fn read_input_file(raw_path: &str) -> Result<FileInput, WorkError> {
+    let started = std::time::Instant::now();
     let path = Path::new(raw_path).canonicalize().map_err(|_| {
         WorkError::new(
             ExitCode::IoFailure,
@@ -159,6 +162,7 @@ fn read_input_file(raw_path: &str) -> Result<FileInput, WorkError> {
             json!({"source":path}),
         ));
     }
+    ci_timing::log_cli_timing("input_file_read", started);
     Ok(FileInput {
         raw: text.as_bytes().to_vec(),
         source: path.to_string_lossy().into_owned(),
@@ -1520,19 +1524,23 @@ fn brief(value: &Value) -> Value {
 }
 
 pub fn run(tokens: &[String]) -> (i32, CliResult) {
+    let started = std::time::Instant::now();
     let skill_root = std::env::current_exe()
         .ok()
         .and_then(|binary| binary.parent()?.parent().map(Path::to_path_buf))
         .unwrap_or_default();
+    ci_timing::log_cli_timing("skill_root_resolution", started);
     run_with_skill_root(tokens, &skill_root)
 }
 
 pub fn run_with_skill_root(tokens: &[String], skill_root: &Path) -> (i32, CliResult) {
     let result = (|| -> Result<CliResult, WorkError> {
+        let parse_started = std::time::Instant::now();
         let parsed = match parse_tokens(tokens)? {
             ParseOutcome::Help(help) => return Ok(CliResult::success(json!({"help":help}), false)),
             ParseOutcome::Command(command) => command,
         };
+        ci_timing::log_cli_timing("parse", parse_started);
         let root = root_path(argument(&parsed, "project_root")?)?;
         if matches!(parsed.path.as_slice(), [first, second] if first == "execute" && matches!(second.as_str(), "command-prepare" | "command-run"))
         {
@@ -1591,7 +1599,10 @@ pub fn run_with_skill_root(tokens: &[String], skill_root: &Path) -> (i32, CliRes
             .and_then(Value::as_str)
             .map(read_input_file)
             .transpose()?;
-        let result = dispatch_with_operation_context(&parsed, &root, input.as_ref(), skill_root)?;
+        let dispatch_started = std::time::Instant::now();
+        let result = dispatch_with_operation_context(&parsed, &root, input.as_ref(), skill_root);
+        ci_timing::log_cli_timing("dispatch", dispatch_started);
+        let result = result?;
         let verbose = parsed.arguments.get("verbose") == Some(&json!(true));
         let completed = result["status"] == "already_completed";
         let full_evidence = parsed.path.last().is_some_and(|operation| {

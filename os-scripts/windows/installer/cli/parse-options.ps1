@@ -9,10 +9,11 @@ function New-InstallerCliError {
 
 function Get-InstallerCliUsage {
     @'
-Usage: install-work-from-{source,package}.bat [options]
-  --global-agent | --no-global-agent
-  --skills-install-dir <parent-directory>
-  --global-agent-install-dir <directory>
+Usage: install-agent-work-kit-from-{source,package}.bat [options]
+  --host codex|claude
+  --skills-dir <parent-directory>
+  --instructions-dir <directory>
+  --global-instructions yes|no
   --non-interactive
   --dry-run
   --verbose
@@ -37,9 +38,10 @@ function Parse-InstallerCli {
     )
     $result = [ordered]@{
         Action = 'install'
-        GlobalAgents = $null
-        SkillsInstallDir = $null
-        GlobalAgentsInstallDir = $null
+        InstallerHost = $null
+        GlobalInstructions = $null
+        SkillsDir = $null
+        InstructionsDir = $null
         NonInteractive = $false
         DryRun = $false
         Verbose = $false
@@ -58,9 +60,7 @@ function Parse-InstallerCli {
             '--non-interactive' { $result.NonInteractive = $true }
             '--dry-run' { $result.DryRun = $true }
             '--verbose' { $result.Verbose = $true }
-            '--global-agent' { $result.GlobalAgents = $true }
-            '--no-global-agent' { $result.GlobalAgents = $false }
-            { $_ -in @('--skills-install-dir', '--global-agent-install-dir') } {
+            { $_ -in @('--host', '--skills-dir', '--instructions-dir', '--global-instructions') } {
                 $index++
                 if ($index -ge $Tokens.Count -or [string]::IsNullOrEmpty($Tokens[$index]) -or $Tokens[$index].StartsWith('--')) {
                     throw (New-InstallerCliError "Missing value for $flag")
@@ -69,13 +69,26 @@ function Parse-InstallerCli {
                 if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
                     $value = $value.Substring(1, $value.Length - 2)
                 }
-                if ($flag -ceq '--skills-install-dir') { $result.SkillsInstallDir = $value }
-                else { $result.GlobalAgentsInstallDir = $value }
+                switch -CaseSensitive ($flag) {
+                    '--host' {
+                        if ($value -cnotin @('codex', 'claude')) { throw (New-InstallerCliError 'Invalid Host') }
+                        $result.InstallerHost = $value
+                    }
+                    '--global-instructions' {
+                        if ($value -cnotin @('yes', 'no')) { throw (New-InstallerCliError 'Invalid Global Instructions choice') }
+                        $result.GlobalInstructions = $value -ceq 'yes'
+                    }
+                    '--skills-dir' { $result.SkillsDir = $value }
+                    '--instructions-dir' { $result.InstructionsDir = $value }
+                }
             }
         }
     }
-    if ($seen.Contains('--global-agent') -and $seen.Contains('--no-global-agent')) {
-        throw (New-InstallerCliError 'Conflicting Global AGENTS options')
+    if ($result.GlobalInstructions -eq $false -and $null -ne $result.InstructionsDir) {
+        throw (New-InstallerCliError 'Conflicting Global Instructions options')
+    }
+    if ($result.Action -eq 'install' -and $result.NonInteractive -and $null -eq $result.InstallerHost) {
+        throw (New-InstallerCliError 'Missing --host')
     }
     if ($result.Action -ne 'install' -and $result.DryRun) {
         throw (New-InstallerCliError 'Conflicting actions')

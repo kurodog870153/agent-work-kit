@@ -9,6 +9,7 @@ name = "work"
 path = "src/main.rs"
 
 [dependencies]
+ci-timing = { path = "../../common/ci-timing" }
 work-flow = { path = "../work-flow" }
 work-infrastructure = { path = "../work-infrastructure" }
 work-model = { path = "../work-model" }
