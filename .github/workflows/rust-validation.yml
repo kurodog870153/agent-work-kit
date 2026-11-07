@@ -63,9 +63,6 @@ jobs:
         if: steps.mac_test_compile.outcome == 'success'
         continue-on-error: true
         run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
-      - name: Investigate Rust test costs
-        if: steps.mac_test_compile.outcome == 'success'
-        run: python3 -B ../.github/scripts/ci-performance/investigate/test_costs.py --output .ci-perf/investigation
       - name: Probe Rust fixture and process costs
         if: steps.mac_test_compile.outcome == 'success'
         run: python3 -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10
@@ -196,9 +193,6 @@ jobs:
         if: steps.windows_test_compile.outcome == 'success'
         continue-on-error: true
         run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
-      - name: Investigate Rust test costs
-        if: steps.windows_test_compile.outcome == 'success'
-        run: python -B ../.github/scripts/ci-performance/investigate/test_costs.py --output .ci-perf/investigation --target $env:WORK_RUST_TARGET
       - name: Probe Rust fixture and process costs
         if: steps.windows_test_compile.outcome == 'success'
         run: python -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10 --target $env:WORK_RUST_TARGET
