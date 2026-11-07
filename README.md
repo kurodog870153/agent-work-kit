@@ -15,22 +15,23 @@ Agent Work Kit（`agent-work-kit`）提供 Work 與 Tooling 兩個 Skill，協�
 
 ## 2. 安裝
 
-預編譯套件支援 macOS ARM64 與 Windows x64 MSVC。可下載正式版安裝腳本，或使用 Release ZIP 離線安裝；從原始碼安裝需要 Rust、Cargo 1.99.1 以上及平台建置工具。
+1. [macOS ARM64 安裝腳本](https://github.com/kurodog870153/agent-work-kit/releases/latest/download/install-agent-work-kit-from-github-release.command)
+2. [Windows x64 安裝腳本](https://github.com/kurodog870153/agent-work-kit/releases/latest/download/install-agent-work-kit-from-github-release.bat)
 
-| 安裝方式 | macOS ARM64 | Windows x64 MSVC |
-| --- | --- | --- |
-| 下載正式版 | [安裝腳本](https://github.com/kurodog870153/agent-work-kit/releases/latest/download/install-work-from-github-release.command) | [安裝腳本](https://github.com/kurodog870153/agent-work-kit/releases/latest/download/install-work-from-github-release.bat) |
-| 從 ZIP 安裝 | 解壓後執行 `install-work-from-package.command` | 解壓後執行 `install-work-from-package.bat` |
-| 從原始碼安裝 | 執行 `os-scripts/mac/install-work-from-source.command` | 執行 `os-scripts/windows/install-work-from-source.bat` |
-
-安裝器會將 Work 與 Tooling 安裝在同一個 Skill 父目錄。安裝步驟與選項請參閱 [Release 安裝指引](docs/release/README.md)。
+安裝步驟與選項請參閱 [Release 安裝指引](docs/release/README.md)。
 
 ## 3. 使用方式
 
-在 Codex 對話中輸入：
+在 Codex 對話中以 `$work` 呼叫；在 Claude Code 對話中以 `/work` 呼叫。以下是 Codex 範例：
 
 ```text
 $work <mode> -- <request>
+```
+
+Claude Code 使用相同的模式與參數：
+
+```text
+/work <mode> -- <request>
 ```
 
 支援的模式：

@@ -23,6 +23,7 @@ fn error(code: ExitCode, reason: &str, message: &str, path: &Path) -> WorkError 
 
 impl ArtifactStore for LocalFiles {
     fn read_raw(&self, path: &Path) -> Result<Vec<u8>, WorkError> {
+        let started = std::time::Instant::now();
         let mut file = File::open(path).map_err(|open_error| {
             if matches!(
                 open_error.kind(),
@@ -61,6 +62,7 @@ impl ArtifactStore for LocalFiles {
                 path,
             )
         })?;
+        ci_timing::log_cli_timing("artifact_file_read", started);
         Ok(bytes)
     }
 

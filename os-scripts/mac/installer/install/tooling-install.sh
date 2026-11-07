@@ -32,7 +32,7 @@ installer_tooling_inspect() {
           ! -L "${target%/*}/install-state.json" ]]; then
         parent_raw="$(cat -- "${target%/*}/install-state.json")" || return
         version="$(osascript -l JavaScript "$state_module" combined "$parent_raw" \
-            "${target%/*}/work" "$target" tooling-version)" || return
+            "${target%/*}/work" "$target" tooling-version "$selected_host")" || return
     fi
     installer_tooling_version="$version"
     if [[ "$version" == - ]]; then installer_tooling_kind=first-update

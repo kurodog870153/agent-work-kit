@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
 from release_publication_checks import expected_assets
-from release_verification_report import build_report, main, required_checks, workflow_stage_statuses
+from release_verification_report import build_report, check_chart_counts, main, required_checks, workflow_stage_statuses
 from release_post_publish_checks import main as post_publish_main, verify
 
 
@@ -91,14 +91,14 @@ class ReleaseVerificationReportTests(unittest.TestCase):
                              {(item["check"], item["asset"]) for item in checks})
             self.assertTrue(all(item["status"] == "success" for item in checks))
             attestations = [command for command in commands if command[:3] == ["gh", "attestation", "verify"]]
-            self.assertEqual(len(attestations), 5)
+            self.assertEqual(len(attestations), 7)
             self.assertTrue(all(command[command.index("--source-ref") + 1] == "refs/heads/main"
                                 for command in attestations))
-            (actual / "install-work-from-github-release.command").unlink()
+            (actual / "install-agent-work-kit-from-github-release.command").unlink()
             checks = verify("1.2.3", "owner/repo", "v1.2.3", "a" * 40,
                             manifest, expected, actual, runner, fetcher)
             self.assertTrue(any(item["check"] == "asset_digest" and
-                                item["asset"] == "install-work-from-github-release.command" and
+                                item["asset"] == "install-agent-work-kit-from-github-release.command" and
                                 item["status"] == "failure" for item in checks))
 
     def test_attestation_failure_records_asset_and_error(self):
@@ -171,7 +171,7 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             report_path = root / "release-verification.json"
             checks_path = root / "release-checks.json"
             checks_path.write_text(json.dumps([{
-                "check": "attestation", "asset": "work-v1.2.3-macos-arm64.zip",
+                "check": "attestation", "asset": "agent-work-kit-v1.2.3-codex-macos-arm64.zip",
                 "status": "failure", "error": "signature rejected",
             }]), encoding="utf-8")
             summary_path = root / "summary.md"
@@ -196,8 +196,12 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             self.assertEqual(report["stages"]["post_publish_verify"], "failure")
             summary = summary_path.read_text(encoding="utf-8")
             self.assertIn("Release verification: failure", summary)
+            self.assertIn("### Release stage results", summary)
+            self.assertIn('"failure" : 1', summary)
+            self.assertIn("### Asset check results", summary)
+            self.assertIn(f'"missing" : {len(required_checks("1.2.3")) - 1}', summary)
             self.assertIn("signature rejected", summary)
-            self.assertEqual(report["checks"][0]["asset"], "work-v1.2.3-macos-arm64.zip")
+            self.assertEqual(report["checks"][0]["asset"], "agent-work-kit-v1.2.3-codex-macos-arm64.zip")
 
     def test_records_matching_assets_and_failures(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -217,6 +221,7 @@ class ReleaseVerificationReportTests(unittest.TestCase):
             report = build_report("1.2.3", "a" * 40, "https://example.invalid/run", stages, expected, actual, checks)
             self.assertEqual(report["result"], "success")
             self.assertTrue(report["attestation_verified"])
+            self.assertEqual(check_chart_counts("1.2.3", checks)["missing"], 0)
             missing = [item for item in checks if item["check"] != "download_url_latest"]
             report = build_report("1.2.3", "a" * 40, "https://example.invalid/run", stages, expected, actual, missing)
             self.assertEqual(report["result"], "failure")

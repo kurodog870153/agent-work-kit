@@ -6,7 +6,7 @@ runs:
     - name: Verify batch line endings
       shell: pwsh
       run: |
-        foreach ($path in @('os-scripts/windows/install-work-from-package.bat', 'os-scripts/windows/install-work-from-source.bat', 'os-scripts/windows/install-work-from-github-release.bat')) {
+        foreach ($path in @('os-scripts/windows/install-agent-work-kit-from-package.bat', 'os-scripts/windows/install-agent-work-kit-from-source.bat', 'os-scripts/windows/install-agent-work-kit-from-github-release.bat')) {
           $entry = git ls-files --eol -- $path
           if ($entry -notmatch '^i/lf\s+w/crlf\s') { throw "Checkout changed batch line endings for ${path}: $entry" }
         }

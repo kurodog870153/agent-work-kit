@@ -1,5 +1,5 @@
 name: verify release package checksums
-description: Verify a release ZIP and its outer checksum manifest
+description: Verify both Host ZIPs and their outer checksum manifest
 inputs:
   platform:
     required: true
@@ -13,7 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Download release ZIP
+    - name: Download release ZIPs
       uses: actions/download-artifact@v8
       with:
         name: ${{ inputs.package-artifact }}
@@ -23,13 +23,16 @@ runs:
       with:
         name: ${{ inputs.checksum-artifact }}
         path: dist
-    - name: Verify ZIP and checksums
+    - name: Verify ZIPs and checksums
       shell: bash
       env:
         PLATFORM: ${{ inputs.platform }}
       run: |
-        zip="work-v$(cat VERSION)-${PLATFORM}.zip"
-        python3 -B .github/scripts/release/release_package_integrity.py verify-zip "dist/$zip"
-        test "$(cat dist/SHA256SUMS.txt)" = "$(cd dist && sha256sum "$zip")"
+        version="$(cat VERSION)"
+        for host in codex claude; do
+          zip="agent-work-kit-v${version}-${host}-${PLATFORM}.zip"
+          python3 -B .github/scripts/release/release_package_integrity.py verify-zip "dist/$zip"
+        done
+        test "$(cat dist/SHA256SUMS.txt)" = "$(cd dist && sha256sum "agent-work-kit-v${version}-codex-${PLATFORM}.zip" "agent-work-kit-v${version}-claude-${PLATFORM}.zip")"
         cd dist
         sha256sum --check --strict SHA256SUMS.txt

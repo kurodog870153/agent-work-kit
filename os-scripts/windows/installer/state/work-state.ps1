@@ -43,14 +43,16 @@ function New-InstallerState {
         [string] $Skills,
         [bool] $GlobalAgents,
         [string] $WorkDir,
-        [AllowNull()][string] $GlobalAgentsDir
+        [AllowNull()][string] $GlobalAgentsDir,
+        [string] $InstallerHost
     )
     try { $template = ConvertFrom-Json -InputObject $TemplateRaw -ErrorAction Stop }
     catch { throw 'invalid install-state template' }
     if ($template -isnot [pscustomobject]) { throw 'invalid install-state template' }
     $keys = @($template.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ','
-    if ($keys -cne 'global_agent_dir,skill_install_dir,status,tooling_version,version,work_version' -or
+    if ($keys -cne 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' -or
         @($template.PSObject.Properties | Where-Object { $null -ne $_.Value }).Count -ne 0 -or
+        $InstallerHost -cnotin @('codex', 'claude') -or
         -not (Test-InstallerStateVersion $Version) -or
         [string]::IsNullOrEmpty($WorkDir) -or -not [IO.Path]::IsPathRooted($WorkDir) -or
         ($GlobalAgents -and ([string]::IsNullOrEmpty($GlobalAgentsDir) -or
@@ -59,6 +61,7 @@ function New-InstallerState {
     }
     $resolved = @(Get-InstallerExpandedSkills -Selection $Skills)
     return [ordered]@{
+        host = $InstallerHost
         version = $Version
         skills = $resolved
         work_dir = $WorkDir
@@ -67,11 +70,12 @@ function New-InstallerState {
 }
 
 function Read-InstallerState {
-    param([string] $Raw, [string] $InstallDir)
+    param([string] $Raw, [string] $InstallDir, [string] $InstallerHost)
     try { $value = ConvertFrom-Json -InputObject $Raw -ErrorAction Stop } catch { return $null }
     if ($null -eq $value -or $value -isnot [pscustomobject]) { return $null }
     $keys = @($value.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ','
-    if ($keys -cne 'global_agents_dir,skills,version,work_dir' -or
+    if ($keys -cne 'global_agents_dir,host,skills,version,work_dir' -or
+        $value.host -cne $InstallerHost -or $value.host -cnotin @('codex', 'claude') -or
         -not (Test-InstallerStateVersion $value.version) -or
         $value.work_dir -isnot [string] -or
         -not [string]::Equals($value.work_dir, $InstallDir, [StringComparison]::OrdinalIgnoreCase) -or
@@ -90,9 +94,11 @@ function Resolve-InstallerSettings {
         [string] $Raw,
         [string] $InstallDir,
         [string] $SkillsOverride,
-        [bool] $GlobalAgentsOverride
+        [bool] $GlobalAgentsOverride,
+        [string] $InstallerHost
     )
-    $state = Read-InstallerState -Raw $Raw -InstallDir $InstallDir
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
+    $state = Read-InstallerState -Raw $Raw -InstallDir $InstallDir -InstallerHost $InstallerHost
     $skills = if ($PSBoundParameters.ContainsKey('SkillsOverride')) { @(Get-InstallerExpandedSkills -Selection $SkillsOverride) } elseif ($null -ne $state) { @($state.skills) } else { @('general') }
     $globalAgents = if ($PSBoundParameters.ContainsKey('GlobalAgentsOverride')) { $GlobalAgentsOverride } elseif ($null -ne $state) { $null -ne $state.global_agents_dir } else { $true }
     return [pscustomobject]@{

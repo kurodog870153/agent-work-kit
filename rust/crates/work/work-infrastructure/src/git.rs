@@ -28,10 +28,12 @@ impl Git for LocalGit {
 
 impl LocalGit {
     fn run(&self, root: &Path, args: &[String]) -> Result<Vec<u8>, WorkError> {
+        let started = std::time::Instant::now();
         let argv: Vec<String> = std::iter::once("git".to_owned())
             .chain(args.iter().cloned())
             .collect();
         let result = run_argv(&argv, root, Duration::from_secs(30));
+        ci_timing::log_cli_timing("git_command", started);
         let prefix = "execute_worktree_git";
         if result.status == CommandStatus::Exited && !result.stdout_complete {
             return Err(WorkError::new(

@@ -2,16 +2,16 @@
 chcp 65001 <nul >nul
 setlocal DisableDelayedExpansion
 if "%~1"=="--help" if "%~2"=="" (
-    echo Usage: install-work-from-github-release.bat [installer options]
+    echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
     exit /b 0
 )
 if "%~1"=="-h" if "%~2"=="" (
-    echo Usage: install-work-from-github-release.bat [installer options]
+    echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
     exit /b 0
 )
-set "scratch=%TEMP%\work-release-%RANDOM%%RANDOM%%RANDOM%"
+set "scratch=%TEMP%\agent-work-kit-release-%RANDOM%%RANDOM%%RANDOM%"
 if exist "%scratch%" exit /b 1
 mkdir "%scratch%" || exit /b 1
 set "marker_line="
@@ -33,25 +33,45 @@ if ($args.Count -lt 2 -or $args[0] -cne '-Scratch') { exit 2 }
 $scratch = [string] $args[1]
 $cli = @()
 if ($args.Count -gt 2) { $cli = [string[]] $args[2..($args.Count - 1)] }
-$releaseTag = '__WORK_RELEASE_TAG__'
-$archiveName = "work-$releaseTag-windows-x64-msvc.zip"
+$releaseTag = '__AGENT_WORK_KIT_RELEASE_TAG__'
+$selectedHost = $null
+for ($index = 0; $index -lt $cli.Count; $index++) {
+    if ($cli[$index] -cne '--host') { continue }
+    if ($null -ne $selectedHost -or $index + 1 -ge $cli.Count -or $cli[$index + 1] -cnotin @('codex', 'claude')) {
+        [Console]::Error.WriteLine('Error: invalid --host.')
+        exit 2
+    }
+    $selectedHost = $cli[$index + 1]
+    $index++
+}
+if ($null -eq $selectedHost) {
+    if ($cli -contains '--non-interactive') {
+        [Console]::Error.WriteLine('Error: --host is required in non-interactive mode.')
+        exit 2
+    }
+    $choice = Read-Host 'Select Host: 1) Codex, 2) Claude Code'
+    $selectedHost = switch ($choice) { '1' { 'codex' } '2' { 'claude' } default { $null } }
+    if ($null -eq $selectedHost) { [Console]::Error.WriteLine('Error: Host selection is required.'); exit 2 }
+    $cli += @('--host', $selectedHost)
+}
+$archiveName = "agent-work-kit-$releaseTag-$selectedHost-windows-x64-msvc.zip"
 $base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$releaseTag"
 function Clear-ReleaseStaleScratch {
     $parent = Split-Path -Path $scratch -Parent
     foreach ($folder in @(Get-ChildItem -LiteralPath $parent -Directory -Force -ErrorAction SilentlyContinue)) {
-        if ($folder.FullName -ceq $scratch -or $folder.Name -cnotmatch '^work-release-[0-9]+$' -or
+        if ($folder.FullName -ceq $scratch -or $folder.Name -cnotmatch '^agent-work-kit-release-[0-9]+$' -or
             ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
-        $marker = Join-Path $folder.FullName '.work-release-owner'
+        $marker = Join-Path $folder.FullName '.agent-work-kit-release-owner'
         if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { continue }
         $markerItem = Get-Item -LiteralPath $marker -Force
         if (($markerItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
         $record = [IO.File]::ReadAllText($marker).Trim()
-        if ($record -cnotmatch '^work-release-v1\|([0-9]+)$') { continue }
+        if ($record -cnotmatch '^agent-work-kit-release-v1\|([0-9]+)$') { continue }
         if (Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue) { continue }
         try { $lock = [IO.File]::Open($marker, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
         catch { continue }
         try {
-            $allowed = @('.work-release-owner', 'download.ps1', 'SHA256SUMS.txt', $archiveName, 'package')
+            $allowed = @('.agent-work-kit-release-owner', 'download.ps1', 'SHA256SUMS.txt', $archiveName, 'package')
             $safe = $true
             $stack = [System.Collections.Generic.Stack[object]]::new()
             foreach ($item in @(Get-ChildItem -LiteralPath $folder.FullName -Force)) {
@@ -73,7 +93,7 @@ function Clear-ReleaseStaleScratch {
         } finally { $lock.Dispose() }
         if (-not $safe) { Write-Warning "Downloader temporary directory retained: $($folder.FullName)"; continue }
         try {
-            foreach ($name in @('package', $archiveName, 'SHA256SUMS.txt', 'download.ps1', '.work-release-owner')) {
+            foreach ($name in @('package', $archiveName, 'SHA256SUMS.txt', 'download.ps1', '.agent-work-kit-release-owner')) {
                 $itemPath = Join-Path $folder.FullName $name
                 if (Test-Path -LiteralPath $itemPath) {
                     Remove-Item -LiteralPath $itemPath -Recurse -Force -ErrorAction Stop
@@ -98,8 +118,8 @@ function Get-ReleaseAsset {
 try {
     if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'this downloader requires Windows x64' }
     Clear-ReleaseStaleScratch
-    $ownerPath = Join-Path $scratch '.work-release-owner'
-    [IO.File]::WriteAllText($ownerPath, "work-release-v1|$PID")
+    $ownerPath = Join-Path $scratch '.agent-work-kit-release-owner'
+    [IO.File]::WriteAllText($ownerPath, "agent-work-kit-release-v1|$PID")
     $ownerHandle = [IO.File]::Open($ownerPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $checksumPath = Get-ReleaseAsset -Name 'SHA256SUMS.txt'
     $archivePath = Get-ReleaseAsset -Name $archiveName
@@ -136,12 +156,15 @@ try {
     } finally { $archive.Dispose() }
     $package = Join-Path $scratch 'package'
     [IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $package)
-    $entryPath = Join-Path $package 'install-work-from-package.bat'
+    $entryPath = Join-Path $package 'install-agent-work-kit-from-package.bat'
     if (-not (Test-Path -LiteralPath $entryPath -PathType Leaf)) { throw 'Package entry is missing' }
     $infoPath = Join-Path $package 'release-info.json'
     if (-not (Test-Path -LiteralPath $infoPath -PathType Leaf)) { throw 'Package release metadata is missing' }
     $packageInfo = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json -ErrorAction Stop
-    if ($packageInfo.tag -cne $releaseTag) { throw 'Package Release tag does not match Downloader' }
+    if ($packageInfo.tag -cne $releaseTag -or $packageInfo.host -cne $selectedHost -or
+        $packageInfo.target -cne 'x86_64-pc-windows-msvc') {
+        throw 'Package Release identity does not match Downloader'
+    }
     & $entryPath @cli
     exit $LASTEXITCODE
 } catch {

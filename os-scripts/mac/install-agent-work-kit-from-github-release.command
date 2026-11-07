@@ -2,14 +2,13 @@
 set -uo pipefail
 export LC_ALL=C
 
-release_tag=__WORK_RELEASE_TAG__
+release_tag=__AGENT_WORK_KIT_RELEASE_TAG__
 release_base="https://github.com/kurodog870153/agent-work-kit/releases/download/$release_tag"
-archive="work-$release_tag-macos-arm64.zip"
 checksum=SHA256SUMS.txt
 
 if (( $# == 1 )) && [[ "$1" == --help || "$1" == -h ]]; then
     cat <<'USAGE'
-Usage: install-work-from-github-release.command [installer options]
+Usage: install-agent-work-kit-from-github-release.command [installer options]
 Downloads the fixed macOS ARM64 Release, verifies SHA-256, then runs its Package installer.
 Use --help on the Package installer for the complete option list.
 USAGE
@@ -20,6 +19,29 @@ if [[ "$(uname -s)" != Darwin || "$(uname -m)" != arm64 ]]; then
     printf 'Error: this downloader requires macOS ARM64.\n' >&2
     exit 1
 fi
+selected_host=''
+non_interactive=0
+forward_args=("$@")
+for ((index=0; index<$#; index++)); do
+    argument="${forward_args[index]}"
+    if [[ "$argument" == --non-interactive ]]; then non_interactive=1; fi
+    if [[ "$argument" == --host ]]; then
+        [[ -z "$selected_host" && $((index + 1)) -lt $# ]] || { printf 'Error: invalid --host.\n' >&2; exit 2; }
+        selected_host="${forward_args[index+1]}"
+        [[ "$selected_host" == codex || "$selected_host" == claude ]] || { printf 'Error: invalid --host.\n' >&2; exit 2; }
+    fi
+done
+if [[ -z "$selected_host" ]]; then
+    [[ "$non_interactive" != 1 ]] || { printf 'Error: --host is required in non-interactive mode.\n' >&2; exit 2; }
+    read -r -p 'Select Host: 1) Codex, 2) Claude Code [] ' answer || exit 1
+    case "$answer" in
+        1) selected_host=codex ;;
+        2) selected_host=claude ;;
+        *) printf 'Error: Host selection is required.\n' >&2; exit 2 ;;
+    esac
+    forward_args+=(--host "$selected_host")
+fi
+archive="agent-work-kit-$release_tag-$selected_host-macos-arm64.zip"
 verbose=0
 for argument in "$@"; do [[ "$argument" == --verbose ]] && verbose=1; done
 release_log() { (( verbose )) && printf 'Downloader: %s\n' "$1" || true; }
@@ -29,18 +51,18 @@ scratch_root="${TMPDIR:-/tmp}"
 release_cleanup_stale() {
     local entry marker kind pid name lsof_output status
     [[ -x /usr/sbin/lsof ]] || return 0
-    for entry in "$scratch_root"/work-release.*; do
-        [[ -d "$entry" && ! -L "$entry" && "${entry##*/}" =~ ^work-release\.[A-Za-z0-9]{8}$ ]] || continue
-        marker="$entry/.work-release-owner"
+    for entry in "$scratch_root"/agent-work-kit-release.*; do
+        [[ -d "$entry" && ! -L "$entry" && "${entry##*/}" =~ ^agent-work-kit-release\.[A-Za-z0-9]{8}$ ]] || continue
+        marker="$entry/.agent-work-kit-release-owner"
         [[ -f "$marker" && ! -L "$marker" ]] || continue
         read -r kind pid < "$marker" || continue
-        [[ "$kind" == work-release-v1 && "$pid" =~ ^[0-9]+$ ]] || continue
+        [[ "$kind" == agent-work-kit-release-v1 && "$pid" =~ ^[0-9]+$ ]] || continue
         kill -0 "$pid" 2>/dev/null && continue
         [[ -z "$(find "$entry" -type l -print -quit)" ]] || continue
         for name in "$entry"/* "$entry"/.[!.]*; do
             [[ -e "$name" || -L "$name" ]] || continue
             case "${name##*/}" in
-                .work-release-owner|SHA256SUMS.txt|package|work-v*-macos-arm64.zip) ;;
+                .agent-work-kit-release-owner|SHA256SUMS.txt|package|agent-work-kit-v*-codex-macos-arm64.zip|agent-work-kit-v*-claude-macos-arm64.zip) ;;
                 *) printf 'Warning: unknown Downloader temporary entry retained: %s\n' "$entry" >&2; continue 2 ;;
             esac
         done
@@ -52,9 +74,9 @@ release_cleanup_stale() {
     done
 }
 release_cleanup_stale
-scratch="$(mktemp -d "$scratch_root/work-release.XXXXXXXX")" || exit 1
-[[ -d "$scratch" && ! -L "$scratch" && "${scratch##*/}" == work-release.* ]] || exit 1
-printf 'work-release-v1 %s\n' "$$" > "$scratch/.work-release-owner" || exit 1
+scratch="$(mktemp -d "$scratch_root/agent-work-kit-release.XXXXXXXX")" || exit 1
+[[ -d "$scratch" && ! -L "$scratch" && "${scratch##*/}" == agent-work-kit-release.* ]] || exit 1
+printf 'agent-work-kit-release-v1 %s\n' "$$" > "$scratch/.agent-work-kit-release-owner" || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 
 download() {
@@ -113,12 +135,15 @@ release_log 'ZIP members and types verified'
 
 mkdir -- "$scratch/package" || exit 1
 /usr/bin/unzip -qq -n "$scratch/$archive" -d "$scratch/package" || exit 1
-entry="$scratch/package/install-work-from-package.command"
+entry="$scratch/package/install-agent-work-kit-from-package.command"
 [[ -f "$entry" && ! -L "$entry" ]] || { printf 'Error: Package entry is missing.\n' >&2; exit 1; }
 info="$scratch/package/release-info.json"
 [[ -f "$info" && ! -L "$info" ]] || { printf 'Error: Package release metadata is missing.\n' >&2; exit 1; }
-package_tag="$(/usr/bin/osascript -l JavaScript -e 'ObjC.import("Foundation"); function run(argv) { try { return JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null))).tag || ""; } catch (_) { return ""; } }' "$info" 2>/dev/null)" || exit 1
-[[ "$package_tag" == "$release_tag" ]] || { printf 'Error: Package Release tag does not match Downloader.\n' >&2; exit 1; }
+package_identity="$(/usr/bin/osascript -l JavaScript -e 'ObjC.import("Foundation"); function run(argv) { try { var info = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null))); return [info.tag || "", info.host || "", info.target || ""].join("\t"); } catch (_) { return ""; } }' "$info" 2>/dev/null)" || exit 1
+IFS=$'\t' read -r package_tag package_host package_target <<< "$package_identity"
+[[ "$package_tag" == "$release_tag" && "$package_host" == "$selected_host" && "$package_target" == aarch64-apple-darwin ]] || {
+    printf 'Error: Package Release identity does not match Downloader.\n' >&2; exit 1;
+}
 release_log 'starting verified Package installer'
-/bin/bash "$entry" "$@"
+/bin/bash "$entry" "${forward_args[@]}"
 exit $?

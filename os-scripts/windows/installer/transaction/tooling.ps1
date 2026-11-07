@@ -85,9 +85,10 @@ function Restore-InstallerInterruptedTooling {
 
 function Invoke-InstallerToolingTransaction {
     param([string] $Target, [string] $Source, [string] $Version, [string] $Binary, [string] $StateJson,
-        [bool] $NonInteractive, [bool] $Confirmed)
+        [bool] $NonInteractive, [bool] $Confirmed, [string] $InstallerHost)
     Restore-InstallerInterruptedTooling -Target $Target -Source $Source -Version $Version -Binary $Binary
-    $inspection = Inspect-InstallerToolingTarget -Target $Target -Source $Source
+    if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
+    $inspection = Inspect-InstallerToolingTarget -Target $Target -Source $Source -InstallerHost $InstallerHost
     if ($inspection.Kind -notin @('new', 'managed') -and
         -not ($inspection.Kind -eq 'first-update' -and -not $NonInteractive -and $Confirmed)) {
         throw "Tooling target is not authorized: $($inspection.Reason)"
@@ -110,7 +111,7 @@ function Invoke-InstallerToolingTransaction {
     }
     [IO.File]::WriteAllText((Join-Path $transaction 'state-sha256.txt'),
         (Get-InstallerWorkFileSha256 (Join-Path $prepared 'install-state.json')))
-    $inspection = Inspect-InstallerToolingTarget -Target $Target -Source $Source
+    $inspection = Inspect-InstallerToolingTarget -Target $Target -Source $Source -InstallerHost $InstallerHost
     if ($inspection.Kind -notin @('new', 'managed') -and
         -not ($inspection.Kind -eq 'first-update' -and -not $NonInteractive -and $Confirmed)) {
         throw "Tooling target changed before publish: $($inspection.Reason)"

@@ -4,11 +4,11 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd 
 source "$repo_root/os-scripts/mac/installer/target/preflight.sh"
 installer_recognize_legacy_work() { return 0; } # Transaction fixtures use text in place of the CLI binary.
 source "$repo_root/os-scripts/mac/installer/transaction/work.sh"
-source "$repo_root/os-scripts/mac/installer/global-agents/policy.sh"
-source "$repo_root/os-scripts/mac/installer/global-agents/transaction.sh"
+source "$repo_root/os-scripts/mac/installer/global-instructions/policy.sh"
+source "$repo_root/os-scripts/mac/installer/global-instructions/transaction.sh"
 source_work="$repo_root/skills/work"
-scratch="$(mktemp -d "$repo_root/.issue95-transaction.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.issue95-transaction.* ]] || exit 1
+scratch="$(mktemp -d "$repo_root/.installer-test-transaction.XXXXXX")"
+[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-transaction.* ]] || exit 1
 trap 'rm -rf -- "$scratch"' EXIT
 target="$scratch/work"
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }

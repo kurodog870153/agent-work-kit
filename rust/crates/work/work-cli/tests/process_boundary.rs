@@ -47,6 +47,7 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 use std::{fs, path::PathBuf};
 
+use ci_timing::{log_test_timing, test_timing_enabled};
 use serde_json::Value;
 use serde_json::json;
 use work_flow::error::ExitCode;
@@ -101,6 +102,7 @@ fn project_root() -> String {
 fn installed_executable() -> &'static PathBuf {
     static INSTALLED: OnceLock<PathBuf> = OnceLock::new();
     INSTALLED.get_or_init(|| {
+        let started = std::time::Instant::now();
         fn copy_tree(source: &Path, destination: &Path) {
             fs::create_dir_all(destination).unwrap();
             for entry in fs::read_dir(source).unwrap() {
@@ -128,15 +130,33 @@ fn installed_executable() -> &'static PathBuf {
             &PathBuf::from(project_root()).join("skills/work/references"),
             &skill.join("references"),
         );
+        log_test_timing("installed_executable_copy", started);
         binary
     })
 }
 
 fn run(arguments: &[String]) -> Output {
-    Command::new(installed_executable())
-        .args(arguments)
-        .output()
-        .expect("launch work")
+    let executable = installed_executable();
+    let started = std::time::Instant::now();
+    let mut command = Command::new(executable);
+    command.args(arguments);
+    if test_timing_enabled() {
+        command.env("AWK_CLI_TIMING", "1");
+    }
+    let mut output = command.output().expect("launch work");
+    if test_timing_enabled() {
+        let mut application_stderr = Vec::new();
+        for line in output.stderr.split_inclusive(|byte| *byte == b'\n') {
+            if line.starts_with(b"AWK_CLI_TIMING ") || line.starts_with(b"AWK_CLI_TIMING_AGG ") {
+                eprint!("{}", String::from_utf8_lossy(line));
+            } else {
+                application_stderr.extend_from_slice(line);
+            }
+        }
+        output.stderr = application_stderr;
+    }
+    log_test_timing("native_work_command", started);
+    output
 }
 
 fn rebind_current_diagnostics_fixture(root: &Path) {
@@ -316,14 +336,14 @@ fn public_host_command_preserves_actual_receipts_reports_and_carried_provenance(
         )
         .unwrap();
         fs::write(root.join("original"), b"before").unwrap();
-        assert!(
-            Command::new("git")
-                .args(["init", "--quiet"])
-                .current_dir(&root)
-                .status()
-                .unwrap()
-                .success()
-        );
+        let started = std::time::Instant::now();
+        let initialized = Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&root)
+            .status()
+            .unwrap();
+        log_test_timing("git_init", started);
+        assert!(initialized.success());
         let collection = work_flow::task::validate_collection(
             &work_infrastructure::hierarchy_catalog::LocalHierarchyCatalog {
                 skill_root: installed_executable()
@@ -875,11 +895,13 @@ fn installed_execution_staging_family_completes_all_seven_publications() {
     }
     work_infrastructure::fixture_support::copy_fixture_sources(&fixture, &root).unwrap();
     fs::write(root.join("src.txt"), b"source\n").unwrap();
+    let started = std::time::Instant::now();
     let initialized = Command::new("git")
         .args(["init", "--quiet"])
         .current_dir(&root)
         .output()
         .unwrap();
+    log_test_timing("git_init", started);
     assert!(
         initialized.status.success(),
         "{}",

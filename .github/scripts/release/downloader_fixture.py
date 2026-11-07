@@ -9,15 +9,15 @@ def build_test_downloaders(repository, output):
         data = path.read_bytes()
         if path.suffix == ".command":
             anchor = b"curl_protocol='=https'\n"
-            injection = b"""if [[ "${WORK_RELEASE_TEST_MODE:-}" == 1 && "${WORK_RELEASE_TEST_BASE_URL:-}" == http://127.0.0.1:* ]]; then
-    release_base="${WORK_RELEASE_TEST_BASE_URL%/}/$release_tag"
+            injection = b"""if [[ "${AGENT_WORK_KIT_RELEASE_TEST_MODE:-}" == 1 && "${AGENT_WORK_KIT_RELEASE_TEST_BASE_URL:-}" == http://127.0.0.1:* ]]; then
+    release_base="${AGENT_WORK_KIT_RELEASE_TEST_BASE_URL%/}/$release_tag"
     curl_protocol='=http,https'
 fi
 """
         else:
             anchor = b'$base = "https://github.com/kurodog870153/agent-work-kit/releases/download/$releaseTag"\r\n'
-            injection = rb"""if ($env:WORK_RELEASE_TEST_MODE -eq '1' -and $env:WORK_RELEASE_TEST_BASE_URL -match '^http://127\.0\.0\.1:[0-9]+$') {
-    $base = $env:WORK_RELEASE_TEST_BASE_URL.TrimEnd('/') + '/' + $releaseTag
+            injection = rb"""if ($env:AGENT_WORK_KIT_RELEASE_TEST_MODE -eq '1' -and $env:AGENT_WORK_KIT_RELEASE_TEST_BASE_URL -match '^http://127\.0\.0\.1:[0-9]+$') {
+    $base = $env:AGENT_WORK_KIT_RELEASE_TEST_BASE_URL.TrimEnd('/') + '/' + $releaseTag
 }
 """.replace(b"\n", b"\r\n")
         if data.count(anchor) != 1:
