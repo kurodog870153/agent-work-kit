@@ -85,19 +85,16 @@ def checked_git(root, *arguments):
     ).stdout.strip()
 
 
-def release_notes(root, repository, tag, expected_sha):
+def published_baseline(root, repository, expected_sha):
     if not SHA.fullmatch(expected_sha):
         raise ValueError("expected SHA must be a full commit hash")
-    if checked_git(root, "rev-parse", "HEAD") != expected_sha:
-        raise ValueError("release notes checkout does not match expected SHA")
-    # A tag is deliberately absent during the preflight gate.
     pages = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
     published = [item for page in pages for item in page if not item["draft"] and not item["prerelease"]]
     previous = max(published, key=lambda item: item["published_at"]) if published else None
     if previous:
         baseline_tag = previous["tag_name"]
         baseline = checked_git(root, "rev-parse", f"{baseline_tag}^{{commit}}")
-        if baseline == expected_sha or subprocess.run(
+        if subprocess.run(
             ["git", "merge-base", "--is-ancestor", baseline, expected_sha], cwd=root
         ).returncode != 0:
             raise ValueError("published release baseline is not an ancestor of this tag")
@@ -107,6 +104,18 @@ def release_notes(root, repository, tag, expected_sha):
         baseline_tag = None
         revision = expected_sha
         baseline_label = "initial repository history"
+    return baseline_tag, baseline_label, revision
+
+
+def release_notes(root, repository, tag, expected_sha):
+    if not SHA.fullmatch(expected_sha):
+        raise ValueError("expected SHA must be a full commit hash")
+    if checked_git(root, "rev-parse", "HEAD") != expected_sha:
+        raise ValueError("release notes checkout does not match expected SHA")
+    # A tag is deliberately absent during the preflight gate.
+    baseline_tag, baseline_label, revision = published_baseline(root, repository, expected_sha)
+    if baseline_tag and checked_git(root, "rev-parse", f"{baseline_tag}^{{commit}}") == expected_sha:
+        raise ValueError("published release baseline is not an ancestor of this tag")
     commits = checked_git(root, "log", "--reverse", "--format=%h %s", revision).splitlines()
     if not commits:
         raise ValueError("release notes comparison has no commits")
