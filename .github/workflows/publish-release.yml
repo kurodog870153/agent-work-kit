@@ -25,7 +25,7 @@ jobs:
     needs: rust-ci
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: read
       actions: read
     outputs:
