@@ -30,6 +30,7 @@ jobs:
       actions: read
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,7 +39,7 @@ jobs:
       - name: Record version tag
         id: version
         run: echo "tag=v$(cat VERSION)" >> "$GITHUB_OUTPUT"
-      - name: Reject rerun or reused release
+      - name: Check unpublished release attempt
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -54,12 +55,16 @@ jobs:
         run: python3 .github/scripts/release/release_publication_checks.py notes --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --title-file release-title.txt --notes-file release-notes.md --manifest-file release-content.json
       - uses: actions/upload-artifact@v7
         with:
-          name: validated-release-content
+          name: validated-release-content-attempt-${{ github.run_attempt }}
           path: |
             release-title.txt
             release-notes.md
             release-content.json
           if-no-files-found: error
+
+      - name: Record content artifact attempt
+        id: artifact-attempt
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   create-release-tag:
     name: create release tag
@@ -75,7 +80,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: validated-release-content
+          name: validated-release-content-attempt-${{ needs.prepare-release-content.outputs.artifact-attempt }}
       - name: Verify prepared content identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,13 +111,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Reject rerun or reused release tag
+      - name: Check unpublished release tag
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ needs.create-release-tag.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
-        run: python3 .github/scripts/release/release_publication_checks.py first-attempt --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+        run: python3 .github/scripts/release/release_publication_checks.py first-attempt --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --tag-created
       - name: Validate tag, commit, version and lock
         env:
           GH_TOKEN: ${{ github.token }}
@@ -151,15 +156,19 @@ jobs:
       tag: ${{ needs.package-ci.outputs.tag }}
       version: ${{ needs.package-ci.outputs.version }}
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-*
+          name: release-macos-arm64-attempt-${{ needs.package-ci.outputs.macos-artifact-attempt }}
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-windows-x64-msvc-attempt-${{ needs.package-ci.outputs.windows-artifact-attempt }}
+          path: dist
       - name: Check immutable releases setting
         env:
           GH_TOKEN: ${{ secrets.RELEASE_ADMIN_READ_TOKEN }}
@@ -203,13 +212,16 @@ jobs:
         run: echo "manifest_sha256=$(sha256sum dist/SHA256SUMS.txt | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: signed-release-assets
+          name: signed-release-assets-attempt-${{ github.run_attempt }}
           path: dist/
           if-no-files-found: error
+      - name: Record signed asset attempt
+        id: artifact-attempt
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   prepare-and-publish-release:
     name: prepare and publish release
-    needs: verify-and-attest-release-assets
+    needs: [verify-and-attest-release-assets, prepare-release-content]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -219,6 +231,7 @@ jobs:
       tag: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
       version: ${{ needs.verify-and-attest-release-assets.outputs.version }}
       manifest_sha256: ${{ needs.verify-and-attest-release-assets.outputs.manifest_sha256 }}
+      artifact-attempt: ${{ needs.verify-and-attest-release-assets.outputs.artifact-attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -226,11 +239,11 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: signed-release-assets
+          name: signed-release-assets-attempt-${{ needs.verify-and-attest-release-assets.outputs.artifact-attempt }}
           path: dist
       - uses: actions/download-artifact@v8
         with:
-          name: validated-release-content
+          name: validated-release-content-attempt-${{ needs.prepare-release-content.outputs.artifact-attempt }}
       - name: Recheck signed asset bytes and identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,7 +277,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
-        run: gh release create "$TAG" dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt --repo "$REPOSITORY" --draft --verify-tag --title "$(cat release-title.txt)" --notes-file release-notes.md
+          EXPECTED_SHA: ${{ github.sha }}
+        run: python3 .github/scripts/release/release_draft_creation.py --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --directory dist --title-file release-title.txt --notes-file release-notes.md
       - name: Verify draft and source identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -303,7 +317,7 @@ jobs:
         if: always()
         continue-on-error: true
         with:
-          name: signed-release-assets
+          name: signed-release-assets-attempt-${{ needs.prepare-and-publish-release.outputs.artifact-attempt }}
           path: dist
       - name: Verify downloaded published assets
         id: verify-published
@@ -331,7 +345,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-verification-${{ needs.prepare-and-publish-release.outputs.tag || github.sha }}
+          name: release-verification-${{ needs.prepare-and-publish-release.outputs.tag || github.sha }}-attempt-${{ github.run_attempt }}
           path: |
             release-verification.json
             release-checks.json

@@ -7,6 +7,10 @@ on:
         value: ${{ jobs.verify-windows-release-package-checksums.outputs.tag }}
       version:
         value: ${{ jobs.verify-windows-release-package-checksums.outputs.version }}
+      macos-artifact-attempt:
+        value: ${{ jobs.verify-macos-release-package-checksums.outputs.artifact-attempt }}
+      windows-artifact-attempt:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.artifact-attempt }}
     inputs:
       release:
         type: boolean
@@ -22,6 +26,8 @@ jobs:
   build-and-verify-macos-package:
     name: build macOS package
     runs-on: macos-latest
+    outputs:
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     env:
       TAG: ${{ inputs.tag }}
       RELEASE_MODE: ${{ inputs.release }}
@@ -77,18 +83,23 @@ jobs:
         run: bash .github/scripts/release/mac/verify_install.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && 'release-macos-arm64' || 'pr-release-macos-arm64' }}
+          name: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', github.run_attempt) || 'pr-release-macos-arm64' }}
           path: dist/*.zip
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && 'checksums-release-macos-arm64' || 'checksums-pr-release-macos-arm64' }}
+          name: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', github.run_attempt) || 'checksums-pr-release-macos-arm64' }}
           path: dist/SHA256SUMS.txt
           if-no-files-found: error
+      - name: Record artifact attempt
+        id: artifact-attempt
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   build-and-verify-windows-package:
     name: build Windows package
     runs-on: windows-latest
+    outputs:
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     env:
       TAG: ${{ inputs.tag }}
       RELEASE_MODE: ${{ inputs.release }}
@@ -170,14 +181,18 @@ jobs:
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && 'release-windows-x64-msvc' || 'pr-release-windows-x64-msvc' }}
+          name: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'pr-release-windows-x64-msvc' }}
           path: dist/*.zip
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && 'checksums-release-windows-x64-msvc' || 'checksums-pr-release-windows-x64-msvc' }}
+          name: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'checksums-pr-release-windows-x64-msvc' }}
           path: dist/SHA256SUMS.txt
           if-no-files-found: error
+      - name: Record artifact attempt
+        id: artifact-attempt
+        shell: bash
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   verify-macos-release-package-checksums:
     name: verify macOS checksums
@@ -186,6 +201,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      artifact-attempt: ${{ needs.build-and-verify-macos-package.outputs.artifact-attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -193,8 +210,8 @@ jobs:
       - uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: macos-arm64
-          package-artifact: ${{ inputs.release && 'release-macos-arm64' || 'pr-release-macos-arm64' }}
-          checksum-artifact: ${{ inputs.release && 'checksums-release-macos-arm64' || 'checksums-pr-release-macos-arm64' }}
+          package-artifact: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || 'pr-release-macos-arm64' }}
+          checksum-artifact: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || 'checksums-pr-release-macos-arm64' }}
 
   verify-windows-release-package-checksums:
     name: verify Windows checksums
@@ -206,6 +223,7 @@ jobs:
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
+      artifact-attempt: ${{ needs.build-and-verify-windows-package.outputs.artifact-attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -213,8 +231,8 @@ jobs:
       - uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: windows-x64-msvc
-          package-artifact: ${{ inputs.release && 'release-windows-x64-msvc' || 'pr-release-windows-x64-msvc' }}
-          checksum-artifact: ${{ inputs.release && 'checksums-release-windows-x64-msvc' || 'checksums-pr-release-windows-x64-msvc' }}
+          package-artifact: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || 'pr-release-windows-x64-msvc' }}
+          checksum-artifact: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || 'checksums-pr-release-windows-x64-msvc' }}
       - name: Record verified package identity
         id: identity
         shell: bash

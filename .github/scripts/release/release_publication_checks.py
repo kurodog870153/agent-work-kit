@@ -204,9 +204,9 @@ def verify_content(root, repository, tag, expected_sha, title_file, notes_file, 
     return manifest
 
 
-def check_first_publish_attempt(repository, tag, expected_sha, run_id, run_attempt):
-    if not SHA.fullmatch(expected_sha) or not run_id.isdecimal() or run_attempt != "1":
-        raise ValueError("release rerun or invalid run identity is forbidden")
+def check_first_publish_attempt(repository, tag, expected_sha, run_id, run_attempt, *, tag_created=False):
+    if not SHA.fullmatch(expected_sha) or not run_id.isdecimal() or not run_attempt.isdecimal() or int(run_attempt) < 1:
+        raise ValueError("invalid release run identity")
     pages = api(
         f"repos/{repository}/actions/workflows/publish-release.yml/runs?head_sha={expected_sha}&event=push&per_page=100",
         "--paginate", "--slurp",
@@ -215,8 +215,20 @@ def check_first_publish_attempt(repository, tag, expected_sha, run_id, run_attem
     if len(runs) != 1 or str(runs[0]["id"]) != run_id:
         raise ValueError(f"release tag {tag} has another run or an unverifiable run history")
     releases = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
-    if any(release["tag_name"] == tag for page in releases for release in page):
-        raise ValueError(f"release tag {tag} already has a draft or published release")
+    matches = [release for page in releases for release in page if release["tag_name"] == tag]
+    if len(matches) > 1 or any(not release["draft"] for release in matches):
+        raise ValueError(f"release tag {tag} is already published or has ambiguous release state")
+    if matches and run_attempt == "1":
+        raise ValueError(f"release tag {tag} already has a draft from another run")
+    result = subprocess.run(["gh", "api", f"repos/{repository}/git/ref/tags/{tag}"], capture_output=True, text=True)
+    if result.returncode == 0:
+        ref = json.loads(result.stdout)
+        if (run_attempt == "1" and not tag_created) or ref["object"]["sha"] != expected_sha:
+            raise ValueError(f"release tag {tag} already exists or points to a different commit")
+    elif "HTTP 404" not in result.stderr:
+        raise ValueError(f"release tag {tag} could not be verified: {result.stderr.strip()}")
+    elif matches or tag_created:
+        raise ValueError(f"release tag {tag} is missing")
 
 
 def main():
@@ -231,6 +243,7 @@ def main():
     parser.add_argument("--manifest-file", type=Path)
     parser.add_argument("--run-id")
     parser.add_argument("--run-attempt")
+    parser.add_argument("--tag-created", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
     try:
@@ -255,7 +268,8 @@ def main():
                     stream.write(summary)
             print(summary)
         elif args.action == "first-attempt":
-            check_first_publish_attempt(args.repository, args.tag, args.expected_sha, args.run_id or "", args.run_attempt or "")
+            check_first_publish_attempt(args.repository, args.tag, args.expected_sha, args.run_id or "", args.run_attempt or "",
+                                        tag_created=args.tag_created)
         else:
             expected_title = None
             expected_notes = None

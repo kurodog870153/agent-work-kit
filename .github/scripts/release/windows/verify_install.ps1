@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $version = (Get-Content VERSION -Raw).Trim()
 $rule = "agent-work-kit-release-e2e-$env:GITHUB_RUN_ID-$env:GITHUB_JOB"
+$elapsed = [Diagnostics.Stopwatch]::StartNew()
 Write-Host "Enabling outbound network isolation for Windows release installation E2E."
 New-NetFirewallRule -Name $rule -DisplayName $rule -Direction Outbound -Action Block -Profile Any -Enabled True -ErrorAction Stop | Out-Null
 try {
@@ -12,6 +13,7 @@ try {
         Write-Host "Network isolation active; verifying Windows release installation: $zip"
         python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
         if ($LASTEXITCODE -ne 0) { throw "Windows release installation E2E failed for $installerHost with exit code $LASTEXITCODE" }
+        Write-Host "Windows release installation E2E passed for $installerHost after $([math]::Round($elapsed.Elapsed.TotalSeconds, 1))s."
     }
     Write-Host 'Network isolation active; verifying Windows dual Host coexistence.'
     python -B .github/scripts/release/release_install_e2e.py `
@@ -20,6 +22,7 @@ try {
         --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
     if ($LASTEXITCODE -ne 0) { throw "Windows dual Host coexistence E2E failed with exit code $LASTEXITCODE" }
 } finally {
+    Write-Host "Windows release installation E2E elapsed: $([math]::Round($elapsed.Elapsed.TotalSeconds, 1))s."
     Write-Host 'Removing Windows release E2E network isolation rule.'
     Remove-NetFirewallRule -Name $rule -ErrorAction Stop
     for ($attempt = 1; $attempt -le 10; $attempt++) {

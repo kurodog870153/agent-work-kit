@@ -52,10 +52,15 @@ def create_tag(root, repository, expected_sha):
     if checkout != expected_sha:
         raise ValueError("checkout does not match successful CI commit")
     tag = f"v{checked_version(root)}"
-    if tag_exists(repository, tag):
-        raise ValueError(f"tag already exists: {tag}")
     if release_exists(repository, tag):
-        raise ValueError(f"release already exists: {tag}")
+        release = api(f"repos/{repository}/releases/tags/{tag}")
+        if not release["draft"]:
+            raise ValueError(f"release already published: {tag}")
+    if tag_exists(repository, tag):
+        ref = api(f"repos/{repository}/git/ref/tags/{tag}")
+        if ref["object"]["sha"] != expected_sha:
+            raise ValueError(f"tag points to a different commit: {tag}")
+        return tag
     if api(f"repos/{repository}/branches/main")["commit"]["sha"] != expected_sha:
         raise ValueError("main changed before tag creation")
     api(f"repos/{repository}/git/refs", "--method", "POST", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={expected_sha}")

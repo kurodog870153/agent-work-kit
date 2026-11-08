@@ -296,6 +296,12 @@ def exercise_package(package, root, platform, source_install=False):
     host = json.loads((package / "release-info.json").read_text(encoding="utf-8"))["host"]
     if host not in ("codex", "claude"):
         raise AssertionError(f"unsupported release Host: {host!r}")
+    exercise_started = time.monotonic()
+    def log_phase(phase):
+        print(f"Package E2E phase: host={host}, platform={platform}, phase={phase}, "
+              f"elapsed={time.monotonic() - exercise_started:.1f}s", flush=True)
+
+    log_phase("installer CLI checks")
     skill_path = ".agents/skills/work" if host == "codex" else ".claude/skills/work"
     instructions_path = ".codex/AGENTS.md" if host == "codex" else ".claude/CLAUDE.md"
     instructions_dir = ".codex" if host == "codex" else ".claude"
@@ -311,6 +317,7 @@ def exercise_package(package, root, platform, source_install=False):
     if not script.is_file() or not source.is_file():
         raise AssertionError("a formal installer entry is missing")
     for entry in (script, source):
+        log_phase(f"CLI checks for {entry.name}")
         help_home = root / f"help {entry.name}"
         help_home.mkdir()
         for option in ("--help", "-h"):
@@ -338,6 +345,7 @@ def exercise_package(package, root, platform, source_install=False):
         if any((help_home / name).exists() for name in (".agents", ".codex", ".claude")):
             raise AssertionError("read-only CLI actions wrote installation data")
 
+    log_phase("package installation and state checks")
     home = root / "default install"
     home.mkdir()
     work = home / skill_path
@@ -454,6 +462,7 @@ def exercise_package(package, root, platform, source_install=False):
     assert_no_work_transactions(moved_work)
 
     if source_install:
+        log_phase("source installation")
         source_home = root / "source install"
         source_home.mkdir()
         source_work = source_home / skill_path
@@ -480,6 +489,7 @@ def exercise_package(package, root, platform, source_install=False):
                                      stream_output=True))
         assert_state(source_interactive_home / skill_path, version, workspace_version, False)
 
+    log_phase("update and invalid state checks")
     first_update = root / "first update"
     first_update.mkdir()
     legacy = first_update / skill_path
@@ -576,6 +586,7 @@ def exercise_package(package, root, platform, source_install=False):
     if (outside / "marker.txt").read_text(encoding="utf-8") != "keep" or not linked_directory.exists():
         raise AssertionError("unsafe Work link or linked data changed after rejection")
 
+    log_phase("tampered package checks")
     for scenario in ("hash", "extra", "missing", "missing-options", "duplicate-manifest", "unsafe-manifest"):
         bad = root / f"bad {scenario}"
         shutil.copytree(package, bad)
@@ -618,7 +629,8 @@ def exercise_package(package, root, platform, source_install=False):
         assert_no_target(run_installer(script, wrong, common,
             extra_env={"PROCESSOR_ARCHITECTURE": "x86"}), wrong, wrong / skill_path)
 
-    print(f"Package native E2E passed: {host}, {platform}, version {version}, {script.name}")
+    log_phase("complete")
+    print(f"Package native E2E passed: {host}, {platform}, version {version}, {script.name}", flush=True)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--zip", required=True, type=Path)

@@ -32,4 +32,4 @@ title: <Release title>
 
 ## 3. 發布順序
 
-主線發布先驗證 first-attempt、版本與內容來源，再產生 `release-title.txt`、`release-notes.md`、`release-content.json`。三份檔案作為同一 workflow 的固定產物；建立 Tag 前與建立 Draft 前重新核對來源 Commit、前一正式 Release 基準及內容 SHA-256。Draft 的實際 Title／Description 仍與兩份文字檔逐欄比對。PR CI 以最新 `main` 至前一正式 Release 的已合併 PR，加上本 PR，套用相同的內容來源與回退規則；主線 gate 仍以實際合併後的 Commit 範圍再次驗證。
+主線發布先驗證執行身分、未發布狀態、版本與內容來源，再產生 `release-title.txt`、`release-notes.md`、`release-content.json`。三份檔案以執行次數區分產物；下游依產生該產物的 job 輸出選取對應執行次數，支援只重跑失敗工作。建立 Tag 前與建立 Draft 前重新核對來源 Commit、前一正式 Release 基準及內容 SHA-256。同一執行可在正式發布前重跑：既有 Tag 必須指向原 Commit，既有 Draft 會以重新驗證的內容與資產更新。正式發布後不得重跑發布步驟。Draft 的實際 Title／Description 仍與兩份文字檔逐欄比對。PR CI 以最新 `main` 至前一正式 Release 的已合併 PR，加上本 PR，套用相同的內容來源與回退規則；主線 gate 仍以實際合併後的 Commit 範圍再次驗證。
