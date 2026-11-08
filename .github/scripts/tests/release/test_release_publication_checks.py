@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_publication_checks import check_assets, check_first_publish_attempt, check_identity, check_immutable, expected_assets, generate_release_content, main, release_notes
+from release_publication_checks import check_assets, check_first_publish_attempt, check_identity, check_immutable, expected_assets, generate_release_content, main, published_baseline, release_notes
 
 
 class ReleaseGateTests(unittest.TestCase):
@@ -142,6 +142,7 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertIn("first", notes)
             with patch("release_publication_checks.api", return_value=[releases]):
                 self.assertEqual(release_notes(root, "owner/repo", "v-failed-one", commits[-1])[0], "v-published")
+                self.assertEqual(published_baseline(root, "owner/repo", commits[1])[0], "v-published")
 
     def test_immutable_must_be_explicitly_enabled(self):
         with patch("release_publication_checks.api", return_value={"enabled": True}):

@@ -94,18 +94,33 @@ def resolve(root, tag, pulls):
     return chosen, sources
 
 
+def preflight_sources(root, repository, tag, pull, base_ref):
+    from release_publication_checks import checked_git, published_baseline, related_pulls
+
+    if pull.get("base", {}).get("ref") != "main":
+        raise ValueError("release content PR must target main")
+    base_sha = checked_git(root, "rev-parse", base_ref)
+    baseline_tag, _, _ = published_baseline(root, repository, base_sha)
+    pulls = related_pulls(root, repository, tag, base_sha, baseline_tag)
+    if any(item["number"] == pull["number"] for item in pulls):
+        raise ValueError("current PR is already included in the published release range")
+    return resolve(root, tag, [*pulls, pull])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
     parser.add_argument("--repository", required=True)
     parser.add_argument("--pr-number", type=int, required=True)
+    parser.add_argument("--base-ref", default="refs/remotes/origin/main")
     args = parser.parse_args()
     try:
         tag = "v" + (args.root / "VERSION").read_text(encoding="utf-8").strip()
-        metadata(args.root, tag)
         result = subprocess.run(["gh", "api", f"repos/{args.repository}/pulls/{args.pr_number}"],
                                 check=True, capture_output=True, text=True)
-        declarations(json.loads(result.stdout).get("body"))
+        pull = json.loads(result.stdout)
+        declarations(pull.get("body"))
+        preflight_sources(args.root, args.repository, tag, pull, args.base_ref)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"PR release content check failed: {error}", file=sys.stderr)
         return 1

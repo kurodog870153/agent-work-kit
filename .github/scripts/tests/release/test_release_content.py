@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "version-guard"))
-from release_content import declarations, metadata, resolve, valid_title
+from release_content import declarations, metadata, preflight_sources, resolve, valid_title
 from release_publication_checks import assemble_notes, prepare_content, related_pulls, verify_content
 
 
@@ -69,6 +69,28 @@ class ReleaseContentTests(unittest.TestCase):
             (folder / "v1.2.3.md").write_text("---\ntitle: \n---\n", encoding="utf-8")
             with self.assertRaises(ValueError):
                 metadata(root, "v1.2.3")
+
+    def test_pr_preflight_uses_release_sources_across_the_published_range(self):
+        previous = self.pull(3)
+        current = dict(self.pull(4, title="fix: Release notes permission", body=""), base={"ref": "main"})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("release_publication_checks.checked_git", return_value="a" * 40), \
+                 patch("release_publication_checks.published_baseline", return_value=("v1.2.2", "baseline", "revision")) as baseline, \
+                 patch("release_publication_checks.related_pulls", return_value=[previous]):
+                with self.assertRaisesRegex(ValueError, "Release title needs metadata or an unambiguous merged PR; found 2 PRs"):
+                    preflight_sources(root, "owner/repo", "v1.2.3", current, "refs/remotes/origin/main")
+                declared = dict(current, body="## Release Title\n\nReliable publication checks\n\n## Release Description\n\nValidate release sources in PR checks.")
+                fields, sources = preflight_sources(root, "owner/repo", "v1.2.3", declared, "refs/remotes/origin/main")
+                self.assertEqual(fields["title"], "Reliable publication checks")
+                self.assertEqual(sources["title"], "PR #4")
+                baseline.assert_called_with(root, "owner/repo", "a" * 40)
+                folder = root / ".github/release-metadata"
+                folder.mkdir(parents=True)
+                (folder / "v1.2.3.md").write_text("---\ntitle: Reliable publication checks\n---\n\nValidate release sources in PR checks.\n", encoding="utf-8")
+                fields, sources = preflight_sources(root, "owner/repo", "v1.2.3", current, "refs/remotes/origin/main")
+                self.assertEqual(fields["title"], "Reliable publication checks")
+                self.assertIn("v1.2.3.md", sources["title"])
 
     def test_prepared_content_is_pinned_and_contains_sections(self):
         sha = "a" * 40
