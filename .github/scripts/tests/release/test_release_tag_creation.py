@@ -33,15 +33,17 @@ class ReleaseTagCreationTests(unittest.TestCase):
                 create_tag(Path("."), "owner/repo", sha)
             self.assertEqual(api.call_count, 2)
 
-    def test_existing_tag_blocks_rerun(self):
+    def test_existing_matching_tag_is_reused(self):
         sha = "c" * 40
         checkout = subprocess.CompletedProcess(["git", "rev-parse", "HEAD"], 0, stdout=sha)
-        with patch("release_tag_creation.api", return_value={"commit": {"sha": sha}}), \
+        def api(path, *_):
+            return {"object": {"sha": sha}} if "/git/ref/" in path else {"commit": {"sha": sha}}
+        with patch("release_tag_creation.api", side_effect=api), \
              patch("release_tag_creation.checked_version", return_value="1.0.1"), \
              patch("release_tag_creation.tag_exists", return_value=True), \
+             patch("release_tag_creation.release_exists", return_value=False), \
              patch("release_tag_creation.subprocess.run", return_value=checkout):
-            with self.assertRaisesRegex(ValueError, "tag already exists"):
-                create_tag(Path("."), "owner/repo", sha)
+            self.assertEqual(create_tag(Path("."), "owner/repo", sha), "v1.0.1")
 
     def test_tag_creation_outputs_version_tag(self):
         sha = "e" * 40

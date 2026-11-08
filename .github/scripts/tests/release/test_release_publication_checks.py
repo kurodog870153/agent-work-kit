@@ -1,6 +1,7 @@
 """Tests for release publication gates."""
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -64,23 +65,45 @@ class ReleaseGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "latest main"):
                     check_identity(root, "owner/repo", "v1.0.4", sha)
 
-    def test_forward_only_blocks_reruns_redispatch_and_drafts(self):
+    def test_unpublished_rerun_and_draft_are_allowed(self):
         sha = "a" * 40
         run = {"id": 42, "head_sha": sha}
-        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]) as api:
+        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]) as api, \
+             patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stderr="HTTP 404")):
             check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
         self.assertIn("event=push", api.call_args_list[0].args[0])
-        with self.assertRaisesRegex(ValueError, "rerun"):
+        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]), \
+             patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stderr="HTTP 404")):
             check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "2")
+        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[{"tag_name": "v1.2.3", "draft": True}]]), \
+             patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"object": {"sha": sha}}))):
+            check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "2")
+        with patch("release_publication_checks.api", side_effect=lambda path, *_: [{"workflow_runs": [run]}] if "/runs?" in path else [[]]), \
+             patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"object": {"sha": sha}}))):
+            check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1", tag_created=True)
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
         with patch("release_publication_checks.api", return_value=[{"workflow_runs": [run, dict(run, id=41)]}]):
             with self.assertRaisesRegex(ValueError, "another run"):
                 check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
         for draft in (True, False):
             with self.subTest(draft=draft), patch("release_publication_checks.api", side_effect=[
                 [{"workflow_runs": [run]}], [[{"tag_name": "v1.2.3", "draft": draft}]],
-            ]):
-                with self.assertRaisesRegex(ValueError, "draft or published"):
+            ]), patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stderr="HTTP 404")):
+                with self.assertRaisesRegex(ValueError, "draft from another run|already published"):
                     check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "1")
+
+    def test_rerun_rejects_published_release_and_mismatched_tag(self):
+        sha = "a" * 40
+        run = {"id": 42, "head_sha": sha}
+        for release, ref_sha, error in (({"tag_name": "v1.2.3", "draft": False}, sha, "already published"),
+                                        ({"tag_name": "v1.2.3", "draft": True}, "b" * 40, "different commit")):
+            def api(path, *_):
+                return [{"workflow_runs": [run]}] if "/runs?" in path else [[release]]
+            with self.subTest(error=error), patch("release_publication_checks.api", side_effect=api), \
+                 patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"object": {"sha": ref_sha}}))):
+                with self.assertRaisesRegex(ValueError, error):
+                    check_first_publish_attempt("owner/repo", "v1.2.3", sha, "42", "2")
 
     def test_failed_publish_stages_cannot_be_dispatched_again(self):
         stages = ("identity", "macos_e2e", "windows_e2e", "attestation", "draft", "publish", "post_publish")
@@ -103,7 +126,8 @@ class ReleaseGateTests(unittest.TestCase):
             if "/runs?" in path:
                 return [{"workflow_runs": [old_run if "head_sha=" + old_sha in path else new_run]}]
             return [[]]
-        with patch("release_publication_checks.api", side_effect=api):
+        with patch("release_publication_checks.api", side_effect=api), \
+             patch("release_publication_checks.subprocess.run", return_value=subprocess.CompletedProcess([], 1, stderr="HTTP 404")):
             with self.assertRaisesRegex(ValueError, "another run"):
                 check_first_publish_attempt("owner/repo", "v1.2.3", old_sha, "42", "1")
             check_first_publish_attempt("owner/repo", "v1.2.4", new_sha, "42", "1")
