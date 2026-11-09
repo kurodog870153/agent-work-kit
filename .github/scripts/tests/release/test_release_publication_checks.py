@@ -44,6 +44,21 @@ class ReleaseGateTests(unittest.TestCase):
                 self.assertEqual(main(), 0)
             prepared.assert_called_once()
 
+    def test_published_content_action_compares_validated_title_and_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            title, notes = root / "title.txt", root / "notes.md"
+            title.write_text("v1.2.3 — Reliable publication\n", encoding="utf-8")
+            notes.write_text("## Overview\n\nReliable publication.\n", encoding="utf-8")
+            argv = ["release_publication_checks.py", "assets-published", "--repository", "owner/repo",
+                    "--tag", "v1.2.3", "--directory", str(root), "--title-file", str(title),
+                    "--notes-file", str(notes)]
+            with patch.object(sys, "argv", argv), patch("release_publication_checks.check_assets") as checked:
+                self.assertEqual(main(), 0)
+            checked.assert_called_once_with("owner/repo", "v1.2.3", root, published=True,
+                                            expected_title="v1.2.3 — Reliable publication",
+                                            expected_notes="## Overview\n\nReliable publication.\n")
+
     def test_published_identity_does_not_depend_on_newer_main(self):
         sha = "a" * 40
         with tempfile.TemporaryDirectory() as directory:
@@ -158,6 +173,22 @@ class ReleaseGateTests(unittest.TestCase):
             self.assertEqual(len(included), 3)
             self.assertIn("failed-one", notes)
             self.assertIn("failed-two", notes)
+            scenarios = (
+                ("v-failed-two", ["current"], ["failed-one", "failed-two"]),
+                ("v-failed-one", ["failed-two", "current"], ["published", "failed-one"]),
+            )
+            for previous_tag, expected, excluded in scenarios:
+                with self.subTest(previous_tag=previous_tag), patch("release_publication_checks.api", return_value=[[
+                    {"tag_name": previous_tag, "draft": False, "prerelease": False, "published_at": "2026-02-01T00:00:00Z"},
+                    releases[0],
+                ]]):
+                    baseline, _, included, scenario_notes = release_notes(root, "owner/repo", "v-current", commits[-1])
+                self.assertEqual(baseline, previous_tag)
+                self.assertEqual(len(included), len(expected))
+                for item in expected:
+                    self.assertIn(item, scenario_notes)
+                for item in excluded:
+                    self.assertNotIn(f" {item}\n", scenario_notes)
             with patch("release_publication_checks.api", return_value=[[]]):
                 baseline, label, included, notes = release_notes(root, "owner/repo", "v-current", commits[-1])
             self.assertIsNone(baseline)

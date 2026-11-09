@@ -2,7 +2,7 @@
 
 1. `cases/<domain>/<feature>/<case>/` 保存單一測試情境。`input/` 是請求與 setup 輸入；`expected/` 是唯讀預期結果；`project/` 是專案根目錄樣本，正式 Work 路徑從其 `outputs/work/` 開始。case 外層路徑不進 artifact、request 或 approval。
 2. `shared/<name>/` 保存已確認由多個測試共用的唯讀素材。`task-diagnostics-project` 與 `specification-migration-project` 是明確專案根目錄；`specification-reconciliation-inputs` 保存共用 Attempt、Execution index 及 migration preview。測試明確指定資源，不跨讀其他 case 的 project。
-3. `historical/` 保存歷史 bytes、舊契約拒絕證據與保留的 instruction baseline。用途包含 Delegation 的退休 plan／progress-saver、Task assembly 與 draft-sources、Reconciliation 的原始 Attempt、Handoff 的 Execute instruction baseline。負例中的舊資料也可位於 case project；分類不會解除精確 SHA 保護。
+3. `historical/` 保存歷史 bytes、舊契約拒絕證據與保留的 instruction baseline。用途包含 Delegation 的退休 plan／progress-saver、Task assembly 與 draft-sources、Reconciliation 的原始 Attempt，以及 Task 的歷史 instruction baseline。負例中的舊資料也可位於 case project；分類不會解除精確 SHA 保護。
 4. 測試只將必要 project 素材複製到獨立暫存專案，再於暫存專案執行寫入與 recovery。input 與 expected 分別載入，不整包複製到專案，不回寫 fixture 原件。唯讀流程可直接使用明確 project 根目錄，並驗證前後 bytes 不變。
 5. `fixture_support::copy_fixture_sources` 接受實際 project 根目錄，複製完整的 Source Snapshot triplets：manifest、完成 marker 與原始 content bytes。必要 project 或 Source 缺失會失敗。Migration provenance 或 ledger-only 等明確無 Snapshot 情境不呼叫此 helper，也不虛構 Source。
 6. `work-cli/tests/current_only_contract.rs` 保護精確歷史位置與完整 SHA，掃描現行 JSON 與嵌入 stdout，維持退休契約拒絕。Reconciliation 的 reviewed journal 從 case 的 `input/publication.json` 綁定 `project/` 正式路徑；未審查 journal 必須失敗，不以檔名或整個 historical 目錄放寬。
