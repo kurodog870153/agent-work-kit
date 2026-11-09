@@ -4,25 +4,29 @@ const state = require('../../../../../../os-scripts/mac/installer/state/work-sta
 const core = require('../../../../../../os-scripts/mac/installer/state/state-core.js');
 const template = fs.readFileSync('os-scripts/common/installer/install-state.json', 'utf8');
 assert.deepStrictEqual(Object.keys(JSON.parse(template)).sort(),
-    ['global_agent_dir', 'host', 'skill_install_dir', 'status', 'tooling_version', 'version', 'work_version']);
+    ['global_instructions_dir', 'host', 'rust_workspace_version', 'skill_install_dir', 'status', 'version']);
 const workspaceVersion = fs.readFileSync('VERSION', 'utf8').trim();
 const toolingVersion = fs.readFileSync('rust/Cargo.toml', 'utf8').match(/^version = "([^"]+)"$/m)[1];
-const aggregate = core.run(['combined-create', workspaceVersion, workspaceVersion, toolingVersion,
+const aggregate = core.run(['combined-create', workspaceVersion, toolingVersion,
     '/tmp/skills', '-', 'installed', 'codex']);
-assert.throws(() => core.run(['combined-create', workspaceVersion, workspaceVersion, toolingVersion,
+assert.throws(() => core.run(['combined-create', workspaceVersion, toolingVersion,
     '/tmp/skills', '-', 'installed']));
 assert.throws(() => core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'status']));
 assert.strictEqual(core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'status', 'codex']), 'installed');
 assert.strictEqual(core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'status', 'claude']), '-');
 assert.strictEqual(core.run(['combined', JSON.stringify({ ...JSON.parse(aggregate), host: undefined }), '/tmp/skills/work', '/tmp/skills/tooling', 'status', 'codex']), '-');
-assert.strictEqual(core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'tooling-version', 'codex']), toolingVersion);
+assert.strictEqual(core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'rust-workspace-version', 'codex']), toolingVersion);
+const legacy = {host: 'codex', version: workspaceVersion, work_version: toolingVersion,
+    tooling_version: toolingVersion, skill_install_dir: '/tmp/skills', global_agent_dir: null, status: 'installed'};
+assert.strictEqual(core.run(['combined', JSON.stringify(legacy), '/tmp/skills/work', '/tmp/skills/tooling', 'rust-workspace-version', 'codex']), '-');
+assert.strictEqual(core.run(['combined', JSON.stringify({...legacy, tooling_version: '0.0.1'}), '/tmp/skills/work', '/tmp/skills/tooling', 'status', 'codex']), '-');
 assert.strictEqual(core.run(['combined', aggregate, '/tmp/other/work', '/tmp/other/tooling', 'status', 'codex']), '-');
 const fromCombined = state.run(['from-combined',
-    core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'work-version', 'codex']),
-    '/tmp/skills/work', core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'global-agent-dir', 'codex']), 'codex']);
+    core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'rust-workspace-version', 'codex']),
+    '/tmp/skills/work', core.run(['combined', aggregate, '/tmp/skills/work', '/tmp/skills/tooling', 'global-instructions-dir', 'codex']), 'codex']);
 assert.deepStrictEqual(JSON.parse(fromCombined), {
     host: 'codex',
-    version: workspaceVersion, skills: state.expandSkills('all'),
+    version: toolingVersion, skills: state.expandSkills('all'),
     work_dir: '/tmp/skills/work', global_agents_dir: null
 });
 
@@ -81,8 +85,7 @@ assert.strictEqual(state.run(['settings', raw, created.work_dir, 'web', 'false',
     '1\tgeneral,web\t0\t1.2.3\t/tmp/全域 有空白');
 assert.throws(() => state.run(['settings', raw, created.work_dir, '', 'invalid']));
 assert.strictEqual(core.run(['release-version', '{"version":"1.2.3"}']), '1.2.3');
-assert.strictEqual(core.run(['release-work-version', '{"work_version":"1.2.3"}']), '1.2.3');
-assert.strictEqual(core.run(['release-tooling-version', '{"tooling_version":"1.2.3"}']), '1.2.3');
+assert.strictEqual(core.run(['release-rust-workspace-version', '{"rust_workspace_version":"1.2.3"}']), '1.2.3');
 assert.strictEqual(core.run(['release-host', '{"host":"claude","target":"aarch64-apple-darwin"}']), 'claude');
 assert.strictEqual(core.run(['release-target', '{"host":"codex","target":"aarch64-apple-darwin"}']), 'aarch64-apple-darwin');
 assert.throws(() => core.run(['release-host', '{"target":"aarch64-apple-darwin"}']));

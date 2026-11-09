@@ -9,8 +9,8 @@ use work_feature::execution::ExecutionWriterContext;
 use work_operations::derivation::fingerprint;
 
 pub(in crate::execution) fn host_environment() -> Value {
-    json!({"mode":"inherited","os":std::env::consts::OS,
-        "architecture":std::env::consts::ARCH,"work_version":env!("CARGO_PKG_VERSION")})
+    serde_json::to_value(host_environment::HostEnvironment::inherited())
+        .expect("host environment serializes")
 }
 
 /// Declared project inputs are distinct from immutable requirement Sources and

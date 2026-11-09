@@ -7,7 +7,7 @@ next_version="$base_major.$base_minor.$((base_patch + 1))"
 workspace_version="$(sed -n 's/^version = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$repo_root/rust/Cargo.toml")"
 [[ -n "$workspace_version" ]] || exit 1
 write_test_release_info() {
-    printf '{"host":"%s","target":"aarch64-apple-darwin","version":"%s","work_version":"%s","tooling_version":"%s"}\n' "$2" "$1" "$workspace_version" "$workspace_version" > "$root/release-info.json"
+    printf '{"host":"%s","target":"aarch64-apple-darwin","version":"%s","rust_workspace_version":"%s"}\n' "$2" "$1" "$workspace_version" > "$root/release-info.json"
 }
 scratch="$(mktemp -d "$repo_root/.installer-test-core.XXXXXX")"
 [[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-core.* ]] || exit 1
@@ -236,7 +236,7 @@ if command -v cygpath >/dev/null 2>&1; then
     work_module_path="$(cygpath -w "$work_module_path")"
     state_path="$(cygpath -w "$state_path")"
 fi
-MSYS_NO_PATHCONV=1 node -e 'const core=require(process.argv[1]); const work=require(process.argv[2]); const fs=require("fs"); const raw=fs.readFileSync(process.argv[3],"utf8"); const target=process.argv[4]; const tooling=process.argv[5]; const version=core.run(["combined",raw,target,tooling,"work-version","codex"]); const global=core.run(["combined",raw,target,tooling,"global-agent-dir","codex"]); const state=JSON.parse(work.run(["from-combined",version,target,global,"codex"])); if(state.skills.length!==14||state.global_agents_dir!==null) process.exit(1)' \
+MSYS_NO_PATHCONV=1 node -e 'const core=require(process.argv[1]); const work=require(process.argv[2]); const fs=require("fs"); const raw=fs.readFileSync(process.argv[3],"utf8"); const target=process.argv[4]; const tooling=process.argv[5]; const version=core.run(["combined",raw,target,tooling,"rust-workspace-version","codex"]); const global=core.run(["combined",raw,target,tooling,"global-instructions-dir","codex"]); const state=JSON.parse(work.run(["from-combined",version,target,global,"codex"])); if(state.skills.length!==14||state.global_agents_dir!==null) process.exit(1)' \
     "$module_path" "$work_module_path" "$state_path" "$target" "${target%/*}/tooling"
 rm -- "${target%/*}/install-state.json"
 if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \

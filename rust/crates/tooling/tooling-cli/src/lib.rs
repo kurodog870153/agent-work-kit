@@ -11,13 +11,25 @@ use serde_json::{Value, json};
 use tooling_flow::operation;
 use tooling_flow::policy::{self, PolicyLoadError, PolicySummary};
 
+pub use tooling_model::common::CliStatus as Status;
+
 #[derive(Debug, Serialize)]
 pub struct CliResult {
     pub schema: &'static str,
-    pub status: &'static str,
+    pub status: Status,
     pub reason_code: String,
     pub message: &'static str,
     pub data: Value,
+    pub execution: host_environment::ExecutionEnvironment,
+}
+
+impl CliResult {
+    pub fn to_stdout(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let _: tooling_model::contract::CliEnvelope =
+            serde_json::from_value(serde_json::to_value(self)?)
+                .expect("CLI result matches its model");
+        serde_json::to_vec_pretty(self)
+    }
 }
 
 struct CliError {
@@ -41,10 +53,11 @@ impl CliError {
 fn success(data: Value, reason_code: &'static str) -> CliResult {
     CliResult {
         schema: "tooling-cli-result",
-        status: "success",
+        status: Status::Success,
         reason_code: reason_code.into(),
         message: "The command completed successfully.",
         data,
+        execution: host_environment::ExecutionEnvironment::inherited(),
     }
 }
 
@@ -54,13 +67,14 @@ fn failure(error: CliError) -> (i32, CliResult) {
         CliResult {
             schema: "tooling-cli-result",
             status: if error.code == 8 || error.code == 10 {
-                "failed"
+                Status::Failed
             } else {
-                "rejected"
+                Status::Rejected
             },
             reason_code: error.reason.into(),
             message: error.message,
             data: error.data,
+            execution: host_environment::ExecutionEnvironment::inherited(),
         },
     )
 }

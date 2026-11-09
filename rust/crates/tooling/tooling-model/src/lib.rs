@@ -1,1 +1,4 @@
-//! Compatibility crate retained until release dependency cleanup.
+//! Tooling data shapes and response contracts.
+
+pub mod common;
+pub mod contract;

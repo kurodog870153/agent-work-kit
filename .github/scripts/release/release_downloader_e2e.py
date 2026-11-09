@@ -151,9 +151,9 @@ def main():
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
             state_path = target.parent / "install-state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            if (state != {"host": info["host"], "version": info["version"], "work_version": info["work_version"],
-                          "tooling_version": info["tooling_version"], "skill_install_dir": str(target.parent),
-                          "global_agent_dir": str(global_dir), "status": "installed"} or
+            if (state != {"host": info["host"], "version": info["version"],
+                          "rust_workspace_version": info["rust_workspace_version"], "skill_install_dir": str(target.parent),
+                          "global_instructions_dir": str(global_dir), "status": "installed"} or
                     (target / "install-state.json").exists()):
                 raise AssertionError(f"Downloader installed the wrong state: {state!r}")
             tooling = target.parent / "tooling"

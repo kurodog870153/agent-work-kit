@@ -34,7 +34,7 @@ function validVersion(value) {
 function createState(templateRaw, version, skills, globalAgents, workDir, globalAgentsDir, host) {
     var template = JSON.parse(templateRaw);
     if (!template || typeof template !== 'object' || Array.isArray(template) ||
-            Object.keys(template).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
+            Object.keys(template).sort().join(',') !== 'global_instructions_dir,host,rust_workspace_version,skill_install_dir,status,version' ||
             Object.keys(template).some(function (key) { return template[key] !== null; }) ||
             (host !== 'codex' && host !== 'claude') ||
             !validVersion(version) || typeof workDir !== 'string' || workDir.charAt(0) !== '/' ||

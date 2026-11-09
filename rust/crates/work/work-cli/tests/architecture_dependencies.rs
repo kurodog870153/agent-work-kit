@@ -175,7 +175,7 @@ fn domain_allowed(source: &str, destination: &str, kind: &str) -> bool {
             "tooling-model",
         ]
         .contains(&destination),
-        "tooling-cli" => destination == "tooling-flow",
+        "tooling-cli" => ["tooling-flow", "tooling-model"].contains(&destination),
         work if work.starts_with("work-") => {
             destination == "skill-api"
                 || (destination.starts_with("work-") && check_edge(work, destination, kind).is_ok())
@@ -295,6 +295,7 @@ fn forbidden_cross_domain_edges_are_rejected_for_every_dependency_kind() {
         }
     }
     assert!(!domain_allowed("tooling-cli", "skill-api", "normal"));
+    assert!(domain_allowed("tooling-cli", "tooling-model", "normal"));
     assert!(!domain_allowed("work-cli", "tooling-flow", "normal"));
 }
 

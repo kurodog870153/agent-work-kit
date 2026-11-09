@@ -90,11 +90,11 @@ function Remove-InstallerChildStates {
         $raw = [IO.File]::ReadAllText($entry.Path)
         if ($entry.Domain -eq 'work') {
         $actual = Read-InstallerState -Raw $raw -InstallDir $WorkTarget -InstallerHost $Combined.host
-            if ($null -eq $actual -or $actual.version -cne $Combined.work_version -or
-                $actual.global_agents_dir -cne $Combined.global_agent_dir) {
+            if ($null -eq $actual -or $actual.version -cne $Combined.rust_workspace_version -or
+                $actual.global_agents_dir -cne $Combined.global_instructions_dir) {
                 throw "child Work state differs from parent: $($entry.Path)"
             }
-        } elseif ((Get-InstallerToolingStateVersion -Raw $raw -Target $ToolingTarget) -cne $Combined.tooling_version) {
+        } elseif ((Get-InstallerToolingStateVersion -Raw $raw -Target $ToolingTarget) -cne $Combined.rust_workspace_version) {
             throw "child Tooling state differs from parent: $($entry.Path)"
         }
         Remove-Item -LiteralPath $entry.Path -ErrorAction Stop
@@ -160,7 +160,7 @@ function Invoke-InstallerCore {
             $initialCombined = if ($initialRaw) { Read-InstallerCombinedState -Raw $initialRaw `
                 -WorkTarget $initialTarget -ToolingTarget (Join-Path (Split-Path -Parent $initialTarget) 'tooling') -InstallerHost $selectedHost } else { $null }
             $choice = Read-InstallerChoice -Prompt 'Install Global Instructions? (y/n)' -Default $(if (
-                $null -eq $initialCombined -or $null -ne $initialCombined.global_agent_dir) { 'y' } else { 'n' })
+                $null -eq $initialCombined -or $null -ne $initialCombined.global_instructions_dir) { 'y' } else { 'n' })
             if ($choice -notin @('y', 'n')) { throw 'invalid Global Instructions selection' }
             $cli.GlobalInstructions = $choice -eq 'y'
         }
@@ -242,17 +242,16 @@ function Invoke-InstallerCore {
         $match = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$')
         if (-not $match.Success) { throw 'Rust workspace version is missing or invalid' }
         $match.Groups[1].Value
-    } else { $releaseInfo.work_version }
+    } else { $releaseInfo.rust_workspace_version }
     if ($workVersion -isnot [string] -or $workVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         throw 'Work version is missing or invalid'
     }
-    $toolingVersion = if ($Mode -eq 'source') { $workVersion } else { $releaseInfo.tooling_version }
+    $toolingVersion = $workVersion
     if ($toolingVersion -isnot [string] -or $toolingVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         throw 'Tooling version is missing or invalid'
     }
     if ($null -ne $combinedState -and $combinedState.status -eq 'installing' -and
-        ($combinedState.version -cne $version -or $combinedState.work_version -cne $workVersion -or
-            $combinedState.tooling_version -cne $toolingVersion)) {
+        ($combinedState.version -cne $version -or $combinedState.rust_workspace_version -cne $workVersion)) {
         throw 'pending installation belongs to a different release; preserve its recovery data'
     }
     $rustRoot = Join-Path $Root 'rust'
@@ -291,10 +290,10 @@ function Invoke-InstallerCore {
     $rawState = if ($null -ne $combinedState) {
         ([ordered]@{
             host = $combinedState.host
-            version = $combinedState.work_version
+            version = $combinedState.rust_workspace_version
             skills = @(Get-InstallerExpandedSkills -Selection 'all')
             work_dir = $target
-            global_agents_dir = $combinedState.global_agent_dir
+            global_agents_dir = $combinedState.global_instructions_dir
         } | ConvertTo-Json -Depth 5 -Compress)
     } else { '' }
     $settingArgs = @{ Raw = $rawState; InstallDir = $target }
@@ -422,8 +421,8 @@ function Invoke-InstallerCore {
         $createdGlobalParent = $true
     }
     try {
-        Write-InstallerCombinedState -Parent $skillsParent -Version $version -WorkVersion $workVersion `
-            -ToolingVersion $toolingVersion -GlobalAgentDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
+        Write-InstallerCombinedState -Parent $skillsParent -Version $version -RustWorkspaceVersion $workVersion `
+            -GlobalInstructionsDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
             -Status 'installing' -InstallerHost $selectedHost
         $result = Invoke-InstallerCombinedTransaction -Target $target -SourceWork $sourceWork -Prepare $prepare -Validate $validate -StateValid $targetStateValid -Confirmed $confirmed -NonInteractive $cli.NonInteractive -GlobalPlan $plan -GlobalSource $globalSource -GlobalTarget $globalTarget
         if ($cli.Verbose) { Write-Output 'Installer: Work transaction published and verified' }
@@ -438,8 +437,8 @@ function Invoke-InstallerCore {
             @(Get-InstallerToolingTransactions -Target $toolingTarget).Count -gt 0) {
             throw 'installation transaction cleanup is pending; preserve its recovery data'
         }
-        Write-InstallerCombinedState -Parent $skillsParent -Version $version -WorkVersion $workVersion `
-            -ToolingVersion $toolingVersion -GlobalAgentDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
+        Write-InstallerCombinedState -Parent $skillsParent -Version $version -RustWorkspaceVersion $workVersion `
+            -GlobalInstructionsDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
             -Status 'installed' -InstallerHost $selectedHost
         $finalState = Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($combinedPath)) `
             -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost

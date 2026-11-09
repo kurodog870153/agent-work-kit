@@ -71,9 +71,9 @@ class ReleaseInstallE2ETests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory) / "skills/work"
             work.mkdir(parents=True)
-            state = {"host": "claude", "version": "1.2.3", "work_version": "1.2.3",
-                     "tooling_version": "1.2.3", "skill_install_dir": str(work.parent),
-                     "global_agent_dir": None, "status": "installed"}
+            state = {"host": "claude", "version": "1.2.3", "rust_workspace_version": "1.2.3",
+                     "skill_install_dir": str(work.parent),
+                     "global_instructions_dir": None, "status": "installed"}
             (work.parent / "install-state.json").write_text(json.dumps(state), encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "unexpected Skills state"):
                 assert_state_for_host(work, "1.2.3", "1.2.3", False, host="codex")

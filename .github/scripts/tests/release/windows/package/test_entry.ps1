@@ -43,7 +43,7 @@ try {
         $releaseInfo = Get-Content -LiteralPath (Join-Path $package 'release-info.json') -Raw | ConvertFrom-Json
         if ($state.host -cne $installerHost -or $releaseInfo.host -cne $installerHost -or
             $state.status -ne 'installed' -or $state.version -ne $releaseInfo.version -or
-            $state.work_version -ne $releaseInfo.work_version -or $state.tooling_version -ne $releaseInfo.tooling_version -or
+            $state.rust_workspace_version -ne $releaseInfo.rust_workspace_version -or
             $state.skill_install_dir -ne $skillsParent) { throw 'Windows Package state is invalid' }
         $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         $checksums = Join-Path $output 'SHA256SUMS.txt'

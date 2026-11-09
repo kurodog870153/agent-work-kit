@@ -32,6 +32,10 @@ fn evaluate(root: &Path, request: &Value) -> (i32, Value) {
         .output()
         .unwrap();
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        result["execution"]["host"]["rust_workspace_version"],
+        env!("CARGO_PKG_VERSION")
+    );
     assert_eq!(result["schema"], "tooling-cli-result");
     (output.status.code().unwrap(), result)
 }

@@ -27,7 +27,7 @@ title: vX.Y.Z — <major changes summary>
 - <Release highlight>
 ```
 
-`## Overview` 與 `## Highlights` 都是選填；沒有內容時移除整節，但 Description 仍須有實質摘要。版本 Metadata 可以省略；一旦建立，Title 與 Description 都必須填寫。Metadata 只存宣告摘要；自動生成的變更紀錄不寫回原始檔。
+`## Overview` 與 `## Highlights` 都是選填；沒有內容時移除整節，但 Description 仍須有實質摘要。版本 Metadata 可以省略；一旦建立，Title 與 Description 都必須填寫。Metadata 只存宣告摘要；自動生成的變更紀錄不寫回原始檔。單純調整 `VERSION` 或 Rust workspace 版本號屬於發布準備，不列入版本摘要或亮點；若版本欄位的契約或行為有變更，則應描述該實質變更。
 
 1. 在 Metadata 中填寫本次 Title 與 Description。Title 的版本須與本次 `VERSION`／Tag 相同，摘要須概括第 1 節確認的整段發布範圍。
 2. 沒有版本 Metadata 時，可在版本範圍內的已合併 PR 描述中，以 `## Release Title` 或 `## Release Description` 標題宣告。Title 須為單行，Description 可用 Markdown；兩欄可獨立宣告與回退，同一欄不得重複宣告。

@@ -137,16 +137,16 @@ installer_combined_action() {
 }
 installer_work_state_from_combined() {
     local raw="$1" work="$2" tooling="$3" version global_dir
-    version="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" work-version "$selected_host")" || return 1
+    version="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" rust-workspace-version "$selected_host")" || return 1
     [[ "$version" != - ]] || { printf ''; return 0; }
-    global_dir="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" global-agent-dir "$selected_host")" || return 1
+    global_dir="$(osascript -l JavaScript "$state_module" combined "$raw" "$work" "$tooling" global-instructions-dir "$selected_host")" || return 1
     osascript -l JavaScript "$work_state_module" from-combined "$version" "$work" "$global_dir" "$selected_host"
 }
 installer_combined_write() {
     local status="$1" json temporary="$skills_parent/.install-state.json.tmp"
     [[ ! -e "$temporary" && ! -L "$temporary" ]] || { installer_fail "pending state write needs review: $temporary"; return 1; }
     json="$(osascript -l JavaScript "$state_module" combined-create "$version" "$work_version" \
-        "$tooling_version" "$skills_parent" "${global_dir_for_state:--}" "$status" "$selected_host")" || return 1
+        "$skills_parent" "${global_dir_for_state:--}" "$status" "$selected_host")" || return 1
     printf '%s\n' "$json" > "$temporary" || return 1
     mv -f -- "$temporary" "$skills_parent/install-state.json"
 }
@@ -306,15 +306,14 @@ if [[ "$mode" == source ]]; then
 else
     release_info="$(cat -- "$root/release-info.json")" || exit 1
     version="$(osascript -l JavaScript "$state_module" release-version "$release_info")" || exit 1
-    work_version="$(osascript -l JavaScript "$state_module" release-work-version "$release_info")" || exit 1
-    tooling_version="$(osascript -l JavaScript "$state_module" release-tooling-version "$release_info")" || exit 1
+    work_version="$(osascript -l JavaScript "$state_module" release-rust-workspace-version "$release_info")" || exit 1
+    tooling_version="$work_version"
     binary="$root/bin/work"
     tooling_binary="$root/bin/tooling"
 fi
 if [[ "$combined_status" == installing ]]; then
     [[ "$(installer_combined_action "$combined_raw" version)" == "$version" &&
-       "$(installer_combined_action "$combined_raw" work-version)" == "$work_version" &&
-       "$(installer_combined_action "$combined_raw" tooling-version)" == "$tooling_version" ]] || {
+       "$(installer_combined_action "$combined_raw" rust-workspace-version)" == "$work_version" ]] || {
         installer_fail 'pending installation belongs to a different release'; exit 1;
     }
 fi
