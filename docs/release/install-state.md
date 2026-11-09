@@ -15,6 +15,10 @@
 
 狀態檔記錄 Host、整體發布版本、Work 與 Tooling 的 Rust workspace 版本、共同安裝父目錄、Global Instructions 的目錄設定，以及安裝進度。發布版本取自根目錄 `VERSION`；Work、Tooling 與 Skill 的 crate 版本繼承 `rust/Cargo.toml` 的 `workspace.package.version`。
 
+父層狀態的版本欄位為 `rust_workspace_version`，Global Instructions 目錄欄位為 `global_instructions_dir`。
+
+發布套件的 `release-info.json` 也以 `rust_workspace_version` 記錄同一版本。Work 命令執行資料與 Tooling CLI JSON 回應的 `execution.host.rust_workspace_version` 由共用的 Rust host 中繼資料程式碼產生。
+
 安裝交易期間可能暫時在 Work 或 Tooling 目錄保留子狀態檔作為復原證據；完成驗證後會移除。正式安裝狀態以共同父目錄的檔案為準。
 
 安裝器會檢查狀態檔是否符合預期，也會檢查安裝目錄的內容。狀態檔存在不代表安裝一定有效。

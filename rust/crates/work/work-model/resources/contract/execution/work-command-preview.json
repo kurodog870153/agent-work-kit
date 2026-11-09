@@ -22,7 +22,7 @@
           "architecture": "aarch64",
           "mode": "inherited",
           "os": "macos",
-          "work_version": "0.1.0"
+          "rust_workspace_version": "0.1.0"
         },
         "os": "macos",
         "shell": "none",

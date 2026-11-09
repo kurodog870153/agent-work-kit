@@ -180,12 +180,11 @@ def assert_no_target(result, home, target):
 
 def assert_state_for_host(work, version, workspace_version, global_agents, global_dir=None, *, host):
     state = json.loads((work.parent / "install-state.json").read_text(encoding="utf-8"))
-    if (state["host"] != host or state["version"] != version or state["work_version"] != workspace_version or
-            state["tooling_version"] != workspace_version or
+    if (state["host"] != host or state["version"] != version or state["rust_workspace_version"] != workspace_version or
             Path(state["skill_install_dir"]) != work.parent or
-            state["global_agent_dir"] != (str(global_dir) if global_agents else None) or
+            state["global_instructions_dir"] != (str(global_dir) if global_agents else None) or
             state["status"] != "installed" or
-            set(state) != {"host", "version", "work_version", "tooling_version", "skill_install_dir", "global_agent_dir", "status"}):
+            set(state) != {"host", "version", "rust_workspace_version", "skill_install_dir", "global_instructions_dir", "status"}):
         raise AssertionError(f"unexpected Skills state: {state!r}")
     if (work / "install-state.json").exists():
         raise AssertionError("Work retained a child install-state.json")
@@ -240,7 +239,7 @@ def exercise_coexistence(packages, root, platform):
         work = home / (".agents/skills/work" if host == "codex" else ".claude/skills/work")
         info = json.loads((packages[host] / "release-info.json").read_text(encoding="utf-8"))
         global_dir = home / (".codex" if host == "codex" else ".claude")
-        assert_state_for_host(work, info["version"], info["work_version"], True, global_dir, host=host)
+        assert_state_for_host(work, info["version"], info["rust_workspace_version"], True, global_dir, host=host)
         assert_no_work_transactions(work)
         snapshot_host(home, host)
 
@@ -352,7 +351,7 @@ def exercise_package(package, root, platform, source_install=False):
     common = ["--non-interactive", "--global-instructions", "no"]
     release_info = json.loads((package / "release-info.json").read_text(encoding="utf-8"))
     version = release_info["version"]
-    workspace_version = release_info["work_version"]
+    workspace_version = release_info["rust_workspace_version"]
     mismatch_home = root / "wrong Host selection"
     mismatch_home.mkdir()
     wrong_host = "claude" if host == "codex" else "codex"

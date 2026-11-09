@@ -219,20 +219,12 @@ pub struct CommandTiming {
     pub elapsed_ms: u64,
 }
 
-/// Observed runtime metadata. This records inheritance, not a sandbox attestation.
+pub use host_environment::HostExecutionMode;
+
+/// Work's host metadata uses the shared runtime representation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InheritedHostEnvironment {
-    pub mode: HostExecutionMode,
-    pub os: String,
-    pub architecture: String,
-    pub work_version: String,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HostExecutionMode {
-    Inherited,
-}
+#[serde(transparent)]
+pub struct InheritedHostEnvironment(pub host_environment::HostEnvironment);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -643,6 +635,17 @@ mod receipt_candidate_tests {
 
     #[test]
     fn prepared_receipt_directory_shapes_reject_legacy_alias_and_preserve_current_contract() {
+        let host = json!({"mode":"inherited","os":"linux","architecture":"x86_64",
+            "rust_workspace_version":"1.2.3"});
+        assert!(serde_json::from_value::<InheritedHostEnvironment>(host.clone()).is_ok());
+        let mut old_host = host;
+        let version = old_host
+            .as_object_mut()
+            .unwrap()
+            .remove("rust_workspace_version")
+            .unwrap();
+        old_host["work_version"] = version;
+        assert!(serde_json::from_value::<InheritedHostEnvironment>(old_host).is_err());
         let preview = json!({"schema":"work-command-preview",
             "request":{"schema":"work-command-run-request","timeout_seconds":60},
             "task_id":"TASK-001","attempt_id":"ATTEMPT-001","record_id":"CMD-001",

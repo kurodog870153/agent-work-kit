@@ -16,45 +16,38 @@ function run(argv) {
         if (!info || !validVersion(info.version)) throw new Error('invalid release version');
         return info.version;
     }
-    if (argv[0] === 'release-tooling-version' && argv.length === 2) {
-        var toolingInfo = JSON.parse(argv[1]);
-        if (!toolingInfo || !validVersion(toolingInfo.tooling_version)) throw new Error('invalid Tooling release version');
-        return toolingInfo.tooling_version;
-    }
-    if (argv[0] === 'release-work-version' && argv.length === 2) {
-        var workInfo = JSON.parse(argv[1]);
-        if (!workInfo || !validVersion(workInfo.work_version)) throw new Error('invalid Work release version');
-        return workInfo.work_version;
+    if (argv[0] === 'release-rust-workspace-version' && argv.length === 2) {
+        var releaseInfo = JSON.parse(argv[1]);
+        if (!releaseInfo || !validVersion(releaseInfo.rust_workspace_version)) throw new Error('invalid Rust workspace release version');
+        return releaseInfo.rust_workspace_version;
     }
     if (argv[0] === 'combined' && argv.length === 6) {
         var combined;
         try { combined = JSON.parse(argv[1]); } catch (error) { return '-'; }
         var parent = argv[2].replace(/\/work$/, '');
         var selectedHost = argv[5];
-        if (!combined || Object.keys(combined).sort().join(',') !== 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' ||
+        if (!combined || Object.keys(combined).sort().join(',') !== 'global_instructions_dir,host,rust_workspace_version,skill_install_dir,status,version' ||
                 (selectedHost !== 'codex' && selectedHost !== 'claude') || combined.host !== selectedHost ||
                 (combined.status !== 'installing' && combined.status !== 'installed') ||
-                !validVersion(combined.version) || !validVersion(combined.work_version) ||
-                !validVersion(combined.tooling_version) ||
+                !validVersion(combined.version) || !validVersion(combined.rust_workspace_version) ||
                 combined.skill_install_dir !== parent || argv[3] !== parent + '/tooling' ||
-                (combined.global_agent_dir !== null &&
-                    (typeof combined.global_agent_dir !== 'string' || combined.global_agent_dir.charAt(0) !== '/'))) return '-';
-        if (argv[4] === 'tooling-version') return combined.tooling_version;
-        if (argv[4] === 'work-version') return combined.work_version;
+                (combined.global_instructions_dir !== null &&
+                    (typeof combined.global_instructions_dir !== 'string' || combined.global_instructions_dir.charAt(0) !== '/'))) return '-';
+        if (argv[4] === 'rust-workspace-version') return combined.rust_workspace_version;
         if (argv[4] === 'version') return combined.version;
-        if (argv[4] === 'global-agent-dir') return combined.global_agent_dir === null ? '-' : combined.global_agent_dir;
+        if (argv[4] === 'global-instructions-dir') return combined.global_instructions_dir === null ? '-' : combined.global_instructions_dir;
         if (argv[4] === 'status') return combined.status;
         return '-';
     }
-    if (argv[0] === 'combined-create' && argv.length === 8) {
-        var host = argv[7];
+    if (argv[0] === 'combined-create' && argv.length === 7) {
+        var host = argv[6];
         if (host !== 'codex' && host !== 'claude') throw new Error('invalid installer host');
-        if (!validVersion(argv[1]) || !validVersion(argv[2]) || !validVersion(argv[3]) ||
-                argv[4].charAt(0) !== '/' ||
-                (argv[5] !== '-' && argv[5].charAt(0) !== '/') ||
-                (argv[6] !== 'installing' && argv[6] !== 'installed')) throw new Error('invalid combined state');
-        return JSON.stringify({host: host, version: argv[1], work_version: argv[2], tooling_version: argv[3],
-            skill_install_dir: argv[4], global_agent_dir: argv[5] === '-' ? null : argv[5], status: argv[6]});
+        if (!validVersion(argv[1]) || !validVersion(argv[2]) ||
+                argv[3].charAt(0) !== '/' ||
+                (argv[4] !== '-' && argv[4].charAt(0) !== '/') ||
+                (argv[5] !== 'installing' && argv[5] !== 'installed')) throw new Error('invalid combined state');
+        return JSON.stringify({host: host, version: argv[1], rust_workspace_version: argv[2],
+            skill_install_dir: argv[3], global_instructions_dir: argv[4] === '-' ? null : argv[4], status: argv[5]});
     }
     throw new Error('invalid parent state operation');
 }

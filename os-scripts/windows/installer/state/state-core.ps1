@@ -8,24 +8,23 @@ function Read-InstallerCombinedState {
     try { $value = ConvertFrom-Json -InputObject $Raw -ErrorAction Stop } catch { return $null }
     $parent = Split-Path -Parent $WorkTarget
     if ($value -isnot [pscustomobject] -or
-        (@($value.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ',') -cne 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' -or
+        (@($value.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ',') -cne 'global_instructions_dir,host,rust_workspace_version,skill_install_dir,status,version' -or
         $value.host -cne $InstallerHost -or $value.host -cnotin @('codex', 'claude') -or
         $value.status -cnotin @('installing', 'installed') -or
         -not (Test-InstallerStateVersion $value.version) -or
-        -not (Test-InstallerStateVersion $value.work_version) -or
-        -not (Test-InstallerStateVersion $value.tooling_version) -or
+        -not (Test-InstallerStateVersion $value.rust_workspace_version) -or
         $value.skill_install_dir -isnot [string] -or
         -not [string]::Equals($value.skill_install_dir, $parent, [StringComparison]::OrdinalIgnoreCase) -or
-        ($null -ne $value.global_agent_dir -and
-            ($value.global_agent_dir -isnot [string] -or -not [IO.Path]::IsPathRooted($value.global_agent_dir)))) {
+        ($null -ne $value.global_instructions_dir -and
+            ($value.global_instructions_dir -isnot [string] -or -not [IO.Path]::IsPathRooted($value.global_instructions_dir)))) {
         return $null
     }
     return $value
 }
 
 function Write-InstallerCombinedState {
-    param([string] $Parent, [string] $Version, [string] $WorkVersion, [string] $ToolingVersion,
-        [AllowNull()][string] $GlobalAgentDir, [string] $Status, [string] $InstallerHost)
+    param([string] $Parent, [string] $Version, [string] $RustWorkspaceVersion,
+        [AllowNull()][string] $GlobalInstructionsDir, [string] $Status, [string] $InstallerHost)
     if ($InstallerHost -cnotin @('codex', 'claude')) { throw 'invalid installer host' }
     $target = Join-Path $Parent 'install-state.json'
     $temporary = Join-Path $Parent '.install-state.json.tmp'
@@ -37,9 +36,9 @@ function Write-InstallerCombinedState {
         throw 'unsafe parent install-state.json'
     }
     $value = [ordered]@{
-        host = $InstallerHost; version = $Version; work_version = $WorkVersion; tooling_version = $ToolingVersion
+        host = $InstallerHost; version = $Version; rust_workspace_version = $RustWorkspaceVersion
         skill_install_dir = $Parent
-        global_agent_dir = $(if ([string]::IsNullOrEmpty($GlobalAgentDir)) { $null } else { $GlobalAgentDir })
+        global_instructions_dir = $(if ([string]::IsNullOrEmpty($GlobalInstructionsDir)) { $null } else { $GlobalInstructionsDir })
         status = $Status
     }
     $json = ($value | ConvertTo-Json -Depth 6) + "`n"

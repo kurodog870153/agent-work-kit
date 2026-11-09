@@ -9,6 +9,8 @@ name = "tooling"
 path = "src/main.rs"
 
 [dependencies]
+host-environment = { path = "../../common/host-environment" }
+tooling-model = { path = "../tooling-model" }
 tooling-flow = { path = "../tooling-flow" }
 clap.workspace = true
 serde.workspace = true

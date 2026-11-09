@@ -4,7 +4,7 @@
 
 本文件定義 Rust Workspace 的 Skill、Tooling、Work 三個領域及其公開入口，供開發與維護時判斷模組責任與依賴方向。模組與介面示例僅說明責任，不指定實際函式名稱。
 
-Work 以 Model、Operations、Feature、Flow、Infrastructure 與 CLI 分離資料契約、純規則、業務功能、流程組合、外部能力及命令入口。Tooling 也有六個 crate，但現行業務實作集中在 Feature、Flow、Infrastructure 與 CLI，Model 和 Operations 尚未承接公開業務能力。Skill 以 `skill-api` 提供函式庫公開入口，不提供 CLI。
+Work 以 Model、Operations、Feature、Flow、Infrastructure 與 CLI 分離資料契約、純規則、業務功能、流程組合、外部能力及命令入口。Tooling 也有六個 crate；Model 定義 CLI 回應契約，現行業務實作集中在 Feature、Flow、Infrastructure 與 CLI，Operations 尚未承接公開業務能力。Skill 以 `skill-api` 提供函式庫公開入口，不提供 CLI。
 
 ## 1.1 領域責任與依賴
 
@@ -55,18 +55,19 @@ flowchart LR
 
 | Crate | 責任與現況 | 現行直接依賴的領域 crate |
 | --- | --- | --- |
-| `tooling-model` | Tooling 資料型別的預留層；目前沒有公開業務模型。 | 無 |
+| `tooling-model` | 定義 Tooling CLI 回應狀態與資料契約。 | 無 |
 | `tooling-operations` | 純政策與判定規則的預留層；目前沒有公開業務操作。 | 無 |
 | `tooling-feature` | 政策集合載入、來源新鮮度及相容性檢查。 | `skill-api` |
 | `tooling-infrastructure` | 驗證 Host 提供的專案根目錄與目標檔案邊界。 | 無 |
 | `tooling-flow` | 組合政策探索／載入及目標評估入口。 | `skill-api`、`tooling-feature`、`tooling-infrastructure` |
-| `tooling-cli` | 解析命令、讀取請求並映射公開 JSON 回應及退出碼。 | `tooling-flow` |
+| `tooling-cli` | 解析命令、讀取請求並依 Model 驗證公開 JSON 回應及退出碼。 | `tooling-flow`、`tooling-model` |
 
-Tooling 目前由 Flow 直接呼叫 Infrastructure 的目標邊界檢查；Model 與 Operations 尚未承接概述中的政策與 Host 證據規則。新增這些規則時應依各層責任移入對應 crate，不能以目標架構敘述推定目前已經實作。現行程式碼依賴如下：
+Tooling 目前由 Flow 直接呼叫 Infrastructure 的目標邊界檢查；Model 已承接 CLI 回應契約，Model 與 Operations 尚未承接概述中的政策與 Host 證據規則。新增這些規則時應依各層責任移入對應 crate，不能以目標架構敘述推定目前已經實作。現行程式碼依賴如下：
 
 ```mermaid
 flowchart LR
     tooling_cli["tooling-cli"] --> tooling_flow["tooling-flow"]
+    tooling_cli --> tooling_model["tooling-model"]
     tooling_flow --> tooling_feature["tooling-feature"]
     tooling_flow --> tooling_infra["tooling-infrastructure"]
     tooling_flow --> skill_api["skill-api"]

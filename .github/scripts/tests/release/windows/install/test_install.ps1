@@ -13,7 +13,7 @@ if ([string]::IsNullOrEmpty($workspaceVersion)) { throw 'Rust workspace test ver
 function Write-TestReleaseInfo {
     param([string] $Root, [string] $Version, [string] $InstallerHost)
     [IO.File]::WriteAllText((Join-Path $Root 'release-info.json'),
-        ([ordered]@{ host = $InstallerHost; target = 'x86_64-pc-windows-msvc'; version = $Version; work_version = $workspaceVersion; tooling_version = $workspaceVersion } | ConvertTo-Json -Compress))
+        ([ordered]@{ host = $InstallerHost; target = 'x86_64-pc-windows-msvc'; version = $Version; rust_workspace_version = $workspaceVersion } | ConvertTo-Json -Compress))
 }
 if ([string]::IsNullOrEmpty($Binary)) { $Binary = Join-Path $repoRoot 'rust/target/release/work.exe' }
 $binary = (Resolve-Path -LiteralPath $Binary).Path
@@ -82,11 +82,10 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/mcp/instructions.md')) -or
         (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/repl'))) { throw 'installed files missing or removed REPL retained' }
     $state = Get-Content -LiteralPath $parentState -Raw | ConvertFrom-Json
-    if ($state.host -cne 'codex' -or $state.version -ne $baseVersion -or $state.work_version -ne $workspaceVersion -or
-        $state.tooling_version -ne $workspaceVersion -or
+    if ($state.host -cne 'codex' -or $state.version -ne $baseVersion -or $state.rust_workspace_version -ne $workspaceVersion -or
         $state.skill_install_dir -ne (Split-Path -Parent $target) -or
-        $null -ne $state.global_agent_dir -or $state.status -ne 'installed' -or
-        @($state.PSObject.Properties).Count -ne 7) {
+        $null -ne $state.global_instructions_dir -or $state.status -ne 'installed' -or
+        @($state.PSObject.Properties).Count -ne 6) {
         throw 'installed state is wrong'
     }
     $claudeParent = Join-Path $scratch 'claude-skills'
@@ -104,7 +103,7 @@ try {
         --global-instructions yes --skills-dir $claudeParent --instructions-dir $claudeGlobal | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Claude core first install failed' }
     $claudeState = Get-Content -LiteralPath (Join-Path $claudeParent 'install-state.json') -Raw | ConvertFrom-Json
-    if ($claudeState.host -cne 'claude' -or $claudeState.global_agent_dir -cne $claudeGlobal -or
+    if ($claudeState.host -cne 'claude' -or $claudeState.global_instructions_dir -cne $claudeGlobal -or
         -not (Test-Path -LiteralPath (Join-Path $claudeParent 'work/scripts/work.exe')) -or
         -not (Test-Path -LiteralPath (Join-Path $claudeGlobal 'CLAUDE.md')) -or
         (Test-Path -LiteralPath (Join-Path $claudeGlobal 'AGENTS.md')) -or

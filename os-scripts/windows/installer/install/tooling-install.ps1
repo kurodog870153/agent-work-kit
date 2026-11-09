@@ -75,7 +75,7 @@ function Inspect-InstallerToolingTarget {
     if (Test-Path -LiteralPath $parentState -PathType Leaf) {
         $combined = Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($parentState)) `
             -WorkTarget (Join-Path (Split-Path -Parent $Target) 'work') -ToolingTarget $Target -InstallerHost $InstallerHost
-        if ($null -ne $combined) { $version = $combined.tooling_version }
+        if ($null -ne $combined) { $version = $combined.rust_workspace_version }
     }
     if ($null -eq $version) { return [pscustomobject]@{ Kind = 'first-update'; Reason = ''; Version = $null } }
     return [pscustomobject]@{ Kind = 'managed'; Reason = ''; Version = $version }

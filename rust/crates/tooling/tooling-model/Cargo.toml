@@ -3,3 +3,8 @@ name = "tooling-model"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+host-environment = { path = "../../common/host-environment" }
+serde.workspace = true
+serde_json.workspace = true

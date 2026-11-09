@@ -50,7 +50,7 @@ function New-InstallerState {
     catch { throw 'invalid install-state template' }
     if ($template -isnot [pscustomobject]) { throw 'invalid install-state template' }
     $keys = @($template.PSObject.Properties.Name | Sort-Object -CaseSensitive) -join ','
-    if ($keys -cne 'global_agent_dir,host,skill_install_dir,status,tooling_version,version,work_version' -or
+    if ($keys -cne 'global_instructions_dir,host,rust_workspace_version,skill_install_dir,status,version' -or
         @($template.PSObject.Properties | Where-Object { $null -ne $_.Value }).Count -ne 0 -or
         $InstallerHost -cnotin @('codex', 'claude') -or
         -not (Test-InstallerStateVersion $Version) -or
