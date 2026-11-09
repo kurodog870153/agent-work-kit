@@ -1,0 +1,12 @@
+name: Set up Python for CI tests
+description: Install the Python runtime and dependencies used by Rust validation tests.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.15'
+    - shell: bash
+      run: |
+        PYYAML_FORCE_LIBYAML=0 python -m pip install PyYAML==6.0.3
+        python -c 'import yaml; print(yaml.__version__)'

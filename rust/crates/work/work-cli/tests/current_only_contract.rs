@@ -192,18 +192,6 @@ const IMMUTABLE: &[(&str, &str)] = &[
         "7207f68cff308aed428d6c1a6b51f48c9778d933fe34dceb8bf26193e4ef87b9",
     ),
     (
-        "rust/crates/work/work-infrastructure/fixtures/historical/instructions/execute/handoff-baseline/instructions.md",
-        "4eb8ea4bccf08a049721ab8315b1cb3d992ebdaca2cdce5a8fe1cbd52490bba3",
-    ),
-    (
-        "rust/crates/work/work-infrastructure/fixtures/historical/instructions/execute/handoff-baseline/references/execution-records.md",
-        "fdb3e4239f73887f10244e1f766c99612746ca2164ded2959ea9f7dd58f5e302",
-    ),
-    (
-        "rust/crates/work/work-infrastructure/fixtures/historical/instructions/execute/handoff-baseline/references/execution-recovery.md",
-        "0b10178791148e51d0f1e46f413a6ebb430979d654df6874006b8a9c9b7a0092",
-    ),
-    (
         "rust/crates/work/work-infrastructure/fixtures/cases/execution/handoff/closed-stopped/project/outputs/work/plans/example.json",
         "477a9c931dc3e1aeb41b80d2fa6aa9486453b0aaa4a17e2778025c9236b6f673",
     ),

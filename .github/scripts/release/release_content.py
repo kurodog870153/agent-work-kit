@@ -12,12 +12,18 @@ VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?", re.I)
 HEADING = re.compile(r"^## Release (Title|Description)\s*$", re.I | re.M)
 
 
-def valid_title(value):
+def valid_title(value, tag):
     if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value:
         raise ValueError("Release Title must be one nonempty line")
     title = value.strip()
-    if (VERSION.search(title)
-            or re.match(r"^(merge pull request|merge branch|release|changes|update|chore|version)\b", title, re.I)):
+    prefix = f"{tag} — "
+    if not title.startswith(prefix):
+        raise ValueError(f"Release Title must start with {prefix}")
+    summary = title[len(prefix):].strip()
+    if (not summary or VERSION.search(summary)
+            or not re.search(r"[A-Za-z\u4e00-\u9fff]", summary)
+            or re.fullmatch(r"(?:fix|feat|feature|bugfix|improvement|maintenance|misc|miscellaneous|summary|release|changes|update|chore|version)", summary, re.I)
+            or re.match(r"^merge (?:pull request|branch)\b", summary, re.I)):
         raise ValueError(f"Release Title is not a meaningful feature summary: {title}")
     return title
 
@@ -43,7 +49,7 @@ def metadata(root, tag):
         raise ValueError(f"invalid release metadata format: {path}")
     fields = {}
     if match.group(1) is not None:
-        fields["title"] = valid_title(match.group(1))
+        fields["title"] = valid_title(match.group(1), tag)
     if match.group(2) is not None:
         fields["description"] = valid_description(match.group(2))
     if set(fields) != {"title", "description"}:
@@ -51,7 +57,7 @@ def metadata(root, tag):
     return fields, str(path.relative_to(root))
 
 
-def declarations(body):
+def declarations(body, tag):
     body = body or ""
     found = list(HEADING.finditer(body))
     result = {}
@@ -60,7 +66,7 @@ def declarations(body):
         if key in result:
             raise ValueError(f"duplicate PR Release {key} declaration")
         value = body[match.end():found[index + 1].start() if index + 1 < len(found) else len(body)].strip()
-        result[key] = valid_title(value) if key == "title" else valid_description(value)
+        result[key] = valid_title(value, tag) if key == "title" else valid_description(value)
     return result
 
 
@@ -71,7 +77,7 @@ def resolve(root, tag, pulls):
         return chosen, sources
     explicit = {"title": [], "description": []}
     for pull in pulls:
-        for key, value in declarations(pull.get("body")).items():
+        for key, value in declarations(pull.get("body"), tag).items():
             explicit[key].append((value, f"PR #{pull['number']}"))
     for key in ("title", "description"):
         if key in chosen:
@@ -86,19 +92,23 @@ def resolve(root, tag, pulls):
             raise ValueError(f"Release {key} needs metadata or an unambiguous merged PR; found {len(pulls)} PRs")
         pull = pulls[0]
         if key == "title":
-            chosen[key] = valid_title(re.sub(r"^(feat|fix|refactor)(\([^)]+\))?:\s*", "", pull["title"], flags=re.I))
+            summary = re.sub(r"^(feat|fix|refactor)(\([^)]+\))?:\s*", "", pull["title"], flags=re.I)
+            chosen[key] = valid_title(f"{tag} — {summary}", tag)
         else:
             body = HEADING.split(pull.get("body") or "", 1)[0].strip()
-            chosen[key] = valid_description(body if body else chosen.get("title", pull["title"]))
+            chosen[key] = valid_description(body if body else chosen.get("title", pull["title"]).removeprefix(f"{tag} — "))
         sources[key] = f"PR #{pull['number']} fallback"
     return chosen, sources
 
 
 def preflight_sources(root, repository, tag, pull, base_ref):
-    from release_publication_checks import checked_git, published_baseline, related_pulls
+    from release_publication_checks import api, check_metadata_alignment, checked_git, published_baseline, related_pulls
 
     if pull.get("base", {}).get("ref") != "main":
         raise ValueError("release content PR must target main")
+    pages = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
+    published = [item for page in pages for item in page if not item["draft"] and not item["prerelease"]]
+    check_metadata_alignment(root, tag, published)
     base_sha = checked_git(root, "rev-parse", base_ref)
     baseline_tag, _, _ = published_baseline(root, repository, base_sha)
     pulls = related_pulls(root, repository, tag, base_sha, baseline_tag)
@@ -119,7 +129,7 @@ def main():
         result = subprocess.run(["gh", "api", f"repos/{args.repository}/pulls/{args.pr_number}"],
                                 check=True, capture_output=True, text=True)
         pull = json.loads(result.stdout)
-        declarations(pull.get("body"))
+        declarations(pull.get("body"), tag)
         preflight_sources(args.root, args.repository, tag, pull, args.base_ref)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"PR release content check failed: {error}", file=sys.stderr)

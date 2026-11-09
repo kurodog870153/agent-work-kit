@@ -487,38 +487,6 @@ pub fn read_historical_instruction_metadata(
     skill_api::hierarchy::parse_metadata_bytes(normalized.as_bytes(), "tags")
 }
 
-/// Restore the retained Execute baseline only inside an isolated test skill root.
-pub fn restore_historical_execute_instructions(root: &std::path::Path) -> std::io::Result<()> {
-    for (relative, raw) in [
-        (
-            "instructions.md",
-            include_bytes!("../fixtures/historical/instructions/execute/handoff-baseline/instructions.md")
-                .as_slice(),
-        ),
-        (
-            "references/execution-records.md",
-            include_bytes!(
-                "../fixtures/historical/instructions/execute/handoff-baseline/references/execution-records.md"
-            )
-            .as_slice(),
-        ),
-        (
-            "references/execution-recovery.md",
-            include_bytes!(
-                "../fixtures/historical/instructions/execute/handoff-baseline/references/execution-recovery.md"
-            )
-            .as_slice(),
-        ),
-    ] {
-        let path = root
-            .join("references/instructions/execute/general")
-            .join(relative);
-        std::fs::create_dir_all(path.parent().expect("baseline parent"))?;
-        std::fs::write(path, raw)?;
-    }
-    Ok(())
-}
-
 /// Reproduce a historical instruction environment without changing artifact evidence.
 pub fn historical_task_skill_root(
     current: &std::path::Path,
@@ -567,16 +535,6 @@ fn historical_task_skill_root_uncached(
     copy(&current.join("references"), &root.join("references"))?;
     restore_historical_task_instructions(&root)?;
     log_test_timing("historical_skill_copy", started);
-    Ok(root)
-}
-
-pub fn historical_execute_skill_root(
-    current: &std::path::Path,
-) -> std::io::Result<std::path::PathBuf> {
-    let started = std::time::Instant::now();
-    let root = historical_task_skill_root_uncached(current)?;
-    restore_historical_execute_instructions(&root)?;
-    log_test_timing("historical_execute_restore", started);
     Ok(root)
 }
 

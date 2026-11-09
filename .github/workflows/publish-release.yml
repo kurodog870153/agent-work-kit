@@ -299,6 +299,12 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
         run: gh release edit "$TAG" --repo "$REPOSITORY" --draft=false
+      - name: Verify published release content
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.verify-and-attest-release-assets.outputs.tag }}
+        run: python3 .github/scripts/release/release_publication_checks.py assets-published --repository "$REPOSITORY" --tag "$TAG" --directory dist --title-file release-title.txt --notes-file release-notes.md
 
   verify-published-release:
     name: verify published release

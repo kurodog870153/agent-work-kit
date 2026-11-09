@@ -10,6 +10,7 @@ from pathlib import Path
 
 APPROVED = {
     "actions/checkout@v7",
+    "actions/setup-python@v7",
     "actions/upload-artifact@v7",
     "actions/download-artifact@v8",
     "actions/attest@v4",
@@ -19,6 +20,7 @@ APPROVED = {
     "./.github/workflows/build-and-validate-packages.yml",
     "./.github/actions/verify-release-package-checksums",
     "./.github/actions/select-release-rust-toolchain",
+    "./.github/actions/setup-rust-validation-python",
     "./.github/actions/verify-windows-batch-line-endings",
 }
 RUBY_REFERENCES = r"""

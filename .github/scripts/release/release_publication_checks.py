@@ -107,6 +107,17 @@ def published_baseline(root, repository, expected_sha):
     return baseline_tag, baseline_label, revision
 
 
+def check_metadata_alignment(root, tag, published):
+    """Reject metadata for skipped historical versions before creating a tag."""
+    folder = root / ".github/release-metadata"
+    published_tags = {item["tag_name"] for item in published}
+    for path in folder.glob("*.md"):
+        if not re.fullmatch(r"v\d+\.\d+\.\d+\.md", path.name):
+            raise ValueError(f"invalid release metadata filename: {path.name}")
+        if path.stem != tag and path.stem not in published_tags:
+            raise ValueError(f"unpublished historical release metadata: {path.name}")
+
+
 def release_notes(root, repository, tag, expected_sha):
     if not SHA.fullmatch(expected_sha):
         raise ValueError("expected SHA must be a full commit hash")
@@ -175,6 +186,9 @@ def prepare_content(root, repository, tag, expected_sha, title_file, notes_file,
     from version_guard import checked_project_version
     if tag != f"v{checked_project_version(root)}":
         raise ValueError("release content tag differs from project version")
+    pages = api(f"repos/{repository}/releases?per_page=100", "--paginate", "--slurp")
+    published = [item for page in pages for item in page if not item["draft"] and not item["prerelease"]]
+    check_metadata_alignment(root, tag, published)
     baseline_tag, baseline_label, commits, history = release_notes(root, repository, tag, expected_sha)
     fields, sources = resolve(root, tag, related_pulls(root, repository, tag, expected_sha, baseline_tag))
     generated = generate_release_content(repository, tag, baseline_tag, expected_sha)
@@ -273,13 +287,15 @@ def main():
         else:
             expected_title = None
             expected_notes = None
-            if args.action == "assets-draft":
+            if args.action in ("assets-draft", "assets-published") and (args.title_file or args.notes_file):
                 if not args.title_file or not args.notes_file:
-                    raise ValueError("assets-draft action requires --title-file and --notes-file")
+                    raise ValueError("release content comparison requires --title-file and --notes-file")
                 expected_title = args.title_file.read_text(encoding="utf-8").strip()
                 expected_notes = args.notes_file.read_text(encoding="utf-8")
                 if not expected_title:
                     raise ValueError("release title file is empty")
+            if args.action == "assets-draft" and (expected_title is None or expected_notes is None):
+                raise ValueError("assets-draft action requires --title-file and --notes-file")
             check_assets(args.repository, args.tag, args.directory,
                          published=args.action == "assets-published", expected_title=expected_title,
                          expected_notes=expected_notes)
