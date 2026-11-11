@@ -1,12 +1,25 @@
+---
+name: Work 指令階層架構規範
+description: 調整 Work 指令階層、Reference 或選取時適用；無關的 Skill 或 Release 工作不適用。
+metadata:
+  tags:
+    - work-instructions
+    - hierarchy
+---
+
 # Work 指令階層架構規範
 
-## 1. 範圍
+## Purpose
+
+定義 Work 指令的分類、路徑組合及正式選取邊界，供新增或調整指令時遵循。
+
+## Requirements
 
 本文件規範 `skills/work/references/instructions/` 的節點分類、指令歸屬與路徑組合方式，供新增及調整指令時遵循。
 
-Host 依工作需求選擇 Task／Execute 指令與適用階層；Work CLI 驗證正式 Hierarchy／Instruction Selection、來源及指紋，不替 Host 決定語意適用性。通用 Skill Bootstrap／Source 驗證遵循 [共用契約](../../bootstrap-contract.md)。Tooling 是獨立 Skill，由 Host 按操作啟用並透過 Tooling CLI 驗證政策來源；其 Policy 不改 Work 的 `source_order`、TASK Fingerprint 或歷史選取權威。
+Host 依工作需求選擇 Task／Execute 指令與適用階層；Work CLI 驗證正式 Hierarchy／Instruction Selection、來源及指紋，不替 Host 決定語意適用性。通用 Skill Bootstrap／Source 驗證遵循 [共用契約](bootstrap-contract.md)。Tooling 是獨立 Skill，由 Host 按操作啟用並透過 Tooling CLI 驗證政策來源；其 Policy 不改 Work 的 `source_order`、TASK Fingerprint 或歷史選取權威。
 
-## 2. 指令歸屬
+### 指令歸屬
 
 1. `task`、`execute` 各自保留 `general/instructions.md`，存放該模式通用的規則。
 2. 跨多種應用或框架適用的規則放在共同父節點；適用範圍較窄的規則放在對應子節點。
@@ -14,7 +27,7 @@ Host 依工作需求選擇 Task／Execute 指令與適用階層；Work CLI 驗�
 4. 每個節點須有明確責任邊界，避免與父節點、兄弟節點或 reference 重複。
 5. 僅在多條獨立路徑同時適用的規則，應放在責任所屬節點並明述適用條件；不為單一組合增設交叉節點。
 
-## 3. 目錄結構
+### 目錄結構
 
 ```text
 instructions/
@@ -40,7 +53,7 @@ instructions/
 
 `<領域>`、`<語言>` 等標記表示分類位置，不要求每個領域都建立所有種類的節點。每個節點及其祖先都須有 `instructions.md`。
 
-## 4. 路徑選擇
+### 路徑選擇
 
 1. 一項工作可選擇多條適用的葉節點路徑，組合其共通、程式語言、應用、框架與能力規則；應用路徑不得隱含特定語言。
 2. 同一選擇不得同時指定祖先及其子節點；載入時依選定路徑展開祖先，並去除重複。
@@ -48,7 +61,7 @@ instructions/
 4. 指令須靠責任邊界避免衝突，不依賴載入順序掩蓋相互矛盾的規則。
 5. 各階層節點可在 `## References` 使用 `Reference | 載入條件` 兩欄表，只路由該節點 `references/*.md` 的一層檔案；無適用 Reference 時省略該章節。
 
-## 5. YAML frontmatter
+### YAML Frontmatter
 
 本節適用於 `skills/work/references/instructions/` 內所有 `.md`，包括節點的 `instructions.md` 與 `references/` 下的參考指令。
 
@@ -81,22 +94,22 @@ metadata:
 ---
 ```
 
-## 6. 節點變更要求
-
-1. 建立節點前，確認適用範圍、父子關係與各模式的責任。
-2. 維持有效的 frontmatter、祖先節點及 reference 路由。
-3. 路徑或來源名稱變更時，檢查安裝器、引用、測試及既有正式文件的階層選擇與指紋。
-4. 依既有驗證流程確認目錄、選擇及來源載入結果。
-
-## 7. Current 指令與來源完整性
+### Current 指令與來源完整性
 
 1. 指令來源只保存目前的 kind、logical name 與 canonical SHA；frontmatter、routing manifest 與 instruction selection 不以 compatibility revision 或 router revision 判斷相容性。
 2. 路徑、實際 canonical bytes、載入順序與 SHA drift 仍是必要驗證。明確變更有效集合的指令或選擇須經 Revise 審查與核准；不相容或損毀 artifact 以 Migration 保留原始證據並建立 current candidate，不提供舊格式 parser 或自動 refresh。
 3. 安裝器的 Work active tree 包含 current Bootstrap、workflow、完整 Task／Execute 指令樹、binary 與安裝狀態；執行時仍按需求探索並載入選定階層，不因檔案已安裝就預載全部正文。重新安裝不沿用舊 Python 檔案；完整舊 tree 在交易期間保留於 recovery directory 的 previous，發布失敗依原交易回復。
 
-## 工作區及保留證據
+### 工作區及保留證據
 
 1. Host 使用 `transaction-workspace.md` 配置的路徑：原始附件在 `inputs/`，semantic／prepared requests 在 `requests/`，完整 CLI 結果在 `responses/`。JSON 步驟採 `001-<command>.json` 並 exclusive create；成功／失敗都保留，不能把回應當下一步 request。
 2. 原始 PDF 或文字維持實際檔名、格式與 bytes，UTF-8 JSON transport 規則不套用到原始二進位附件。
 3. 工作區資料與正式 Source／TASK／Attempt／Correction／receipt／journal 不混用。Recovery 使用相同 approved request／完整 inventory，另存新 response 步驟；runtime 清理不刪工作區資料或正式證據。Readiness／discovery 不將 runtime/staging 或 transactions 內的 TASK-like JSON 視為正式集合。
 4. 調整 current 指令文件後，重建受影響的 current routing／selection SHA 並驗證衍生鏈。歷史 Snapshot、approval 與 historical fixture 保持原 bytes；舊指紋需明確重新審查，不藉更新 fixture 假造原核准仍有效。
+
+## Procedure
+
+1. 建立節點前，確認適用範圍、父子關係與各模式的責任。
+2. 維持有效的 frontmatter、祖先節點及 reference 路由。
+3. 路徑或來源名稱變更時，檢查安裝器、引用、測試及既有正式文件的階層選擇與指紋。
+4. 依既有驗證流程確認目錄、選擇及來源載入結果。

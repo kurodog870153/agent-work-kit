@@ -54,9 +54,10 @@ Tooling 是獨立的 Skill，負責驗證 Host 選定工具適用的政策來源
 
 ## 4. 進一步閱讀
 
-1. [Work 指引架構](docs/skills/work/instruction/architecture.md)。
-2. [Tooling 指引架構](docs/skills/tooling/instruction/architecture.md)。
-3. [Rust 架構與執行產物管理](docs/rust/architecture.md)。
+1. [AI 維護規範入口](ai-maintainer-instructions/README.md)。
+2. [Work 指引架構](ai-maintainer-instructions/skills/work-instruction-architecture.md)。
+3. [Tooling 指引架構](ai-maintainer-instructions/skills/tooling-instruction-architecture.md)。
+4. [Rust 架構](ai-maintainer-instructions/rust/architecture.md)。
 
 ## 5. 授權
 
