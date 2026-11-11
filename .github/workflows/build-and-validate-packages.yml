@@ -98,6 +98,7 @@ jobs:
   build-and-verify-windows-package:
     name: build Windows package
     runs-on: windows-latest
+    timeout-minutes: 45
     outputs:
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     env:
@@ -126,6 +127,12 @@ jobs:
           }
           python -B .github/scripts/tests/release/test_downloader_entry.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:RELEASE_MODE -eq 'false') {
+            python -B .github/scripts/tests/release/test_release_install_e2e.py
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            pwsh -NoProfile -File .github/scripts/tests/release/windows/test_firewall_isolation.ps1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           if ($env:RELEASE_MODE -eq 'false') {
             foreach ($test in @(
               'cli/test_parse_options.ps1', 'state/test_install_state.ps1',
