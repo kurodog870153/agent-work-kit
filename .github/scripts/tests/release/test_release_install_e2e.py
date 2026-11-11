@@ -3,8 +3,10 @@
 import hashlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from contextlib import redirect_stdout
@@ -12,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, snapshot_host, verify_readme_download
+from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, snapshot_host, terminate_process_tree, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
@@ -115,13 +117,113 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                     return None
 
             log = io.StringIO()
-            with patch("release_install_e2e.subprocess.Popen", InterruptedProcess):
+            with patch("release_install_e2e.terminate_process_tree", return_value=True):
                 with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
-                    run_installer_for_host(Path("installer"), Path(directory), host="codex")
+                    run_installer_for_host(Path("installer"), Path(directory), host="codex",
+                                           popen_factory=InterruptedProcess)
             self.assertIn("reason=KeyboardInterrupt", log.getvalue())
-            self.assertIn("pid=1234, child_exit_at_interrupt=None", log.getvalue())
+            self.assertIn("pid=1234, phase=", log.getvalue())
+            self.assertIn("child_exit_at_cancel=None", log.getvalue())
             self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
             self.assertIn("installer diagnostic", log.getvalue())
+
+    def test_cancelled_installer_leaves_no_descendant_running(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            marker = home / "descendant-finished"
+            if sys.platform == "win32":
+                script = home / "installer.bat"
+                script.write_bytes(
+                    b"@echo off\r\nstart /b cmd.exe /D /C \"ping -n 6 127.0.0.1 >nul & echo done>"
+                    + str(marker).encode() + b"\"\r\nping -n 30 127.0.0.1 >nul\r\n")
+            else:
+                script = home / "installer.sh"
+                script.write_bytes(
+                    b"(sleep 5; echo done > '" + str(marker).encode() + b"') &\nsleep 30\n")
+            original_popen = subprocess.Popen
+
+            class CancelledPopen(original_popen):
+                def communicate(self, input=None, timeout=None):
+                    if timeout is None:
+                        return super().communicate(input=input)
+                    time.sleep(1)
+                    raise KeyboardInterrupt
+
+            log = io.StringIO()
+            with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
+                run_installer_for_host(script, home, host="codex", popen_factory=CancelledPopen)
+            self.assertIn("Installer E2E cancelled:", log.getvalue())
+            self.assertNotIn("termination failed", log.getvalue())
+            time.sleep(8)
+            self.assertFalse(marker.exists(), "installer descendant kept running after cancellation")
+
+    def test_timed_out_installer_cleanup_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            started_marker = home / "descendant-started"
+            finished_marker = home / "descendant-finished"
+            if sys.platform == "win32":
+                script = home / "installer.bat"
+                script.write_bytes(
+                    b"@echo off\r\nstart /b cmd.exe /D /C \"echo started>"
+                    + str(started_marker).encode() + b" & ping -n 6 127.0.0.1 >nul & echo done>"
+                    + str(finished_marker).encode() + b"\"\r\nping -n 30 127.0.0.1 >nul\r\n")
+            else:
+                script = home / "installer.sh"
+                script.write_bytes(b"(echo started > '" + str(started_marker).encode()
+                                   + b"'; sleep 5; echo done > '" + str(finished_marker).encode()
+                                   + b"') &\nsleep 30\n")
+            original_popen = subprocess.Popen
+
+            class TimedOutPopen(original_popen):
+                def communicate(self, input=None, timeout=None):
+                    deadline = time.monotonic() + 5
+                    while not started_marker.exists() and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    if not started_marker.exists():
+                        raise AssertionError("installer descendant did not start")
+                    raise subprocess.TimeoutExpired(self.args, timeout)
+
+            started = time.monotonic()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_installer_for_host(script, home, host="codex", popen_factory=TimedOutPopen)
+            self.assertLess(time.monotonic() - started, 15, "timeout cleanup took too long")
+            time.sleep(7)
+            self.assertFalse(finished_marker.exists(), "installer descendant kept running after timeout")
+
+    def test_parent_exit_before_cleanup_is_reported_on_windows(self):
+        if sys.platform != "win32":
+            self.skipTest("Windows taskkill requires a live parent PID")
+
+        class ExitedParent:
+            pid = 1234
+
+            def poll(self):
+                return 0
+
+        log = io.StringIO()
+        with redirect_stdout(log):
+            self.assertFalse(terminate_process_tree(ExitedParent()))
+        self.assertIn("cannot verify descendants", log.getvalue())
+
+    @unittest.skipIf(sys.platform == "win32", "Windows reports unverifiable descendants after parent exit")
+    def test_descendant_is_killed_after_parent_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            marker = home / "descendant-finished"
+            script = home / "installer.sh"
+            script.write_bytes(b"(sleep 5; echo done > '" + str(marker).encode() + b"') &\n")
+            original_popen = subprocess.Popen
+
+            class ExitedPopen(original_popen):
+                def communicate(self, input=None, timeout=None):
+                    self.wait(timeout=5)
+                    raise subprocess.TimeoutExpired(self.args, timeout)
+
+            with self.assertRaises(subprocess.TimeoutExpired):
+                run_installer_for_host(script, home, host="codex", popen_factory=ExitedPopen)
+            time.sleep(7)
+            self.assertFalse(marker.exists(), "descendant survived its parent and cleanup")
 
     def test_outer_digest_and_runner_metadata(self):
         with tempfile.TemporaryDirectory() as directory:

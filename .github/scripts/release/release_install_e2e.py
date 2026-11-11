@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -22,6 +23,10 @@ from rust_toolchain import rust_toolchain
 CLI_OPTIONS = ("--host", "--global-instructions", "--skills-dir",
                "--instructions-dir", "--non-interactive", "--dry-run", "--verbose",
                "--help")
+
+# Reported by every installer log line so a cancelled release run can be traced
+# back to the scenario that was executing at the time.
+PHASE = {"current": "startup"}
 
 
 
@@ -81,18 +86,64 @@ def verify_cli_entries(package, platform):
             raise AssertionError(f"{name} release CLI entry returned an invalid response")
 
 
-def run_installer_for_host(script, home, options=(), answers=None, extra_env=None, stream_output=False, *, host):
+def set_phase(phase):
+    PHASE["current"] = phase
+
+
+def terminate_process_tree(process, grace=30):
+    """Stop the installer and every descendant so a cancelled run leaves nothing behind."""
+    if process is None:
+        return True
+    if sys.platform == "win32" and process.poll() is not None:
+        print(f"Installer E2E cannot verify descendants after parent exited: pid={process.pid}", flush=True)
+        return False
+    try:
+        if sys.platform == "win32":
+            taskkill = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
+            result = subprocess.run([str(taskkill), "/F", "/T", "/PID", str(process.pid)],
+                                    capture_output=True, timeout=60, check=False)
+            if result.returncode:
+                print(f"Installer E2E taskkill failed: pid={process.pid}, exit={result.returncode}, "
+                      f"stderr={result.stderr.decode('utf-8', errors='replace')}", flush=True)
+                return False
+        else:
+            # The new session's process group ID remains the launch PID even if
+            # the installer exits before its descendants.
+            os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, AttributeError, subprocess.SubprocessError) as error:
+        print(f"Installer E2E process tree termination failed: pid={process.pid}, "
+              f"reason={type(error).__name__}: {error}", flush=True)
+        return False
+    try:
+        process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        print(f"Installer E2E process tree still alive after termination: pid={process.pid}",
+              flush=True)
+        return False
+    except AttributeError:
+        return False
+    return True
+
+
+def run_installer_for_host(script, home, options=(), answers=None, extra_env=None, stream_output=False, *, host, popen_factory=None):
     if tuple(options) not in (("--help",), ("-h",)) and "--host" not in options:
         options = ("--host", host, *options)
     environment = os.environ.copy()
+    spawn = {}
     if sys.platform == "win32":
         system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
         system_paths = (system_root / "System32", system_root / "System32/WindowsPowerShell/v1.0")
         environment["PATH"] = os.pathsep.join(map(str, system_paths))
         command = ["cmd.exe", "/D", "/C", str(script), *options]
+        # Keep the installer out of this console's process group. A runner
+        # cancellation then reaches only this Python process, so the installer
+        # never stops on "Terminate batch job" and steals the next answer from
+        # its own stdin pipe.
+        spawn["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         environment["PATH"] = "/usr/bin:/bin"
         command = ["bash", str(script), *options]
+        spawn["start_new_session"] = True
     environment.update({"USERPROFILE": str(home), "HOME": str(home), "CI": "true"})
     environment.update(extra_env or {})
     input_data = answers.encode("utf-8") if answers is not None else None
@@ -101,13 +152,25 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
     print(f"Installer E2E started: {script.name}, case={home.name}, "
           f"options={ascii(list(options))}, run={os.environ.get('GITHUB_RUN_ID', 'local')}, "
           f"attempt={os.environ.get('GITHUB_RUN_ATTEMPT', 'local')}, "
-          f"job={os.environ.get('GITHUB_JOB', 'local')}, timeout=600s", flush=True)
+          f"job={os.environ.get('GITHUB_JOB', 'local')}, phase={PHASE['current']}, "
+          f"timeout=600s", flush=True)
     stopped = threading.Event()
 
     def log_wait():
         while not stopped.wait(30):
             print(f"Installer E2E still running: {script.name}, case={home.name}, "
-                  f"elapsed={time.monotonic() - started:.1f}s", flush=True)
+                  f"elapsed={time.monotonic() - started:.1f}s, phase={PHASE['current']}",
+                  flush=True)
+
+    def log_tail():
+        if stream_output:
+            return
+        for label, output in (("stdout", stdout_file), ("stderr", stderr_file)):
+            output.seek(0)
+            tail = output.read()[-4096:]
+            if tail:
+                print(f"Installer E2E {label} tail: {tail.decode('utf-8', errors='replace')}",
+                      flush=True)
 
     reporter = threading.Thread(target=log_wait, daemon=True)
     with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
@@ -115,9 +178,10 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
         process = None
         child_exit_at_interrupt = "not-started"
         try:
-            with subprocess.Popen(command, cwd=home, env=environment, stdin=stdin,
-                                  stdout=None if stream_output else stdout_file,
-                                  stderr=None if stream_output else stderr_file) as process:
+            process = (popen_factory or subprocess.Popen)(command, cwd=home, env=environment, stdin=stdin,
+                                       stdout=None if stream_output else stdout_file,
+                                       stderr=None if stream_output else stderr_file, **spawn)
+            try:
                 print(f"Installer E2E process started: {script.name}, case={home.name}, "
                       f"pid={process.pid}", flush=True)
                 try:
@@ -125,25 +189,33 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
                 except subprocess.TimeoutExpired:
                     child_exit_at_interrupt = process.poll()
                     print(f"Installer E2E timed out: {script.name}, case={home.name}, "
-                          f"pid={process.pid}, elapsed={time.monotonic() - started:.1f}s", flush=True)
-                    process.kill()
-                    process.communicate()
+                          f"pid={process.pid}, elapsed={time.monotonic() - started:.1f}s, "
+                          f"phase={PHASE['current']}", flush=True)
+                    if not terminate_process_tree(process):
+                        raise RuntimeError(f"installer process tree cleanup failed after timeout: pid={process.pid}")
+                    raise
+                except KeyboardInterrupt:
+                    child_exit_at_interrupt = process.poll()
+                    print(f"Installer E2E cancelled: {script.name}, case={home.name}, "
+                          f"pid={process.pid}, elapsed={time.monotonic() - started:.1f}s, "
+                          f"phase={PHASE['current']}, "
+                          f"child_exit_at_cancel={child_exit_at_interrupt}", flush=True)
+                    if not terminate_process_tree(process):
+                        raise RuntimeError(f"installer process tree cleanup failed after cancellation: pid={process.pid}")
                     raise
                 except BaseException:
                     child_exit_at_interrupt = process.poll()
                     raise
+            finally:
+                if process.poll() is None and not terminate_process_tree(process):
+                    print(f"Installer E2E process tree may remain alive: pid={process.pid}", flush=True)
         except BaseException as error:
             print(f"Installer E2E interrupted: {script.name}, case={home.name}, "
                   f"elapsed={time.monotonic() - started:.1f}s, reason={type(error).__name__}, "
                   f"pid={process.pid if process else 'not-started'}, "
+                  f"phase={PHASE['current']}, "
                   f"child_exit_at_interrupt={child_exit_at_interrupt}", flush=True)
-            if not stream_output:
-                for label, output in (("stdout", stdout_file), ("stderr", stderr_file)):
-                    output.seek(0)
-                    tail = output.read()[-4096:]
-                    if tail:
-                        print(f"Installer E2E {label} tail: {tail.decode('utf-8', errors='replace')}",
-                              flush=True)
+            log_tail()
             raise
         finally:
             stopped.set()
@@ -157,7 +229,7 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
             stderr = stderr_file.read()
     print(f"Installer E2E finished: {script.name}, case={home.name}, "
           f"elapsed={time.monotonic() - started:.1f}s, pid={process.pid}, "
-          f"exit={process.returncode}", flush=True)
+          f"exit={process.returncode}, phase={PHASE['current']}", flush=True)
     return process.returncode, stdout, stderr
 
 
@@ -229,6 +301,7 @@ def snapshot_host(home, host):
 def exercise_coexistence(packages, root, platform):
     if set(packages) != {"codex", "claude"}:
         raise AssertionError("coexistence requires both Host packages")
+    set_phase("dual Host coexistence")
     home = root / "dual Host coexistence"
     home.mkdir()
     suffix = ".bat" if platform == "windows-x64-msvc" else ".command"
@@ -297,6 +370,7 @@ def exercise_package(package, root, platform, source_install=False):
         raise AssertionError(f"unsupported release Host: {host!r}")
     exercise_started = time.monotonic()
     def log_phase(phase):
+        set_phase(phase)
         print(f"Package E2E phase: host={host}, platform={platform}, phase={phase}, "
               f"elapsed={time.monotonic() - exercise_started:.1f}s", flush=True)
 
