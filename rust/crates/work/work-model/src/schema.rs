@@ -21,6 +21,8 @@ pub enum PublicSchema {
 
     #[serde(rename = "work-source-snapshot")]
     WorkSourceSnapshot,
+    #[serde(rename = "work-source-capture-request")]
+    WorkSourceCaptureRequest,
     #[serde(rename = "work-source-read")]
     WorkSourceRead,
     #[serde(rename = "work-source-validation")]
@@ -190,7 +192,7 @@ pub enum PublicSchema {
 }
 
 impl PublicSchema {
-    pub const ALL: [Self; 91] = [
+    pub const ALL: [Self; 92] = [
         Self::WorkFileTransactionRequest,
         Self::WorkFileTransactionPreview,
         Self::WorkFileRecoveryPreview,
@@ -199,6 +201,7 @@ impl PublicSchema {
         Self::WorkDiscussionRequest,
         Self::WorkDiscussionResult,
         Self::WorkSourceSnapshot,
+        Self::WorkSourceCaptureRequest,
         Self::WorkSourceRead,
         Self::WorkSourceValidation,
         Self::WorkAttemptAuthorization,
@@ -295,6 +298,7 @@ impl PublicSchema {
             Self::WorkDiscussionResult => "work-discussion-result",
 
             Self::WorkSourceSnapshot => "work-source-snapshot",
+            Self::WorkSourceCaptureRequest => "work-source-capture-request",
             Self::WorkSourceRead => "work-source-read",
             Self::WorkSourceValidation => "work-source-validation",
             Self::WorkAttemptAuthorization => "work-attempt-authorization",

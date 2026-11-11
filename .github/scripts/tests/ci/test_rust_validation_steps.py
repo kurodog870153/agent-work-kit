@@ -53,6 +53,11 @@ class RustValidationTests(unittest.TestCase):
             [step.get("name", step.get("uses")) for step in mac],
             [step.get("name", step.get("uses")) for step in windows],
         )
+        for name in ("Check out source for Rust validation", "Install cargo-nextest"):
+            self.assertEqual(
+                next(step for step in mac if step.get("name") == name),
+                next(step for step in windows if step.get("name") == name),
+            )
         for steps in (mac, windows):
             setup = next(step for step in steps if step.get("name") == "Set up Python for CI tests")
             self.assertEqual(setup["uses"], "./.github/actions/setup-rust-validation-python")

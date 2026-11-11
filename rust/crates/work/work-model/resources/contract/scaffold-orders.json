@@ -387,5 +387,41 @@
       "candidate"
     ],
     "/scaffold/edits/0/task/candidate": []
+  },
+  "work-source-capture-request": {
+    "": [
+      "schema",
+      "id",
+      "canonical_order",
+      "scaffold",
+      "example"
+    ],
+    "/example": [
+      "requirement_id",
+      "captured_at",
+      "source",
+      "content_path",
+      "issue_comment_count"
+    ],
+    "/example/source": [
+      "kind",
+      "repository",
+      "number",
+      "url",
+      "path",
+      "media_type"
+    ],
+    "/scaffold": [
+      "requirement_id",
+      "captured_at",
+      "source",
+      "content_path",
+      "issue_comment_count"
+    ],
+    "/scaffold/source": [
+      "kind",
+      "path",
+      "media_type"
+    ]
   }
 }

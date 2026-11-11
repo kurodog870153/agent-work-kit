@@ -32,7 +32,8 @@ jobs:
       TAG: ${{ inputs.tag }}
       RELEASE_MODE: ${{ inputs.release }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for macOS package
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Select Rust toolchain
@@ -81,12 +82,20 @@ jobs:
           done
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
-      - uses: actions/upload-artifact@v7
+      - name: Upload macOS CLI smoke evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.release && format('cli-smoke-macos-arm64-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-macos-arm64' }}
+          path: dist/cli-smoke/*.md
+          if-no-files-found: error
+      - name: Upload macOS release ZIPs
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', github.run_attempt) || 'pr-release-macos-arm64' }}
           path: dist/*.zip
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - name: Upload macOS ZIP checksums
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', github.run_attempt) || 'checksums-pr-release-macos-arm64' }}
           path: dist/SHA256SUMS.txt
@@ -105,7 +114,8 @@ jobs:
       TAG: ${{ inputs.tag }}
       RELEASE_MODE: ${{ inputs.release }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for Windows package
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
         env:
@@ -186,12 +196,20 @@ jobs:
           }
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
-      - uses: actions/upload-artifact@v7
+      - name: Upload Windows CLI smoke evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.release && format('cli-smoke-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-windows-x64-msvc' }}
+          path: dist/cli-smoke/*.md
+          if-no-files-found: error
+      - name: Upload Windows release ZIPs
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'pr-release-windows-x64-msvc' }}
           path: dist/*.zip
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - name: Upload Windows ZIP checksums
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'checksums-pr-release-windows-x64-msvc' }}
           path: dist/SHA256SUMS.txt
@@ -211,10 +229,12 @@ jobs:
     outputs:
       artifact-attempt: ${{ needs.build-and-verify-macos-package.outputs.artifact-attempt }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for macOS checksum verification
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: ./.github/actions/verify-release-package-checksums
+      - name: Verify macOS package checksums
+        uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: macos-arm64
           package-artifact: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || 'pr-release-macos-arm64' }}
@@ -232,10 +252,12 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       artifact-attempt: ${{ needs.build-and-verify-windows-package.outputs.artifact-attempt }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for Windows checksum verification
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: ./.github/actions/verify-release-package-checksums
+      - name: Verify Windows package checksums
+        uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: windows-x64-msvc
           package-artifact: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || 'pr-release-windows-x64-msvc' }}

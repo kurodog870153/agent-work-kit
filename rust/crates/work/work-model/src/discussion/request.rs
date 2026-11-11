@@ -1,6 +1,6 @@
 //! Strict public discussion requests.
 
-use super::{DiscussionOperation, DiscussionSession};
+use super::{DiscussionOperation, DiscussionSessionDraft};
 use crate::common::Nullable;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +23,7 @@ pub struct DiscussionRequest {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DiscussionCommand {
     Init {
-        session: Box<DiscussionSession>,
+        session: Box<DiscussionSessionDraft>,
     },
     Read {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -43,7 +43,7 @@ pub enum DiscussionCommand {
         revision: u64,
     },
     Recover {
-        session: Nullable<Box<DiscussionSession>>,
+        session: Nullable<Box<DiscussionSessionDraft>>,
         operation: Nullable<Box<DiscussionOperation>>,
     },
     Preview {

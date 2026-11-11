@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use serde_json::json;
 use work_model::common::Nullable;
 use work_model::discussion::*;
 
@@ -142,6 +143,44 @@ pub fn operation_sha256(operation: &DiscussionOperation) -> String {
     fingerprint::discussion_operation(
         &serde_json::to_value(operation).expect("operation serializes"),
     )
+}
+
+/// Initialization identity covers only the operation ID and the requirement it opens.
+pub fn initial_operation_sha256(operation_id: &str, requirement_id: &str) -> String {
+    fingerprint::discussion_operation(&json!({
+        "operation_id": operation_id,
+        "requirement_id": requirement_id,
+    }))
+}
+
+/// Derive the committed Session from caller-owned semantics.
+/// The deterministic implementation alone supplies the initial revision and all hashes.
+pub fn derive_initial(draft: &DiscussionSessionDraft) -> Result<DiscussionSession> {
+    nonempty(&draft.commit.operation_id)?;
+    let mut session = DiscussionSession {
+        schema: DiscussionSchema::Session,
+        requirement_id: draft.requirement_id.clone(),
+        revision: 1,
+        context: draft.context.clone(),
+        authorization: draft.authorization.clone(),
+        tasks: draft.tasks.clone(),
+        retired_task_ids: draft.retired_task_ids.clone(),
+        decisions: draft.decisions.clone(),
+        next_task_number: draft.next_task_number,
+        next_decision_number: draft.next_decision_number,
+        continuation: draft.continuation.clone(),
+        commit: DiscussionCommit {
+            operation_id: draft.commit.operation_id.clone(),
+            operation_sha256: initial_operation_sha256(
+                &draft.commit.operation_id,
+                &draft.requirement_id,
+            ),
+            previous_sha256: Nullable::Null,
+            content_sha256: String::new(),
+        },
+    };
+    session.commit.content_sha256 = fingerprint::discussion_session(&session);
+    Ok(session)
 }
 
 pub fn apply(

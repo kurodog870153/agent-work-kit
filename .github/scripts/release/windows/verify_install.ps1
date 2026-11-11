@@ -10,7 +10,7 @@ try {
         foreach ($installerHost in @('codex', 'claude')) {
             $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
             Write-Host "Network isolation active; verifying Windows release installation: $zip"
-            python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install
+            python -B .github/scripts/release/release_install_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc --source-install --cli-smoke-report dist/cli-smoke
             if ($LASTEXITCODE -ne 0) { throw "Windows release installation E2E failed for $installerHost with exit code $LASTEXITCODE" }
             Write-Host "Windows release installation E2E passed for $installerHost after $([math]::Round($elapsed.Elapsed.TotalSeconds, 1))s."
         }

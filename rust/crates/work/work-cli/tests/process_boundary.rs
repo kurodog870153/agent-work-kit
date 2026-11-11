@@ -2630,7 +2630,7 @@ fn specification_task_boundary_continuation_across_installed_processes() {
             )
             .unwrap();
             let request = base.join("session-init.json");
-            fs::write(&request,serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":session}})).unwrap()).unwrap();
+            fs::write(&request,serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}})).unwrap()).unwrap();
             let saved = invoke(
                 &[
                     "discussion",
@@ -2993,7 +2993,7 @@ fn workflow_uses_fixed_source_then_task_without_plan_and_rejects_plan_paths() {
     session.commit.content_sha256 =
         work_infrastructure::fixture_support::discussion_sha256(&session);
     let input = project.join("init-session.json");
-    fs::write(&input, serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":session}})).unwrap()).unwrap();
+    fs::write(&input, serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}})).unwrap()).unwrap();
     let initialized = Command::new(installed_executable())
         .args(&[
             "--project-root".into(),
@@ -4129,6 +4129,29 @@ mod discussion_process_cases {
         json!({"operation_id":id,"expected_revision":view["revision"],"previous_sha256":view["content_sha256"],"change":change})
     }
 
+    /// The published response example and the live response carry the same fields.
+    fn assert_response_matches_contract(shape: &str, actual: &Value) {
+        let registry: Value = work_model::contract::data::registry_value();
+        let example = registry["items"]["work-discussion-result"]["description"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "data")
+            .unwrap()["constraints"]["schema"]["$defs"][shape]["examples"][0]
+            .clone();
+        let keys = |value: &Value| {
+            let mut keys: Vec<_> = value
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.sort();
+            keys
+        };
+        assert_eq!(keys(actual), keys(&example), "{shape}");
+    }
+
     fn opaque_decision(id: &str, status: &str) -> work_model::discussion::DiscussionDecision {
         serde_json::from_value(json!({"id":id,"question":"Storage format?","question_version":1,
             "options":[{"id":"option_a","label":"JSON","explanation":"Preserve structured fields"},{"id":"option_b","label":"CSV","explanation":"Exchange rows with spreadsheets"}],
@@ -4151,7 +4174,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         // All subsequent reads run in fresh processes, with no chat or Session in memory.
@@ -4212,7 +4235,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         for (id, version, mapping) in [
@@ -4313,7 +4336,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let metadata = json!({"title":"Rebound collection","summary":"Review all affected tasks"});
@@ -4404,7 +4427,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let metadata =
@@ -4547,7 +4570,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let committed = current(&root);
@@ -4705,13 +4728,17 @@ mod discussion_process_cases {
     #[test]
     fn full_preview_publication_and_recovery_bind_session_source_and_all_target_bytes() {
         let (root, session) = setup("publication");
-        invoke(
+        let initialized = invoke(
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
+        let session_sha256 = initialized["data"]["data"]["view"]["content_sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         let source = root.join("outputs/work/sources/example/SRC-001/source.txt");
         let source_before = fs::read(&source).unwrap();
         let metadata = json!({"title":"Approved collection","summary":"Complete preview"});
@@ -4726,7 +4753,8 @@ mod discussion_process_cases {
         assert!(preview["contract"].is_object());
         assert!(preview["execution_index"].is_object());
         assert_eq!(preview["targets"].as_object().unwrap().len(), 3);
-        let request = json!({"kind":"apply","expected_revision":1,"session_sha256":session.commit.content_sha256,"metadata":metadata,"approved_sha256":preview["approval_sha256"],"publication_evidence":"User approved the full three-file preview"});
+        assert_response_matches_contract("preview", &preview);
+        let request = json!({"kind":"apply","expected_revision":1,"session_sha256":session_sha256,"metadata":metadata,"approved_sha256":preview["approval_sha256"],"publication_evidence":"User approved the full three-file preview"});
         let mut wrong = request.clone();
         wrong["metadata"]["summary"] = json!("Changed at same revision");
         let output = invoke(&root, "task", "apply", wrong, 5);
@@ -4734,6 +4762,7 @@ mod discussion_process_cases {
         assert!(!root.join("outputs/work/tasks").exists());
         let published = invoke(&root, "task", "apply", request.clone(), 0);
         assert_eq!(published["data"]["data"]["published"], true);
+        assert_response_matches_contract("publication", &published["data"]["data"]);
         let before = preview["targets"]
             .as_object()
             .unwrap()
@@ -4748,6 +4777,7 @@ mod discussion_process_cases {
         recovery["kind"] = json!("recover-publication");
         let recovered = invoke(&root, "task", "recover", recovery, 0);
         assert_eq!(recovered["data"]["data"]["changed"], false);
+        assert_response_matches_contract("publication", &recovered["data"]["data"]);
         for (path, raw) in before {
             assert_eq!(fs::read(root.join(path)).unwrap(), raw);
         }
@@ -4763,10 +4793,7 @@ mod discussion_process_cases {
         )
         .unwrap();
         assert_eq!(collection["discussion"]["revision"], 1);
-        assert_eq!(
-            collection["discussion"]["content_sha256"],
-            session.commit.content_sha256
-        );
+        assert_eq!(collection["discussion"]["content_sha256"], session_sha256);
         let public = |tail: Vec<String>| {
             let mut args = vec![
                 "--project-root".into(),
@@ -4861,10 +4888,7 @@ mod discussion_process_cases {
         ]);
         assert_eq!(preflight["schema"], "work-execute-preflight");
         assert_eq!(preflight["task_status"], "pending");
-        assert_eq!(
-            current(&root)["content_sha256"],
-            session.commit.content_sha256
-        );
+        assert_eq!(current(&root)["content_sha256"], session_sha256);
     }
 
     #[test]
@@ -4874,7 +4898,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let view = current(&root);
@@ -4938,7 +4962,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let view = current(&root);
@@ -4990,7 +5014,7 @@ mod discussion_process_cases {
             &root,
             "discussion",
             "init",
-            json!({"kind":"init","session":session}),
+            json!({"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}),
             0,
         );
         let before = fs::read(root.join("outputs/work/discussions/example/session.json")).unwrap();
@@ -5044,5 +5068,535 @@ mod discussion_process_cases {
                 .join("outputs/work/executions/example/index.json")
                 .exists()
         );
+    }
+
+    /// Run a public command in a fresh process with only publicly documented flags.
+    fn public(root: &Path, path: &[&str], input: Option<&Path>, expected: i32) -> Value {
+        let mut arguments: Vec<String> = vec![
+            "--project-root".into(),
+            root.to_string_lossy().into_owned(),
+            "--verbose".into(),
+        ];
+        arguments.extend(path.iter().map(|part| (*part).to_owned()));
+        let generated;
+        let input = match input {
+            Some(input) => Some(input),
+            None => match path {
+                ["discussion", operation @ ("read" | "status")] => {
+                    generated = root.join(format!("generated-{operation}.json"));
+                    fs::write(
+                        &generated,
+                        serde_json::to_vec(&json!({
+                            "schema": "work-discussion-request",
+                            "requirement_id": "example",
+                            "command": {"kind": operation},
+                        }))
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    Some(generated.as_path())
+                }
+                _ => None,
+            },
+        };
+        if let Some(input) = input {
+            arguments.push("--input-file".into());
+            arguments.push(input.to_string_lossy().into_owned());
+        }
+        arguments.push("--user-config-root".into());
+        arguments.push(root.to_string_lossy().into_owned());
+        let output = run(&arguments);
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "{path:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(output.stderr.is_empty());
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+
+    fn empty_project(label: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "work-public-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        root
+    }
+
+    /// The published `init` example with only caller-owned semantics filled in.
+    fn public_init_request(root: &Path, operation_id: &str) -> Value {
+        let registry: Value = work_model::contract::data::registry_value();
+        let fields = &registry["items"]["work-discussion-request"]["description"]["fields"];
+        let schema = &fields[2]["constraints"]["schema"];
+        let mut example = schema["$defs"]["InitBranch"]["examples"][0].clone();
+        example["session"]["requirement_id"] = json!("example");
+        example["session"]["authorization"]["requirement_id"] = json!("example");
+        example["session"]["authorization"]["project_root"] =
+            json!(root.canonicalize().unwrap().to_string_lossy().into_owned());
+        example["session"]["commit"]["operation_id"] = json!(operation_id);
+        json!({
+            "schema": "work-discussion-request",
+            "requirement_id": "example",
+            "command": example,
+        })
+    }
+
+    #[test]
+    fn public_capture_then_init_read_and_status_keep_revision_one_immutable() {
+        let root = empty_project("entry");
+        let payload = root.join("payload.txt");
+        fs::write(&payload, b"Original requirement text\n").unwrap();
+        let registry: Value = work_model::contract::data::registry_value();
+        let mut metadata =
+            registry["items"]["work-source-capture-request"]["description"]["example"].clone();
+        metadata["requirement_id"] = json!("example");
+        metadata["source"] = json!({"kind":"file","path":"original.txt","media_type":"text/plain"});
+        metadata["content_path"] = json!("source.txt");
+        let metadata_path = root.join("capture.json");
+        fs::write(&metadata_path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        let capture = |approved: Option<&str>| {
+            let mut arguments: Vec<String> = vec![
+                "--project-root".into(),
+                root.to_string_lossy().into_owned(),
+                "--verbose".into(),
+                "source".into(),
+                "capture".into(),
+                "--input-file".into(),
+                metadata_path.to_string_lossy().into_owned(),
+                "--payload-file".into(),
+                payload.to_string_lossy().into_owned(),
+            ];
+            if let Some(approved) = approved {
+                arguments.push("--approved-sha256".into());
+                arguments.push(approved.to_owned());
+            }
+            let output = run(&arguments);
+            (
+                output.status.code().unwrap_or(-1),
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+            )
+        };
+        let (code, preview) = capture(None);
+        assert_eq!(code, 6);
+        assert_eq!(preview["reason_code"], "source_capture_approval_required");
+        let approval = preview["data"]["approval_sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (code, captured) = capture(Some(&approval));
+        assert_eq!(code, 0, "{captured}");
+        assert_eq!(captured["data"]["schema"], "work-source-snapshot");
+        assert_eq!(captured["data"]["source_id"], "SRC-001");
+        assert!(!root.join("outputs/work/discussions").exists());
+
+        let init_path = root.join("init.json");
+        fs::write(
+            &init_path,
+            serde_json::to_vec(&public_init_request(&root, "init")).unwrap(),
+        )
+        .unwrap();
+        let initialized = public(&root, &["discussion", "init"], Some(&init_path), 0);
+        let saved = initialized["data"]["data"].clone();
+        assert_eq!(saved["saved"], true);
+        assert_eq!(saved["operation_revision"], 1);
+        assert_eq!(saved["view"]["revision"], 1);
+        let content_sha256 = saved["view"]["content_sha256"].as_str().unwrap().to_owned();
+        assert_eq!(content_sha256.len(), 64);
+
+        let current = root.join("outputs/work/discussions/example/session.json");
+        let history = root.join("outputs/work/discussions/example/history/1/session.json");
+        let committed = fs::read(&current).unwrap();
+        assert_eq!(fs::read(&history).unwrap(), committed);
+
+        let read = public(&root, &["discussion", "read"], None, 0)["data"]["data"].clone();
+        let status = public(&root, &["discussion", "status"], None, 0)["data"]["data"].clone();
+        for view in [&read, &status] {
+            assert_eq!(view["revision"], 1);
+            assert_eq!(view["content_sha256"], content_sha256.as_str());
+            assert_eq!(view["requirement_id"], "example");
+        }
+
+        // Resending identical bytes keeps the committed revision and every byte.
+        let again = public(&root, &["discussion", "init"], Some(&init_path), 0);
+        assert_eq!(again["data"]["data"]["view"]["revision"], 1);
+        assert_eq!(fs::read(&current).unwrap(), committed);
+        assert!(
+            !root
+                .join("outputs/work/discussions/example/history/2")
+                .exists()
+        );
+
+        // Different bytes for an already-committed revision are refused.
+        let mut different = public_init_request(&root, "init");
+        different["command"]["session"]["context"]["goal"] = json!("A different goal");
+        let different_path = root.join("init-different.json");
+        fs::write(&different_path, serde_json::to_vec(&different).unwrap()).unwrap();
+        let refused = public(&root, &["discussion", "init"], Some(&different_path), 5);
+        assert_eq!(refused["reason_code"], "discussion_already_initialized");
+        assert_eq!(fs::read(&current).unwrap(), committed);
+        assert_eq!(fs::read(&history).unwrap(), committed);
+    }
+
+    #[test]
+    fn public_update_question_answer_chain_uses_only_returned_revisions() {
+        let root = empty_project("chain");
+        let init_path = root.join("init.json");
+        fs::write(
+            &init_path,
+            serde_json::to_vec(&public_init_request(&root, "init")).unwrap(),
+        )
+        .unwrap();
+        let initialized = public(&root, &["discussion", "init"], Some(&init_path), 0);
+        let sha = initialized["data"]["data"]["view"]["content_sha256"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(initialized["data"]["data"]["view"]["revision"], 1);
+
+        let update_path = root.join("update.json");
+        let decision = json!({"id":"D001","question":"Which format?","question_version":1,
+            "options":[{"id":"csv","label":"CSV","explanation":"Portable"},{"id":"json","label":"JSON","explanation":"Structured"}],
+            "status":"pending","tentative_option_id":null,"resolution":null,
+            "status_reason":"","status_evidence":"","added_reason":"Format must be confirmed",
+            "task_ids":[],"dependencies":[],"source_references":["source.txt"]});
+        let add = json!({"kind":"update","operation":{"operation_id":"add-d001","expected_revision":1,
+            "previous_sha256":sha,"change":{"action":"add_decision","decision":decision}}});
+        fs::write(
+            &update_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":add}))
+                .unwrap(),
+        )
+        .unwrap();
+        let added = public(&root, &["discussion", "update"], Some(&update_path), 0);
+        let view = added["data"]["data"]["view"].clone();
+        assert_eq!(view["revision"], 2);
+        assert_eq!(added["data"]["data"]["added_decision_id"], "D001");
+
+        let question_path = root.join("question.json");
+        let ask = json!({"kind":"question","operation":{"operation_id":"ask-d001","expected_revision":view["revision"],
+            "previous_sha256":view["content_sha256"],
+            "change":{"action":"prepare_question","question":{"decision_id":"D001","question_version":1,
+                "text":"Which format?","display_options":{"1":"csv","2":"json"}}}}});
+        fs::write(
+            &question_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":ask}))
+                .unwrap(),
+        )
+        .unwrap();
+        let asked = public(&root, &["discussion", "question"], Some(&question_path), 0);
+        let asked_view = asked["data"]["data"]["view"].clone();
+        assert_eq!(asked_view["revision"], 3);
+        assert_eq!(
+            asked_view["continuation"]["question"]["display_options"]["1"],
+            "csv"
+        );
+        let question_version = asked_view["continuation"]["question"]["question_version"]
+            .as_u64()
+            .unwrap();
+
+        let answer_path = root.join("answer.json");
+        let answer = json!({"kind":"answer","operation":{"operation_id":"answer-d001","expected_revision":asked_view["revision"],
+            "previous_sha256":asked_view["content_sha256"],
+            "change":{"action":"answer_question","decision_id":"D001","question_version":question_version,
+                "display_number":"1","rationale":"CSV is portable","evidence":"User selected 1"}}});
+        fs::write(
+            &answer_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":answer}))
+                .unwrap(),
+        )
+        .unwrap();
+        let answered = public(&root, &["discussion", "answer"], Some(&answer_path), 0);
+        let answered_view = answered["data"]["data"]["view"].clone();
+        assert_eq!(answered_view["revision"], 4);
+        assert_eq!(answered_view["progress"]["confirmed"], 1);
+        assert_eq!(answered_view["progress"]["remaining"], 0);
+
+        // Replaying the identical operation returns the same revision without new bytes.
+        let current = root.join("outputs/work/discussions/example/session.json");
+        let before = fs::read(&current).unwrap();
+        let replayed = public(&root, &["discussion", "answer"], Some(&answer_path), 0);
+        assert_eq!(replayed["data"]["data"]["view"]["revision"], 4);
+        assert_eq!(fs::read(&current).unwrap(), before);
+
+        // The same operation ID with different content cannot overwrite revision 4.
+        let mut collision = answer.clone();
+        collision["operation"]["change"]["rationale"] = json!("A different rationale");
+        let collision_path = root.join("answer-collision.json");
+        fs::write(
+            &collision_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":collision}))
+                .unwrap(),
+        )
+        .unwrap();
+        let refused = public(&root, &["discussion", "answer"], Some(&collision_path), 5);
+        assert_eq!(refused["data"]["saved"], false);
+        assert_eq!(fs::read(&current).unwrap(), before);
+
+        // The confirmed resolution is readable by decision ID alone.
+        let detail_path = root.join("read-decision.json");
+        fs::write(
+            &detail_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"read","decision_id":"D001"}}))
+                .unwrap(),
+        )
+        .unwrap();
+        let detail =
+            public(&root, &["discussion", "read"], Some(&detail_path), 0)["data"]["data"].clone();
+        assert_eq!(detail["status"], "confirmed");
+        assert_eq!(detail["resolution"]["option_id"], "csv");
+        assert_eq!(
+            detail["resolution"]["confirmation_evidence"],
+            "User selected 1"
+        );
+
+        // Immutable history still shows the decision pending before the answer.
+        let history_path = root.join("history.json");
+        fs::write(
+            &history_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"history","revision":2}}))
+                .unwrap(),
+        )
+        .unwrap();
+        let history = public(&root, &["discussion", "history"], Some(&history_path), 0);
+        assert_eq!(history["data"]["data"]["decisions"][0]["status"], "pending");
+        assert!(history["data"]["data"]["decisions"][0]["resolution"].is_null());
+    }
+
+    #[test]
+    fn public_recovery_restores_only_approved_bytes_and_stops_on_conflict() {
+        let (root, session) = setup("public-recovery");
+        let init_path = root.join("init.json");
+        fs::write(
+            &init_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}}))
+                .unwrap(),
+        )
+        .unwrap();
+        public(&root, &["discussion", "init"], Some(&init_path), 0);
+        let current = root.join("outputs/work/discussions/example/session.json");
+        let committed = fs::read(&current).unwrap();
+
+        // Committed: replaying the identical init recovers revision 1 without rewriting.
+        let recover_init_path = root.join("recover-init.json");
+        fs::write(
+            &recover_init_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"recover","session":work_infrastructure::fixture_support::discussion_draft(&session),"operation":null}}))
+                .unwrap(),
+        )
+        .unwrap();
+        let recovered = public(
+            &root,
+            &["discussion", "recover"],
+            Some(&recover_init_path),
+            0,
+        );
+        assert_eq!(recovered["data"]["data"]["view"]["revision"], 1);
+        assert_eq!(fs::read(&current).unwrap(), committed);
+
+        // Prepared history with the old current models interruption before commit.
+        let first_view = public(&root, &["discussion", "read"], None, 0)["data"]["data"].clone();
+        let operation = local(
+            &first_view,
+            "recover-interrupted-update",
+            json!({"action":"update_continuation","current_task_id":null}),
+        );
+        let update_path = root.join("interrupted-update.json");
+        fs::write(&update_path, serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"update","operation":operation}})).unwrap()).unwrap();
+        public(&root, &["discussion", "update"], Some(&update_path), 0);
+        let second = fs::read(&current).unwrap();
+        let prepared = root.join("outputs/work/discussions/example/history/2/session.json");
+        assert_eq!(fs::read(&prepared).unwrap(), second);
+        fs::write(&current, &committed).unwrap();
+        let blocked = public(&root, &["discussion", "update"], Some(&update_path), 5);
+        assert_eq!(blocked["reason_code"], "discussion_recovery_required");
+        assert_eq!(fs::read(&current).unwrap(), committed);
+        let mut conflicting_operation = operation.clone();
+        conflicting_operation["operation_id"] = json!("different-recovery-operation");
+        let conflict_path = root.join("conflicting-recovery.json");
+        fs::write(&conflict_path, serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"recover","session":null,"operation":conflicting_operation}})).unwrap()).unwrap();
+        let conflict = public(&root, &["discussion", "recover"], Some(&conflict_path), 5);
+        assert_eq!(
+            conflict["reason_code"],
+            "discussion_prepared_operation_conflict"
+        );
+        assert_eq!(fs::read(&current).unwrap(), committed);
+        assert_eq!(fs::read(&prepared).unwrap(), second);
+        let recover_update_path = root.join("recover-update.json");
+        fs::write(&recover_update_path, serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"recover","session":null,"operation":operation}})).unwrap()).unwrap();
+        let recovered_update = public(
+            &root,
+            &["discussion", "recover"],
+            Some(&recover_update_path),
+            0,
+        );
+        assert_eq!(recovered_update["data"]["data"]["view"]["revision"], 2);
+        assert_eq!(fs::read(&current).unwrap(), second);
+        assert_eq!(fs::read(&prepared).unwrap(), second);
+
+        let metadata = json!({"title":"Approved collection","summary":"Complete preview"});
+        let preview_path = root.join("preview.json");
+        fs::write(
+            &preview_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"preview","metadata":metadata}}))
+                .unwrap(),
+        )
+        .unwrap();
+        let preview =
+            public(&root, &["task", "preview"], Some(&preview_path), 0)["data"]["data"].clone();
+        let view = public(&root, &["discussion", "read"], None, 0)["data"]["data"].clone();
+        let apply = json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"apply",
+            "expected_revision":view["revision"],"session_sha256":view["content_sha256"],"metadata":metadata,
+            "approved_sha256":preview["approval_sha256"],"publication_evidence":"User approved the complete preview"}});
+        let apply_path = root.join("apply.json");
+        fs::write(&apply_path, serde_json::to_vec(&apply).unwrap()).unwrap();
+        public(&root, &["task", "apply"], Some(&apply_path), 0);
+        let published: Vec<(String, Vec<u8>)> = preview["targets"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|path| (path.clone(), fs::read(root.join(path)).unwrap()))
+            .collect();
+
+        // Interrupted: one approved target is missing; recovery restores exactly that byte range.
+        let missing = "outputs/work/executions/example/index.json";
+        fs::remove_file(root.join(missing)).unwrap();
+        let mut recover = apply.clone();
+        recover["command"]["kind"] = json!("recover-publication");
+        let recover_path = root.join("recover.json");
+        fs::write(&recover_path, serde_json::to_vec(&recover).unwrap()).unwrap();
+        let restored = public(&root, &["task", "recover"], Some(&recover_path), 0);
+        assert_eq!(restored["data"]["data"]["changed"], true);
+        for (path, raw) in &published {
+            assert_eq!(&fs::read(root.join(path)).unwrap(), raw, "{path}");
+        }
+
+        // Conflict: an existing target with different bytes stops recovery and keeps its bytes.
+        let conflicted = "outputs/work/tasks/example/tasks/TASK-001.json";
+        fs::write(root.join(conflicted), b"{\"different\":true}\n").unwrap();
+        let conflicting = fs::read(root.join(conflicted)).unwrap();
+        let stopped = public(&root, &["task", "recover"], Some(&recover_path), 6);
+        assert_eq!(stopped["status"], "rejected");
+        assert_eq!(fs::read(root.join(conflicted)).unwrap(), conflicting);
+        assert_eq!(fs::read(&current).unwrap(), second);
+    }
+
+    #[test]
+    fn public_preview_apply_and_validate_reject_each_unapproved_variation() {
+        let (root, session) = setup("public-approval");
+        let init_path = root.join("init.json");
+        fs::write(
+            &init_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"init","session":work_infrastructure::fixture_support::discussion_draft(&session)}}))
+                .unwrap(),
+        )
+        .unwrap();
+        public(&root, &["discussion", "init"], Some(&init_path), 0);
+        let metadata_record = json!({"title":"Approved collection","summary":"Complete preview"});
+        let preview_path = root.join("preview.json");
+        fs::write(
+            &preview_path,
+            serde_json::to_vec(&json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"preview","metadata":metadata_record}}))
+                .unwrap(),
+        )
+        .unwrap();
+        let preview =
+            public(&root, &["task", "preview"], Some(&preview_path), 0)["data"]["data"].clone();
+        let view = public(&root, &["discussion", "read"], None, 0)["data"]["data"].clone();
+        let approval = preview["approval_sha256"].as_str().unwrap().to_owned();
+        let base = json!({"schema":"work-discussion-request","requirement_id":"example","command":{"kind":"apply",
+            "expected_revision":view["revision"],"session_sha256":view["content_sha256"],
+            "metadata":metadata_record,"approved_sha256":approval,
+            "publication_evidence":"User approved the complete preview"}});
+        let attempt = |label: &str, request: &Value, expected: i32| {
+            let path = root.join(format!("{label}.json"));
+            fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
+            public(&root, &["task", "apply"], Some(&path), expected)
+        };
+
+        // 1. No approval evidence: the write is never authorized.
+        let mut unauthorized = base.clone();
+        unauthorized["command"]["publication_evidence"] = json!("   ");
+        let refused = attempt("no-evidence", &unauthorized, 5);
+        assert_eq!(
+            refused["reason_code"],
+            "discussion_publication_not_authorized"
+        );
+        assert!(!root.join("outputs/work/tasks").exists());
+
+        // 2. Stale revision: the request names a revision that is not current.
+        let mut stale = base.clone();
+        stale["command"]["expected_revision"] = json!(view["revision"].as_u64().unwrap() + 1);
+        let refused = attempt("stale", &stale, 5);
+        assert_eq!(refused["reason_code"], "stale_discussion_revision");
+        assert!(!root.join("outputs/work/tasks").exists());
+
+        // 3. Changed metadata at the same revision no longer matches the approved bytes.
+        let mut changed = base.clone();
+        changed["command"]["metadata"]["summary"] = json!("Changed after approval");
+        let refused = attempt("changed-metadata", &changed, 5);
+        assert_eq!(refused["reason_code"], "discussion_approval_mismatch");
+        assert!(!root.join("outputs/work/tasks").exists());
+
+        // 4. A tampered approval fingerprint is refused the same way.
+        let mut tampered = base.clone();
+        tampered["command"]["approved_sha256"] = json!("0".repeat(64));
+        let refused = attempt("tampered", &tampered, 5);
+        assert_eq!(refused["reason_code"], "discussion_approval_mismatch");
+        assert!(!root.join("outputs/work/tasks").exists());
+
+        // The approved request publishes exactly the previewed bytes.
+        let published = attempt("approved", &base, 0);
+        assert_eq!(published["data"]["data"]["changed"], true);
+        for (path, raw) in preview["targets"].as_object().unwrap() {
+            assert_eq!(
+                fs::read(root.join(path)).unwrap(),
+                raw.as_str().unwrap().as_bytes(),
+                "{path}"
+            );
+        }
+
+        // An existing target is not replaced by a fresh apply.
+        let refused = attempt("exists", &base, 6);
+        assert_eq!(refused["reason_code"], "task_create_target_exists");
+
+        // `task validate` passes on the approved bytes and fails once they drift.
+        let task_path = "outputs/work/tasks/example/index.json";
+        let validate = |root: &Path| {
+            let output = run(&[
+                "--project-root".into(),
+                root.to_string_lossy().into_owned(),
+                "--verbose".into(),
+                "task".into(),
+                "validate".into(),
+                "--path".into(),
+                task_path.into(),
+                "--user-config-root".into(),
+                root.to_string_lossy().into_owned(),
+            ]);
+            (
+                output.status.code().unwrap_or(-1),
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+            )
+        };
+        let (code, passed) = validate(&root);
+        assert_eq!(code, 0, "{passed}");
+        assert_eq!(passed["data"]["task_count"], 1);
+        let mut collection: Value =
+            serde_json::from_slice(&fs::read(root.join(task_path)).unwrap()).unwrap();
+        collection["goal"] = json!("Edited outside the approved preview");
+        fs::write(
+            root.join(task_path),
+            serde_json::to_vec(&collection).unwrap(),
+        )
+        .unwrap();
+        let (code, failed) = validate(&root);
+        assert_ne!(code, 0, "{failed}");
+        assert_eq!(failed["status"], "rejected");
     }
 }

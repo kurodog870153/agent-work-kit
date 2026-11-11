@@ -1,6 +1,6 @@
 # Content and saving
 
-1. Use `work-discussion-request` for `discussion init/read/status/update/question/answer/history/recover`, passing `--input-file` and `--user-config-root` with confirmed skill roots. Query contract describe/scaffold for exact fields. Commands and structured request kinds must match.
+1. Use `work-discussion-request` for `discussion init/read/status/update/question/answer/history/recover`, passing `--input-file` and `--user-config-root` with confirmed skill roots. `preview`, `apply` and `recover-publication` use the same contract but are triggered by `task preview`, `task apply` and `task recover`. Query contract describe/scaffold for exact fields. Commands and structured request kinds must match.
 2. Persist local operations within the bounded save authorization. Each operation binds unique ID, expected revision and previous content SHA. Keep unrelated decisions/plans unchanged and retain confirmed resolution/rationale/evidence; use explicit nullable fields and six decision states.
 3. Save question identity/version/text/number mapping before asking, then use the verified returned revision and view. On failure, do not ask the next question or claim success. Recover only the same operation and preserved matching history; never overwrite conflicts or skip reserved revisions.
 4. Storage readback establishes saved state only. Source validation, semantic planning review, complete formal preview approval and Execute authorization remain separate checks. Reuse unchanged bounded save authorization without asking for every routine delta.

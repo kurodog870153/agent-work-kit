@@ -1,12 +1,11 @@
 //! Source capture over host-provided metadata and original payload bytes.
 
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use work_model::identifiers::{RequirementId, SourceId};
 use work_model::schema::PublicSchema;
+use work_model::source::capture::SourceCaptureRequest;
 use work_model::source::snapshot::{
-    SnapshotContent, SnapshotSource, SourceContentPath, SourceRead, SourceSnapshot,
-    SourceValidation,
+    SnapshotContent, SnapshotSource, SourceRead, SourceSnapshot, SourceValidation,
 };
 use work_operations::canonical::parse_json_contract;
 use work_operations::derivation::fingerprint;
@@ -15,16 +14,8 @@ use work_operations::source_snapshot as rules;
 use crate::error::{ExitCode, WorkError};
 use crate::ports::{SnapshotBytes, SourceSnapshotReader, SourceSnapshotWriter};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CaptureMetadata {
-    pub requirement_id: String,
-    pub captured_at: String,
-    pub source: SnapshotSource,
-    pub content_path: SourceContentPath,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub issue_comment_count: Option<u64>,
-}
+/// The published `work-source-capture-request` contract and this type are one shape.
+pub type CaptureMetadata = SourceCaptureRequest;
 
 pub fn capture(
     repository: &impl SourceSnapshotWriter,
@@ -200,7 +191,7 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use work_model::schema::PublicSchema;
-    use work_model::source::snapshot::{SnapshotContent, SourceSnapshot};
+    use work_model::source::snapshot::{SnapshotContent, SourceContentPath, SourceSnapshot};
     use work_operations::derivation::fingerprint;
 
     struct MemoryWriter(Cell<u64>);

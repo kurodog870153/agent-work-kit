@@ -18,6 +18,8 @@ from pathlib import Path
 
 from release_package_integrity import verify_tree, verify_zip
 from rust_toolchain import rust_toolchain
+if sys.platform == "win32":
+    from windows_job import CREATE_SUSPENDED, WindowsInstallerJob
 
 
 CLI_OPTIONS = ("--host", "--global-instructions", "--skills-dir",
@@ -90,10 +92,20 @@ def set_phase(phase):
     PHASE["current"] = phase
 
 
-def terminate_process_tree(process, grace=30):
+def terminate_process_tree(process, grace=30, job=None):
     """Stop the installer and every descendant so a cancelled run leaves nothing behind."""
     if process is None:
         return True
+    if job is not None:
+        try:
+            stopped = job.terminate_and_wait(grace)
+            if stopped:
+                process.wait(timeout=grace)
+            return stopped
+        except (OSError, RuntimeError) as error:
+            print(f"Installer E2E Job Object termination failed: pid={process.pid}, "
+                  f"reason={type(error).__name__}: {error}", flush=True)
+            return False
     if sys.platform == "win32" and process.poll() is not None:
         print(f"Installer E2E cannot verify descendants after parent exited: pid={process.pid}", flush=True)
         return False
@@ -139,7 +151,7 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
         # cancellation then reaches only this Python process, so the installer
         # never stops on "Terminate batch job" and steals the next answer from
         # its own stdin pipe.
-        spawn["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        spawn["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
     else:
         environment["PATH"] = "/usr/bin:/bin"
         command = ["bash", str(script), *options]
@@ -176,11 +188,26 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
     with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
         reporter.start()
         process = None
+        job = None
         child_exit_at_interrupt = "not-started"
         try:
+            if sys.platform == "win32":
+                job = WindowsInstallerJob()
             process = (popen_factory or subprocess.Popen)(command, cwd=home, env=environment, stdin=stdin,
                                        stdout=None if stream_output else stdout_file,
                                        stderr=None if stream_output else stderr_file, **spawn)
+            if job is not None:
+                if isinstance(process, subprocess.Popen):
+                    try:
+                        job.attach_and_resume(process)
+                    except BaseException:
+                        process.kill()
+                        process.wait(timeout=30)
+                        raise
+                else:
+                    # Synthetic test processes do not have a Windows process handle.
+                    job.close()
+                    job = None
             try:
                 print(f"Installer E2E process started: {script.name}, case={home.name}, "
                       f"pid={process.pid}", flush=True)
@@ -191,7 +218,7 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
                     print(f"Installer E2E timed out: {script.name}, case={home.name}, "
                           f"pid={process.pid}, elapsed={time.monotonic() - started:.1f}s, "
                           f"phase={PHASE['current']}", flush=True)
-                    if not terminate_process_tree(process):
+                    if not terminate_process_tree(process, job=job):
                         raise RuntimeError(f"installer process tree cleanup failed after timeout: pid={process.pid}")
                     raise
                 except KeyboardInterrupt:
@@ -200,14 +227,15 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
                           f"pid={process.pid}, elapsed={time.monotonic() - started:.1f}s, "
                           f"phase={PHASE['current']}, "
                           f"child_exit_at_cancel={child_exit_at_interrupt}", flush=True)
-                    if not terminate_process_tree(process):
-                        raise RuntimeError(f"installer process tree cleanup failed after cancellation: pid={process.pid}")
+                    if not terminate_process_tree(process, job=job):
+                        print(f"Installer E2E cleanup incomplete after cancellation: pid={process.pid}",
+                              flush=True)
                     raise
                 except BaseException:
                     child_exit_at_interrupt = process.poll()
                     raise
             finally:
-                if process.poll() is None and not terminate_process_tree(process):
+                if process.poll() is None and not terminate_process_tree(process, job=job):
                     print(f"Installer E2E process tree may remain alive: pid={process.pid}", flush=True)
         except BaseException as error:
             print(f"Installer E2E interrupted: {script.name}, case={home.name}, "
@@ -220,6 +248,8 @@ def run_installer_for_host(script, home, options=(), answers=None, extra_env=Non
         finally:
             stopped.set()
             reporter.join()
+            if job is not None:
+                job.close()
         if stream_output:
             stdout = stderr = None
         else:
@@ -364,7 +394,29 @@ def exercise_coexistence(packages, root, platform):
     print(f"Dual Host coexistence E2E passed: {platform}")
 
 
-def exercise_package(package, root, platform, source_install=False):
+def run_installed_cli_smoke(binary, smoke_report, zip_path, version, host, platform):
+    if not binary.is_file():
+        raise AssertionError(f"installed Work CLI is missing: {binary}")
+    report = smoke_report / f"{host}-{platform}.md"
+    smoke_report.mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    environment["WORK_BINARY"] = str(binary)
+    environment["SCENARIO_REPORT"] = str(report)
+    scenario = Path(__file__).resolve().with_name("cli_smoke.py")
+    result = subprocess.run([sys.executable, "-B", str(scenario)],
+                            capture_output=True, text=True, env=environment)
+    if result.returncode != 0:
+        raise AssertionError(f"installed Work CLI smoke failed: {result.stdout}\n{result.stderr}")
+    header = (f"# Installed Work CLI smoke evidence\n\n"
+              f"ZIP: `{zip_path.name}`\n\n"
+              f"ZIP SHA-256: `{hashlib.sha256(zip_path.read_bytes()).hexdigest()}`\n\n"
+              f"Release version: `{version}`\n\n"
+              f"Host: `{host}`; platform: `{platform}`\n\n"
+              f"Installed CLI: `{binary}`\n\n")
+    report.write_text(header + report.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def exercise_package(package, root, platform, source_install=False, smoke_report=None, zip_path=None):
     host = json.loads((package / "release-info.json").read_text(encoding="utf-8"))["host"]
     if host not in ("codex", "claude"):
         raise AssertionError(f"unsupported release Host: {host!r}")
@@ -439,6 +491,10 @@ def exercise_package(package, root, platform, source_install=False):
     assert_no_work_transactions(work)
     if (home / instructions_path).exists():
         raise AssertionError("disabled Global AGENTS created a target")
+    if smoke_report is not None:
+        log_phase("installed Work CLI public contract and TASK smoke")
+        binary = work / "scripts" / ("work.exe" if sys.platform == "win32" else "work")
+        run_installed_cli_smoke(binary, smoke_report, zip_path, version, host, platform)
 
     default_home = root / "first install defaults"
     default_home.mkdir()
@@ -711,6 +767,8 @@ def main():
     parser.add_argument("--platform", required=True, choices=("macos-arm64", "windows-x64-msvc"))
     parser.add_argument("--source-install", action="store_true", help="also build and install through Source")
     parser.add_argument("--peer-zip", type=Path, help="exercise both Host ZIPs in one home")
+    parser.add_argument("--cli-smoke-report", type=Path,
+                        help="save public contract and TASK smoke evidence from the installed CLI")
     args = parser.parse_args()
     if args.peer_zip and args.source_install:
         parser.error("--peer-zip cannot be combined with --source-install")
@@ -744,7 +802,8 @@ def main():
                 raise AssertionError("coexistence ZIPs have the same Host")
             exercise_coexistence(packages, root, args.platform)
         else:
-            exercise_package(package, root, args.platform, args.source_install)
+            exercise_package(package, root, args.platform, args.source_install,
+                             args.cli_smoke_report, args.zip)
     print(f"Final ZIP E2E passed: {args.platform}")
     return 0
 

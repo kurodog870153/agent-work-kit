@@ -1,67 +1,971 @@
 {
   "description": {
-    "schema": "work-contract-description",
-    "id": "work-discussion-result",
-    "kind": "response",
     "caller_constructible": false,
-    "required": [
-      "schema",
-      "command",
-      "requirement_id",
-      "data"
-    ],
-    "optional": [],
     "canonical_order": [
       "schema",
       "command",
       "requirement_id",
       "data"
     ],
-    "fields": [
-      {
-        "name": "schema",
-        "type": "string",
-        "required": true,
-        "reference": null,
-        "constraints": {}
-      },
-      {
-        "name": "command",
-        "type": "string",
-        "required": true,
-        "reference": null,
-        "constraints": {}
-      },
-      {
-        "name": "requirement_id",
-        "type": "string",
-        "required": true,
-        "reference": null,
-        "constraints": {}
-      },
-      {
-        "name": "data",
-        "type": "object",
-        "required": true,
-        "reference": null,
-        "constraints": {}
-      }
-    ],
     "example": {
-      "command": "read",
+      "command": "status",
       "data": {
-        "revision": 1
+        "constraints": [],
+        "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "continuation": {
+          "current_task_id": null,
+          "question": null
+        },
+        "current_task_position": null,
+        "current_task_title": null,
+        "decisions": [],
+        "discussion_level": "task",
+        "goal": "Deliver the requirement",
+        "pending_decision_ids": [],
+        "planning_sha256": {},
+        "progress": {
+          "blocked": 0,
+          "confirmed": 0,
+          "deferred": 0,
+          "known_total": 0,
+          "needs_review": 0,
+          "pending": 0,
+          "remaining": 0,
+          "withdrawn": 0
+        },
+        "requirement_id": "example",
+        "revision": 1,
+        "scope": [
+          "Confirmed scope"
+        ],
+        "task_count": 0
       },
       "requirement_id": "example",
       "schema": "work-discussion-result"
-    }
+    },
+    "fields": [
+      {
+        "constraints": {},
+        "name": "schema",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {},
+        "name": "command",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {},
+        "name": "requirement_id",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {
+          "by_command": {
+            "answer": "saved",
+            "apply": "publication",
+            "history": "Session",
+            "init": "saved",
+            "preview": "preview",
+            "question": "saved",
+            "read": "view or DecisionSummary when decision_id is supplied",
+            "recover": "saved",
+            "recover-publication": "publication",
+            "status": "view",
+            "update": "saved"
+          },
+          "schema": {
+            "$defs": {
+              "DecisionSummary": {
+                "additionalProperties": false,
+                "examples": [
+                  {
+                    "dependencies": [],
+                    "id": "D001",
+                    "options": [
+                      {
+                        "explanation": "Portable",
+                        "id": "csv",
+                        "label": "CSV"
+                      }
+                    ],
+                    "question": "Which format should the export use?",
+                    "status": "pending",
+                    "task_ids": []
+                  }
+                ],
+                "properties": {
+                  "dependencies": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "explanation": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "explanation"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "confirmed",
+                      "deferred",
+                      "blocked",
+                      "needs_review",
+                      "withdrawn"
+                    ],
+                    "type": "string"
+                  },
+                  "task_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "question",
+                  "status",
+                  "dependencies",
+                  "task_ids",
+                  "options"
+                ],
+                "type": "object"
+              },
+              "Session": {
+                "description": "The verified immutable Session at the requested revision.",
+                "examples": [
+                  {
+                    "authorization": {
+                      "allowed_actions": [
+                        "add_decision",
+                        "update_decision",
+                        "update_planning",
+                        "prepare_question",
+                        "answer_question",
+                        "update_context",
+                        "update_continuation"
+                      ],
+                      "directory": "outputs/work/discussions/example",
+                      "evidence": "User authorized saves within this requirement",
+                      "project_root": "/project",
+                      "requirement_id": "example",
+                      "revoked_reason": null
+                    },
+                    "commit": {
+                      "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "operation_id": "init",
+                      "operation_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      "previous_sha256": null
+                    },
+                    "context": {
+                      "acceptance_criteria": [],
+                      "confirmed_source": null,
+                      "constraints": [],
+                      "goal": "Deliver the requirement",
+                      "original_references": [
+                        "source.txt"
+                      ],
+                      "revision": 1,
+                      "scope": [
+                        "Confirmed scope"
+                      ],
+                      "work_type": "task"
+                    },
+                    "continuation": {
+                      "current_task_id": null,
+                      "question": null
+                    },
+                    "decisions": [],
+                    "next_decision_number": 1,
+                    "next_task_number": 1,
+                    "requirement_id": "example",
+                    "retired_task_ids": [],
+                    "revision": 1,
+                    "schema": "work-discussion-session",
+                    "tasks": []
+                  }
+                ],
+                "type": "object"
+              },
+              "preview": {
+                "additionalProperties": false,
+                "examples": [
+                  {
+                    "approval_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "contract": {
+                      "schema": "work-task-collection",
+                      "tasks": []
+                    },
+                    "execution_index": {
+                      "schema": "work-execution-index",
+                      "tasks": []
+                    },
+                    "requirement_id": "example",
+                    "revision": 1,
+                    "session_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "targets": {
+                      "outputs/work/tasks/example/index.json": "{\n}\n"
+                    },
+                    "task_collection_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                ],
+                "properties": {
+                  "approval_sha256": {
+                    "type": "string"
+                  },
+                  "contract": {
+                    "description": "Complete canonical TASK collection projection.",
+                    "type": "object"
+                  },
+                  "execution_index": {
+                    "description": "Initial Execution index with pending acceptance.",
+                    "type": "object"
+                  },
+                  "requirement_id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "session_sha256": {
+                    "type": "string"
+                  },
+                  "source_sha256": {
+                    "type": "string"
+                  },
+                  "targets": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Every canonical target path mapped to the exact initial UTF-8 bytes.",
+                    "type": "object"
+                  },
+                  "task_collection_sha256": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requirement_id",
+                  "revision",
+                  "session_sha256",
+                  "source_sha256",
+                  "approval_sha256",
+                  "task_collection_sha256",
+                  "contract",
+                  "targets",
+                  "execution_index"
+                ],
+                "type": "object"
+              },
+              "publication": {
+                "additionalProperties": false,
+                "examples": [
+                  {
+                    "approval_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "changed": true,
+                    "execution_dir": "outputs/work/executions/example",
+                    "published": true,
+                    "requirement_id": "example",
+                    "revision": 1,
+                    "session_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "task_collection_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "task_path": "outputs/work/tasks/example/index.json"
+                  }
+                ],
+                "properties": {
+                  "approval_sha256": {
+                    "type": "string"
+                  },
+                  "changed": {
+                    "type": "boolean"
+                  },
+                  "execution_dir": {
+                    "type": "string"
+                  },
+                  "published": {
+                    "type": "boolean"
+                  },
+                  "requirement_id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "session_sha256": {
+                    "type": "string"
+                  },
+                  "task_collection_sha256": {
+                    "type": "string"
+                  },
+                  "task_path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "published",
+                  "changed",
+                  "requirement_id",
+                  "revision",
+                  "session_sha256",
+                  "approval_sha256",
+                  "task_collection_sha256",
+                  "task_path",
+                  "execution_dir"
+                ],
+                "type": "object"
+              },
+              "saved": {
+                "additionalProperties": false,
+                "examples": [
+                  {
+                    "added_decision_id": null,
+                    "added_reason": null,
+                    "known_total_change": 0,
+                    "operation_revision": 1,
+                    "remaining_change": 0,
+                    "saved": true,
+                    "view": {
+                      "constraints": [],
+                      "content_sha256": "ab51d9b10df34720981c3c74e9ae76631bd3d34abbe9e6a664bef80bdee26b5f",
+                      "continuation": {
+                        "current_task_id": "TASK-001",
+                        "question": null
+                      },
+                      "current_task_position": 1,
+                      "current_task_title": "Task",
+                      "decisions": [],
+                      "discussion_level": "task",
+                      "goal": "Result",
+                      "pending_decision_ids": [],
+                      "planning_sha256": {
+                        "TASK-001": "ffacd514a779792285d61ccc81f95d850b6784069ea6791c0fbe5c3a2cd01d19"
+                      },
+                      "progress": {
+                        "blocked": 0,
+                        "confirmed": 0,
+                        "deferred": 0,
+                        "known_total": 0,
+                        "needs_review": 0,
+                        "pending": 0,
+                        "remaining": 0,
+                        "withdrawn": 0
+                      },
+                      "requirement_id": "example",
+                      "revision": 1,
+                      "scope": [
+                        "Source"
+                      ],
+                      "task_count": 1
+                    }
+                  }
+                ],
+                "properties": {
+                  "added_decision_id": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "added_reason": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "known_total_change": {
+                    "type": "integer"
+                  },
+                  "operation_revision": {
+                    "type": "integer"
+                  },
+                  "remaining_change": {
+                    "type": "integer"
+                  },
+                  "saved": {
+                    "type": "boolean"
+                  },
+                  "view": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "constraints": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "content_sha256": {
+                        "type": "string"
+                      },
+                      "continuation": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "current_task_id": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "question": {
+                            "oneOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "decision_id": {
+                                    "type": "string"
+                                  },
+                                  "display_options": {
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "question_version": {
+                                    "minimum": 1,
+                                    "type": "integer"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "decision_id",
+                                  "question_version",
+                                  "text",
+                                  "display_options"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "current_task_id",
+                          "question"
+                        ],
+                        "type": "object"
+                      },
+                      "current_task_position": {
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
+                      },
+                      "current_task_title": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "decisions": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "dependencies": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "options": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "explanation": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "label",
+                                  "explanation"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "question": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "pending",
+                                "confirmed",
+                                "deferred",
+                                "blocked",
+                                "needs_review",
+                                "withdrawn"
+                              ],
+                              "type": "string"
+                            },
+                            "task_ids": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "question",
+                            "status",
+                            "dependencies",
+                            "task_ids",
+                            "options"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "discussion_level": {
+                        "type": "string"
+                      },
+                      "goal": {
+                        "type": "string"
+                      },
+                      "pending_decision_ids": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "planning_sha256": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "progress": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "blocked": {
+                            "type": "integer"
+                          },
+                          "confirmed": {
+                            "type": "integer"
+                          },
+                          "deferred": {
+                            "type": "integer"
+                          },
+                          "known_total": {
+                            "type": "integer"
+                          },
+                          "needs_review": {
+                            "type": "integer"
+                          },
+                          "pending": {
+                            "type": "integer"
+                          },
+                          "remaining": {
+                            "type": "integer"
+                          },
+                          "withdrawn": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "confirmed",
+                          "pending",
+                          "deferred",
+                          "blocked",
+                          "needs_review",
+                          "withdrawn",
+                          "known_total",
+                          "remaining"
+                        ],
+                        "type": "object"
+                      },
+                      "requirement_id": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "integer"
+                      },
+                      "scope": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "task_count": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "requirement_id",
+                      "goal",
+                      "scope",
+                      "constraints",
+                      "discussion_level",
+                      "task_count",
+                      "current_task_title",
+                      "current_task_position",
+                      "revision",
+                      "content_sha256",
+                      "planning_sha256",
+                      "progress",
+                      "continuation",
+                      "pending_decision_ids",
+                      "decisions"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "saved",
+                  "operation_revision",
+                  "view",
+                  "added_decision_id",
+                  "added_reason",
+                  "known_total_change",
+                  "remaining_change"
+                ],
+                "type": "object"
+              },
+              "view": {
+                "additionalProperties": false,
+                "examples": [
+                  {
+                    "constraints": [],
+                    "content_sha256": "ab51d9b10df34720981c3c74e9ae76631bd3d34abbe9e6a664bef80bdee26b5f",
+                    "continuation": {
+                      "current_task_id": "TASK-001",
+                      "question": null
+                    },
+                    "current_task_position": 1,
+                    "current_task_title": "Task",
+                    "decisions": [],
+                    "discussion_level": "task",
+                    "goal": "Result",
+                    "pending_decision_ids": [],
+                    "planning_sha256": {
+                      "TASK-001": "ffacd514a779792285d61ccc81f95d850b6784069ea6791c0fbe5c3a2cd01d19"
+                    },
+                    "progress": {
+                      "blocked": 0,
+                      "confirmed": 0,
+                      "deferred": 0,
+                      "known_total": 0,
+                      "needs_review": 0,
+                      "pending": 0,
+                      "remaining": 0,
+                      "withdrawn": 0
+                    },
+                    "requirement_id": "example",
+                    "revision": 1,
+                    "scope": [
+                      "Source"
+                    ],
+                    "task_count": 1
+                  }
+                ],
+                "properties": {
+                  "constraints": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "content_sha256": {
+                    "type": "string"
+                  },
+                  "continuation": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "current_task_id": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "question": {
+                        "oneOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "decision_id": {
+                                "type": "string"
+                              },
+                              "display_options": {
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              },
+                              "question_version": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "decision_id",
+                              "question_version",
+                              "text",
+                              "display_options"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "current_task_id",
+                      "question"
+                    ],
+                    "type": "object"
+                  },
+                  "current_task_position": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
+                  },
+                  "current_task_title": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "decisions": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dependencies": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "explanation": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label",
+                              "explanation"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "question": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "confirmed",
+                            "deferred",
+                            "blocked",
+                            "needs_review",
+                            "withdrawn"
+                          ],
+                          "type": "string"
+                        },
+                        "task_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "question",
+                        "status",
+                        "dependencies",
+                        "task_ids",
+                        "options"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "discussion_level": {
+                    "type": "string"
+                  },
+                  "goal": {
+                    "type": "string"
+                  },
+                  "pending_decision_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "planning_sha256": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "progress": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "blocked": {
+                        "type": "integer"
+                      },
+                      "confirmed": {
+                        "type": "integer"
+                      },
+                      "deferred": {
+                        "type": "integer"
+                      },
+                      "known_total": {
+                        "type": "integer"
+                      },
+                      "needs_review": {
+                        "type": "integer"
+                      },
+                      "pending": {
+                        "type": "integer"
+                      },
+                      "remaining": {
+                        "type": "integer"
+                      },
+                      "withdrawn": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "confirmed",
+                      "pending",
+                      "deferred",
+                      "blocked",
+                      "needs_review",
+                      "withdrawn",
+                      "known_total",
+                      "remaining"
+                    ],
+                    "type": "object"
+                  },
+                  "requirement_id": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer"
+                  },
+                  "scope": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "task_count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "requirement_id",
+                  "goal",
+                  "scope",
+                  "constraints",
+                  "discussion_level",
+                  "task_count",
+                  "current_task_title",
+                  "current_task_position",
+                  "revision",
+                  "content_sha256",
+                  "planning_sha256",
+                  "progress",
+                  "continuation",
+                  "pending_decision_ids",
+                  "decisions"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        },
+        "name": "data",
+        "reference": null,
+        "required": true,
+        "type": "object"
+      }
+    ],
+    "id": "work-discussion-result",
+    "kind": "response",
+    "optional": [],
+    "required": [
+      "schema",
+      "command",
+      "requirement_id",
+      "data"
+    ],
+    "schema": "work-contract-description"
   },
   "scaffold_error": {
-    "reason_code": "contract_scaffold_requires_request",
-    "message": "Only semantic request contracts have public input scaffolds.",
     "details": {
       "contract_id": "work-discussion-result",
       "kind": "response"
-    }
+    },
+    "message": "Only semantic request contracts have public input scaffolds.",
+    "reason_code": "contract_scaffold_requires_request"
   }
 }

@@ -3,7 +3,7 @@
 pub use work_feature::discussion::repository::DiscussionRepository;
 use work_feature::discussion::{DiscussionOperation, DiscussionView, SavedDiscussion};
 use work_feature::error::WorkError;
-use work_model::discussion::{DiscussionSession, SavedQuestion};
+use work_model::discussion::{DiscussionSessionDraft, SavedQuestion};
 
 pub fn dispatch(
     repository: &impl DiscussionRepository,
@@ -58,7 +58,7 @@ pub fn read(
 
 pub fn initialize(
     repository: &impl DiscussionRepository,
-    session: &DiscussionSession,
+    session: &DiscussionSessionDraft,
     recover: bool,
 ) -> Result<SavedDiscussion, WorkError> {
     work_feature::discussion::initialize(repository, session, recover)

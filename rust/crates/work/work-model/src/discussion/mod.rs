@@ -195,6 +195,29 @@ pub struct DiscussionSession {
     pub commit: DiscussionCommit,
 }
 
+/// Initialization input: caller-owned semantics plus the operation identity only.
+/// `revision`, `previous_sha256`, `operation_sha256` and `content_sha256` are derived.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscussionSessionDraft {
+    pub requirement_id: String,
+    pub context: RequirementContext,
+    pub authorization: SaveAuthorization,
+    pub tasks: Vec<DiscussionTask>,
+    pub retired_task_ids: Vec<String>,
+    pub decisions: Vec<DiscussionDecision>,
+    pub next_task_number: u64,
+    pub next_decision_number: u64,
+    pub continuation: Continuation,
+    pub commit: DiscussionCommitDraft,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscussionCommitDraft {
+    pub operation_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
