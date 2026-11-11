@@ -1,10 +1,23 @@
-# Agent Work Kit Release 安裝器架構
+---
+name: Release 安裝器架構規範
+description: 維護安裝入口、狀態、交易或封裝邊界時適用；單純撰寫 Release 摘要不適用。
+metadata:
+  tags:
+    - installer
+    - release-package
+---
 
-## 1. 範圍
+# Release 安裝器架構規範
 
-本文件說明 Windows 與 macOS 的 Work 與 Tooling 安裝入口、模組責任和資料流。使用者操作見 [Release 安裝說明](README.md)；安裝狀態與中斷處理分別見[安裝狀態](install-state.md)和[安裝復原](recovery.md)。
+## Purpose
 
-## 2. 三種安裝入口
+說明 Windows 與 macOS 安裝入口、模組責任及交易資料流，供維護安裝器時遵循。
+
+## Requirements
+
+本文件說明 Windows 與 macOS 的 Work 與 Tooling 安裝入口、模組責任和資料流。使用者操作見 [Release 安裝說明](../../docs/release/README.md)；安裝狀態與中斷處理分別見[安裝狀態](../../docs/release/install-state.md)和[安裝復原](../../docs/release/recovery.md)。
+
+### 安裝入口與封裝邊界
 
 | 入口 | 取得 Work binary | 交給安裝核心前的責任 |
 | --- | --- | --- |
@@ -27,17 +40,19 @@ flowchart LR
     Core --> Global[Host 對應的 Global Instructions]
 ```
 
-## 3. 安裝核心的責任
+## Procedure
 
-`os-scripts/common/installer/options.tsv` 是正式選項的共用目錄，兩平台各自解析引數。`os-scripts/common/installer/install-state.json` 是 Source 與 Package 共用的安裝狀態模板。安裝核心依 Host 決定 Skill 父目錄與 Global Instructions 目標：Codex 使用 `~/.agents/skills` 和 `~/.codex/AGENTS.md`；Claude Code 使用 `~/.claude/skills` 和 `~/.claude/CLAUDE.md`。核心讀取相同 Host 的有效狀態，完成互動選擇，再執行預檢。設定來源與狀態有效性由[安裝狀態](install-state.md)說明。
+### 安裝核心的責任
+
+`os-scripts/common/installer/options.tsv` 是正式選項的共用目錄，兩平台各自解析引數。`os-scripts/common/installer/install-state.json` 是 Source 與 Package 共用的安裝狀態模板。安裝核心依 Host 決定 Skill 父目錄與 Global Instructions 目標：Codex 使用 `~/.agents/skills` 和 `~/.codex/AGENTS.md`；Claude Code 使用 `~/.claude/skills` 和 `~/.claude/CLAUDE.md`。核心讀取相同 Host 的有效狀態，完成互動選擇，再執行預檢。設定來源與狀態有效性由[安裝狀態](../../docs/release/install-state.md)說明。
 
 `state-core` 驗證共同父層狀態；`work-state` 與 `tooling-state` 驗證各自交易期間的暫存狀態。
 
 目標預檢分別辨識空目錄、由有效父層狀態管理的 Skill，以及未知或不安全內容。沒有有效父層狀態的既有安裝會被保留並拒絕接管。正式寫入前，核心也檢查版本、正在使用的 Work binary 和 Global Instructions 的取代決策。Global Instructions 未啟用時，不參與其目標檢查或交易。
 
-Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。兩者將完整 Work 指令、binary 與新 Work 狀態放入暫存 Work，並準備完整 Tooling 與其狀態，再透過平台交易模組發布。安裝鎖、正式路徑切換、完成判定和中斷復原由[安裝復原](recovery.md)說明。
+Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。兩者將完整 Work 指令、binary 與新 Work 狀態放入暫存 Work，並準備完整 Tooling 與其狀態，再透過平台交易模組發布。安裝鎖、正式路徑切換、完成判定和中斷復原由[安裝復原](../../docs/release/recovery.md)說明。
 
-## 4. 模組位置
+### 模組位置
 
 | 責任 | macOS | Windows |
 | --- | --- | --- |
