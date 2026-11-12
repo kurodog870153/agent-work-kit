@@ -303,6 +303,11 @@ def assert_state_for_host(work, version, workspace_version, global_agents, globa
     for required in ("SKILL.md", "references/instruction-loading.md", "references/instructions/instructions.md"):
         if not (tooling / required).is_file():
             raise AssertionError(f"installed Tooling omitted {required}")
+    smoke = subprocess.run([sys.executable, "-B", str(Path(__file__).with_name("tooling_cli_smoke.py")),
+                            "--skill-root", str(tooling)],
+                           capture_output=True, text=True, timeout=120)
+    if smoke.returncode:
+        raise AssertionError(f"installed Tooling public smoke failed: {smoke.stdout} {smoke.stderr}")
     if (tooling / "references/instructions/interfaces/repl").exists():
         raise AssertionError("installed Tooling retained the removed REPL interface")
 
@@ -402,18 +407,33 @@ def run_installed_cli_smoke(binary, smoke_report, zip_path, version, host, platf
     environment = os.environ.copy()
     environment["WORK_BINARY"] = str(binary)
     environment["SCENARIO_REPORT"] = str(report)
-    scenario = Path(__file__).resolve().with_name("cli_smoke.py")
+    scenario = Path(__file__).resolve().with_name("work_cli_smoke.py")
     result = subprocess.run([sys.executable, "-B", str(scenario)],
                             capture_output=True, text=True, env=environment)
     if result.returncode != 0:
         raise AssertionError(f"installed Work CLI smoke failed: {result.stdout}\n{result.stderr}")
-    header = (f"# Installed Work CLI smoke evidence\n\n"
+    tooling = binary.parent.parent.parent / "tooling"
+    tooling_scenario = Path(__file__).resolve().with_name("tooling_cli_smoke.py")
+    tooling_result = subprocess.run([sys.executable, "-B", str(tooling_scenario),
+                                     "--skill-root", str(tooling)],
+                                    capture_output=True, text=True, timeout=120)
+    if tooling_result.returncode:
+        raise AssertionError(f"installed Tooling CLI smoke failed: {tooling_result.stdout}\n{tooling_result.stderr}")
+    tooling_evidence = json.loads(tooling_result.stdout)
+    if (tooling_evidence.get("target_boundary") != "target_valid" or
+            tooling_evidence.get("incompatible_policy_blocked") is not True):
+        raise AssertionError(f"installed Tooling CLI smoke evidence is invalid: {tooling_evidence!r}")
+    header = (f"# Installed Rust CLI smoke evidence\n\n"
               f"ZIP: `{zip_path.name}`\n\n"
               f"ZIP SHA-256: `{hashlib.sha256(zip_path.read_bytes()).hexdigest()}`\n\n"
               f"Release version: `{version}`\n\n"
               f"Host: `{host}`; platform: `{platform}`\n\n"
-              f"Installed CLI: `{binary}`\n\n")
-    report.write_text(header + report.read_text(encoding="utf-8"), encoding="utf-8")
+              f"Installed Work CLI: `{binary}`\n\n"
+              f"Installed Tooling Skill: `{tooling}`\n\n")
+    work_evidence = report.read_text(encoding="utf-8")
+    tooling_section = ("\n## Tooling CLI smoke\n\n```json\n" +
+                       json.dumps(tooling_evidence, ensure_ascii=False, indent=2) + "\n```\n")
+    report.write_text(header + work_evidence + tooling_section, encoding="utf-8")
 
 
 def exercise_package(package, root, platform, source_install=False, smoke_report=None, zip_path=None):

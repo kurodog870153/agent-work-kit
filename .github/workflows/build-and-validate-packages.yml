@@ -11,11 +11,16 @@ on:
         value: ${{ jobs.verify-macos-release-package-checksums.outputs.artifact-attempt }}
       windows-artifact-attempt:
         value: ${{ jobs.verify-windows-release-package-checksums.outputs.artifact-attempt }}
+      release-content-artifact-attempt:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.release-content-artifact-attempt }}
     inputs:
       release:
         type: boolean
         default: false
       tag:
+        type: string
+        default: ''
+      release-content-artifact-attempt:
         type: string
         default: ''
 
@@ -251,6 +256,7 @@ jobs:
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
       artifact-attempt: ${{ needs.build-and-verify-windows-package.outputs.artifact-attempt }}
+      release-content-artifact-attempt: ${{ inputs.release-content-artifact-attempt }}
     steps:
       - name: Check out source for Windows checksum verification
         uses: actions/checkout@v7
@@ -269,4 +275,3 @@ jobs:
           version="$(cat VERSION)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-

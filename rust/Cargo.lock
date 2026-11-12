@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "ci-timing"
-version = "2.2.0"
+version = "2.3.0"
 
 [[package]]
 name = "clap"
@@ -231,7 +231,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "host-environment"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
 ]
@@ -465,7 +465,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "skill-api"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -477,14 +477,14 @@ dependencies = [
 
 [[package]]
 name = "skill-feature"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "skill-infrastructure"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "skill-model"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "skill-operations"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde_json",
  "sha2",
@@ -547,7 +547,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tooling-cli"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "clap",
  "host-environment",
@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "tooling-feature"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "tooling-flow"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "skill-api",
@@ -578,11 +578,11 @@ dependencies = [
 
 [[package]]
 name = "tooling-infrastructure"
-version = "2.2.0"
+version = "2.3.0"
 
 [[package]]
 name = "tooling-model"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "host-environment",
  "serde",
@@ -591,7 +591,7 @@ dependencies = [
 
 [[package]]
 name = "tooling-operations"
-version = "2.2.0"
+version = "2.3.0"
 
 [[package]]
 name = "typenum"
@@ -735,7 +735,7 @@ dependencies = [
 
 [[package]]
 name = "work-cli"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "ci-timing",
  "clap",
@@ -748,7 +748,7 @@ dependencies = [
 
 [[package]]
 name = "work-feature"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "work-flow"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "serde_json",
  "work-feature",
@@ -768,7 +768,7 @@ dependencies = [
 
 [[package]]
 name = "work-infrastructure"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "chrono",
  "ci-timing",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "work-model"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "host-environment",
  "serde",
@@ -796,7 +796,7 @@ dependencies = [
 
 [[package]]
 name = "work-operations"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "base64",
  "caseless",

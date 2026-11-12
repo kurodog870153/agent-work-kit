@@ -1,0 +1,1 @@
+{"schema":"tooling-cli-result","status":"rejected","reason_code":"invalid_request_json","message":"The request JSON is invalid.","data":{"path":"request.json","error":"missing field"},"execution":{"host":{"mode":"inherited","os":"windows","architecture":"x86_64","rust_workspace_version":"2.2.0"}}}

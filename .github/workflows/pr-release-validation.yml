@@ -54,8 +54,18 @@ jobs:
 
   package-ci:
     name: build and validate packages
-    needs: validate-release-preflight
+    needs: rust-ci
     uses: ./.github/workflows/build-and-validate-packages.yml
+    permissions:
+      contents: read
+      actions: read
+
+  report-rust-workspace:
+    name: report Rust workspace validation
+    needs: package-ci
+    uses: ./.github/workflows/rust-workspace-report.yml
+    with:
+      release: false
     permissions:
       contents: read
       actions: read
@@ -63,17 +73,14 @@ jobs:
   confirm-release-validation:
     name: confirm release validation
     if: always()
-    needs: [package-ci, rust-ci]
+    needs: report-rust-workspace
     runs-on: ubuntu-latest
     steps:
-      - name: Require every release check to pass
+      - name: Require Rust workspace report to pass
         env:
-          RUST_VALIDATION: ${{ needs.rust-ci.result }}
-          PACKAGE_VALIDATION: ${{ needs.package-ci.result }}
+          REPORT_VALIDATION: ${{ needs.report-rust-workspace.result }}
         run: |
-          for result in "$RUST_VALIDATION" "$PACKAGE_VALIDATION"; do
-            if [[ "$result" != success ]]; then
-              echo "A release check did not pass: $result"
-              exit 1
-            fi
-          done
+          if [[ "$REPORT_VALIDATION" != success ]]; then
+            echo "Rust workspace report did not pass: $REPORT_VALIDATION"
+            exit 1
+          fi
