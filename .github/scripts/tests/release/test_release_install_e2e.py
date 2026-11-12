@@ -116,16 +116,20 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                 def poll(self):
                     return None
 
-            log = io.StringIO()
-            with patch("release_install_e2e.terminate_process_tree", return_value=True):
-                with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
-                    run_installer_for_host(Path("installer"), Path(directory), host="codex",
-                                           popen_factory=InterruptedProcess)
-            self.assertIn("reason=KeyboardInterrupt", log.getvalue())
-            self.assertIn("pid=1234, phase=", log.getvalue())
-            self.assertIn("child_exit_at_cancel=None", log.getvalue())
-            self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
-            self.assertIn("installer diagnostic", log.getvalue())
+            for cleanup_ok in (True, False):
+                log = io.StringIO()
+                with self.subTest(cleanup_ok=cleanup_ok):
+                    with patch("release_install_e2e.terminate_process_tree", return_value=cleanup_ok):
+                        with redirect_stdout(log), self.assertRaises(KeyboardInterrupt):
+                            run_installer_for_host(Path("installer"), Path(directory), host="codex",
+                                                   popen_factory=InterruptedProcess)
+                    self.assertIn("reason=KeyboardInterrupt", log.getvalue())
+                    self.assertIn("pid=1234, phase=", log.getvalue())
+                    self.assertIn("child_exit_at_cancel=None", log.getvalue())
+                    self.assertIn("Replace Global AGENTS.md? (y/n)", log.getvalue())
+                    self.assertIn("installer diagnostic", log.getvalue())
+                    if not cleanup_ok:
+                        self.assertIn("cleanup incomplete after cancellation", log.getvalue())
 
     def test_cancelled_installer_leaves_no_descendant_running(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -205,6 +209,40 @@ class ReleaseInstallE2ETests(unittest.TestCase):
         with redirect_stdout(log):
             self.assertFalse(terminate_process_tree(ExitedParent()))
         self.assertIn("cannot verify descendants", log.getvalue())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows Job Object requires Windows")
+    def test_windows_job_stops_descendant_after_parent_exits(self):
+        from windows_job import CREATE_SUSPENDED, WindowsInstallerJob
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            started = home / "descendant-started"
+            finished = home / "descendant-finished"
+            script = home / "installer.bat"
+            script.write_bytes(
+                b"@echo off\r\nstart /b cmd.exe /D /C \"echo started>"
+                + str(started).encode() + b" & ping -n 6 127.0.0.1 >nul & echo done>"
+                + str(finished).encode() + b"\"\r\nping -n 2 127.0.0.1 >nul\r\n")
+            job = WindowsInstallerJob()
+            process = None
+            try:
+                process = subprocess.Popen(["cmd.exe", "/D", "/C", str(script)], cwd=home,
+                                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                           stderr=subprocess.DEVNULL,
+                                           creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED)
+                job.attach_and_resume(process)
+                process.wait(timeout=10)
+                self.assertTrue(started.exists(), "descendant did not start before parent exit")
+                self.assertGreater(job.active_processes(), 0, "descendant was not retained in the job")
+                self.assertTrue(terminate_process_tree(process, job=job))
+                self.assertEqual(job.active_processes(), 0)
+                time.sleep(6)
+                self.assertFalse(finished.exists(), "descendant kept running after Job Object cleanup")
+            finally:
+                job.close()
+                if process is not None and process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=10)
 
     @unittest.skipIf(sys.platform == "win32", "Windows reports unverifiable descendants after parent exit")
     def test_descendant_is_killed_after_parent_exits(self):

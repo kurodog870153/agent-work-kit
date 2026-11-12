@@ -2,14 +2,15 @@
 
 use std::collections::BTreeSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use work_model::common::Nullable;
 use work_model::discussion::*;
 
 use super::Result;
 use super::validation::verify_integrity;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecisionProgress {
     pub confirmed: usize,
     pub pending: usize,
@@ -38,7 +39,8 @@ pub fn progress(session: &DiscussionSession) -> DecisionProgress {
     p
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiscussionView {
     pub requirement_id: String,
     pub goal: String,
@@ -57,7 +59,8 @@ pub struct DiscussionView {
     pub decisions: Vec<DecisionSummary>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecisionSummary {
     pub id: String,
     pub question: String,
@@ -127,4 +130,40 @@ pub fn view(session: &DiscussionSession) -> Result<DiscussionView> {
                     d.options.clone()
                 } else { vec![] } }).collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result_example(name: &str) -> serde_json::Value {
+        work_model::contract::data::registry_value()["items"]["work-discussion-result"]
+            ["description"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "data")
+            .unwrap()["constraints"]["schema"]["$defs"][name]["examples"][0]
+            .clone()
+    }
+
+    #[test]
+    fn result_examples_parse_into_the_published_view() {
+        let view: DiscussionView = serde_json::from_value(result_example("view")).unwrap();
+        assert_eq!(view.revision, 1);
+        assert_eq!(view.requirement_id, "example");
+        let decision: DecisionSummary =
+            serde_json::from_value(result_example("DecisionSummary")).unwrap();
+        assert_eq!(decision.id, "D001");
+        let progress: DecisionProgress =
+            serde_json::from_value(result_example("view")["progress"].clone()).unwrap();
+        assert_eq!(progress, DecisionProgress::default());
+    }
+
+    #[test]
+    fn result_view_example_rejects_unknown_fields() {
+        let mut example = result_example("view");
+        example["unknown_field"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<DiscussionView>(example).is_err());
+    }
 }

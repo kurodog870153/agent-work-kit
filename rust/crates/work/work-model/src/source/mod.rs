@@ -1,6 +1,9 @@
 //! Read-only current instruction source impact.
 
+pub mod capture;
 pub mod snapshot;
+
+pub use capture::SourceCaptureRequest;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

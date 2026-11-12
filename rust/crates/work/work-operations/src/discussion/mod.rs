@@ -7,7 +7,8 @@ mod view;
 pub mod workflow;
 
 pub use update::{
-    DiscussionChange, DiscussionOperation, allowed_transition, apply, operation_sha256,
+    DiscussionChange, DiscussionOperation, allowed_transition, apply, derive_initial,
+    initial_operation_sha256, operation_sha256,
 };
 pub use validation::validate_trace;
 pub use validation::{ready_to_generate, validate, validate_authorization, verify_integrity};

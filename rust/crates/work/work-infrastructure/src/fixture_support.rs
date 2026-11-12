@@ -655,6 +655,16 @@ pub fn discussion_sha256(session: &work_model::discussion::DiscussionSession) ->
     work_operations::derivation::fingerprint::discussion_session(session)
 }
 
+/// Project a committed Session into the caller-owned `discussion init` draft shape.
+/// Only semantics and `commit.operation_id` survive; revision and hashes are derived.
+pub fn discussion_draft(session: &work_model::discussion::DiscussionSession) -> serde_json::Value {
+    let mut value = serde_json::to_value(session).expect("Session serializes");
+    value.as_object_mut().unwrap().remove("schema");
+    value.as_object_mut().unwrap().remove("revision");
+    value["commit"] = serde_json::json!({"operation_id": session.commit.operation_id});
+    value
+}
+
 /// Structural serialization/recovery fixture only; this does not authorize native acceptance.
 /// Runtime integration tests must instead supply an actual fixture file via user_confirmation_fixture.
 pub fn user_validation_record_fixture(

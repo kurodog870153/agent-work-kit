@@ -4,9 +4,9 @@ pub mod assembly;
 pub mod repository;
 pub mod request;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use work_model::discussion::{DiscussionDecision, DiscussionSession, SavedQuestion};
+use work_model::discussion::{DiscussionDecision, DiscussionSessionDraft, SavedQuestion};
 use work_operations::discussion::{self, DiscussionChange};
 pub use work_operations::discussion::{DiscussionOperation, DiscussionView};
 
@@ -39,7 +39,8 @@ pub fn read(
     discussion::view(&session).map_err(|e| rejected(e.0))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SavedDiscussion {
     pub saved: bool,
     pub operation_revision: u64,
@@ -50,13 +51,15 @@ pub struct SavedDiscussion {
     pub remaining_change: i64,
 }
 
+/// Initialize from caller-owned semantics; this layer derives the committed Session.
 pub fn initialize(
     repository: &impl DiscussionRepository,
-    session: &DiscussionSession,
+    draft: &DiscussionSessionDraft,
     recover: bool,
 ) -> Result<SavedDiscussion, WorkError> {
-    discussion::verify_integrity(session).map_err(|e| rejected(e.0))?;
-    let committed = repository.initialize(session, recover)?;
+    let session = discussion::derive_initial(draft).map_err(|e| rejected(e.0))?;
+    discussion::verify_integrity(&session).map_err(|e| rejected(e.0))?;
+    let committed = repository.initialize(&session, recover)?;
     let view = read(repository, &session.requirement_id)?;
     Ok(SavedDiscussion {
         saved: true,
@@ -161,4 +164,31 @@ pub fn decision_detail(
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| rejected("unknown_decision"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result_example(name: &str) -> serde_json::Value {
+        work_model::contract::data::registry_value()["items"]["work-discussion-result"]
+            ["description"]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|field| field["name"] == "data")
+            .unwrap()["constraints"]["schema"]["$defs"][name]["examples"][0]
+            .clone()
+    }
+
+    #[test]
+    fn saved_response_example_parses_into_saved_discussion() {
+        let saved: SavedDiscussion = serde_json::from_value(result_example("saved")).unwrap();
+        assert!(saved.saved);
+        assert_eq!(saved.operation_revision, 1);
+        assert_eq!(saved.view.revision, 1);
+        let mut unknown = result_example("saved");
+        unknown["unknown_field"] = json!(true);
+        assert!(serde_json::from_value::<SavedDiscussion>(unknown).is_err());
+    }
 }

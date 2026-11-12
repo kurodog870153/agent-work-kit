@@ -1,0 +1,214 @@
+{
+  "description": {
+    "caller_constructible": true,
+    "canonical_order": [
+      "requirement_id",
+      "captured_at",
+      "source",
+      "content_path",
+      "issue_comment_count"
+    ],
+    "example": {
+      "captured_at": "2026-10-03T00:00:00Z",
+      "content_path": "source.pdf",
+      "requirement_id": "example",
+      "source": {
+        "kind": "file",
+        "media_type": "application/pdf",
+        "path": "原始需求.pdf"
+      }
+    },
+    "fields": [
+      {
+        "constraints": {},
+        "name": "requirement_id",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {
+          "example": "2026-10-03T00:00:00Z",
+          "format": "UTC timestamp YYYY-MM-DDTHH:MM:SSZ"
+        },
+        "name": "captured_at",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {
+          "schema": {
+            "$defs": {
+              "FileSource": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "file",
+                    "title": "Kind",
+                    "type": "string"
+                  },
+                  "media_type": {
+                    "minLength": 3,
+                    "title": "Media Type",
+                    "type": "string"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Path",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "path",
+                  "media_type"
+                ],
+                "title": "FileSource",
+                "type": "object"
+              },
+              "GithubIssueSource": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "github_issue",
+                    "title": "Kind",
+                    "type": "string"
+                  },
+                  "number": {
+                    "minimum": 1,
+                    "title": "Number",
+                    "type": "integer"
+                  },
+                  "repository": {
+                    "minLength": 1,
+                    "pattern": "^[^/\\s]+/[^/\\s]+$",
+                    "title": "Repository",
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "pattern": "^https://github\\.com/",
+                    "title": "Url",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "repository",
+                  "number",
+                  "url"
+                ],
+                "title": "GithubIssueSource",
+                "type": "object"
+              },
+              "UserTextSource": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "user_text",
+                    "title": "Kind",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "title": "UserTextSource",
+                "type": "object"
+              }
+            },
+            "discriminator": {
+              "mapping": {
+                "file": "#/$defs/FileSource",
+                "github_issue": "#/$defs/GithubIssueSource",
+                "user_text": "#/$defs/UserTextSource"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/GithubIssueSource"
+              },
+              {
+                "$ref": "#/$defs/FileSource"
+              },
+              {
+                "$ref": "#/$defs/UserTextSource"
+              }
+            ]
+          }
+        },
+        "name": "source",
+        "reference": null,
+        "required": true,
+        "type": "object"
+      },
+      {
+        "constraints": {
+          "example": "source.txt",
+          "rule": "Begins with the literal 'source.', contains no '/' or '', and is a portable path segment"
+        },
+        "name": "content_path",
+        "reference": null,
+        "required": true,
+        "type": "string"
+      },
+      {
+        "constraints": {
+          "applies_to": "github_issue",
+          "rule": "Must equal the number of comments in the Issue JSON payload; absent for other sources"
+        },
+        "name": "issue_comment_count",
+        "reference": null,
+        "required": false,
+        "type": "integer"
+      }
+    ],
+    "id": "work-source-capture-request",
+    "kind": "semantic_request",
+    "optional": [
+      "issue_comment_count"
+    ],
+    "required": [
+      "requirement_id",
+      "captured_at",
+      "source",
+      "content_path"
+    ],
+    "schema": "work-contract-description"
+  },
+  "scaffold": {
+    "canonical_order": [
+      "requirement_id",
+      "captured_at",
+      "source",
+      "content_path",
+      "issue_comment_count"
+    ],
+    "example": {
+      "captured_at": "2026-10-03T00:00:00Z",
+      "content_path": "source.pdf",
+      "requirement_id": "example",
+      "source": {
+        "kind": "file",
+        "media_type": "application/pdf",
+        "path": "原始需求.pdf"
+      }
+    },
+    "id": "work-source-capture-request",
+    "scaffold": {
+      "captured_at": null,
+      "content_path": null,
+      "issue_comment_count": null,
+      "requirement_id": null,
+      "source": {
+        "kind": "file",
+        "media_type": null,
+        "path": null
+      }
+    },
+    "schema": "work-contract-scaffold"
+  }
+}

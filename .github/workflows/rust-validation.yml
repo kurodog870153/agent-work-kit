@@ -14,9 +14,15 @@ jobs:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v7
+      - &rust_checkout
+        name: Check out source for Rust validation
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: "false"
       - name: Set up Python for CI tests
         uses: ./.github/actions/setup-rust-validation-python
       - name: Select Rust toolchain
@@ -30,7 +36,9 @@ jobs:
           python3 -B -m unittest discover -s ../.github/scripts/tests/ci-performance -p 'test_*.py'
       - name: Set up Rust toolchain
         run: python3 -B ../.github/scripts/ci/rust_validation_steps.py setup
-      - uses: taiki-e/install-action@v2
+      - &install_nextest
+        name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
         with:
           tool: nextest@0.9.148
           fallback: none
@@ -109,13 +117,7 @@ jobs:
       run:
         working-directory: rust
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-        env:
-          GIT_CONFIG_COUNT: "1"
-          GIT_CONFIG_KEY_0: core.autocrlf
-          GIT_CONFIG_VALUE_0: "false"
+      - *rust_checkout
       - name: Set up Python for CI tests
         uses: ./.github/actions/setup-rust-validation-python
       - name: Select Rust toolchain
@@ -134,10 +136,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Set up Rust toolchain
         run: python -B ../.github/scripts/ci/rust_validation_steps.py setup
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-          fallback: none
+      - *install_nextest
       - name: Record runner environment
         run: python -B ../.github/scripts/ci-performance/ci_perf.py environment --platform windows --target $env:WORK_RUST_TARGET
       - name: Check Rust formatting

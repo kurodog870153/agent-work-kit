@@ -7,7 +7,8 @@ for host in codex claude; do
   echo "Verifying macOS release installation: ${zip}"
   sandbox-exec -p '(version 1)(allow default)(deny network*)' \
     python3 -B .github/scripts/release/release_install_e2e.py \
-    --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install
+    --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64 --source-install \
+    --cli-smoke-report dist/cli-smoke
 done
 echo "Verifying macOS dual Host coexistence"
 sandbox-exec -p '(version 1)(allow default)(deny network*)' \

@@ -641,8 +641,8 @@ fn dispatch_with_writer_family(
                     WorkError::new(
                         ExitCode::Contract,
                         "invalid_source_metadata",
-                        "Source capture metadata does not match its contract.",
-                        json!({}),
+                        "Source capture metadata does not match the work-source-capture-request contract; run contract describe or scaffold for that ID.",
+                        json!({"contract_id":"work-source-capture-request"}),
                     )
                 })?;
             let payload_path = argument(parsed, "payload_file")?;

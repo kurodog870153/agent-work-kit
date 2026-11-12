@@ -6,7 +6,6 @@ use work_feature::discussion::{self, repository::DiscussionRepository};
 use work_feature::error::{ExitCode, WorkError};
 use work_model::common::Nullable;
 use work_model::discussion::*;
-use work_operations::derivation::fingerprint;
 use work_operations::discussion::{DiscussionChange, DiscussionOperation};
 
 #[derive(Default)]
@@ -71,21 +70,19 @@ impl DiscussionRepository for Repository {
     }
 }
 
-fn initial(count: usize) -> DiscussionSession {
+fn initial(count: usize) -> DiscussionSessionDraft {
     let decisions:Vec<_>=(1..=count).map(|n|json!({"id":format!("D{n:03}"),"question":format!("Question {n}?"),"question_version":1,
         "options":[{"id":"first","label":"First","explanation":"Reason"}],"status":if n==count{"pending"}else{"confirmed"},
         "tentative_option_id":null,"resolution":if n==count{json!(null)}else{json!({"option_id":"first","rationale":format!("Reason {n}"),"confirmation_evidence":"User"})},
         "status_reason":"","status_evidence":"","added_reason":"Required choice","task_ids":[],"dependencies":[],"source_references":[format!("source-{n}.txt")]})).collect();
-    let mut s:DiscussionSession=serde_json::from_value(json!({"schema":"work-discussion-session","requirement_id":"example","revision":1,
+    serde_json::from_value(json!({"requirement_id":"example",
         "context":{"original_references":["source.txt"],"goal":"Deliver","scope":["Scope"],"constraints":[],
             "acceptance_criteria":[{"id":"ACCEPTANCE-001","criterion":"Verified"}],"confirmed_source":null,"work_type":"task","revision":1},
         "authorization":{"requirement_id":"example","project_root":"/project","directory":"outputs/work/discussions/example",
             "allowed_actions":["prepare_question","answer_question","update_decision"],"evidence":"User approved bounded save","revoked_reason":null},
         "tasks":[],"retired_task_ids":[],"decisions":decisions,"next_task_number":1,"next_decision_number":count+1,
         "continuation":{"current_task_id":null,"question":null},
-        "commit":{"operation_id":"init","operation_sha256":"a".repeat(64),"previous_sha256":null,"content_sha256":"0".repeat(64)}})).unwrap();
-    s.commit.content_sha256 = fingerprint::discussion_session(&s);
-    s
+        "commit":{"operation_id":"init"}})).unwrap()
 }
 
 fn question(n: usize) -> SavedQuestion {
@@ -170,7 +167,6 @@ fn unauthorized_scope_and_stale_answer_are_rejected_before_writes() {
     let repo = Repository::default();
     let mut denied = initial(1);
     denied.authorization.evidence.clear();
-    denied.commit.content_sha256 = fingerprint::discussion_session(&denied);
     assert!(discussion::initialize(&repo, &denied, false).is_err());
     assert_eq!(repo.writes.get(), 0);
     discussion::initialize(&repo, &initial(1), false).unwrap();
@@ -196,7 +192,6 @@ fn large_session_projection_only_includes_pending_and_required_dependencies() {
     let repo = Repository::default();
     let mut s = initial(300);
     s.decisions[299].dependencies = vec!["D001".into()];
-    s.commit.content_sha256 = fingerprint::discussion_session(&s);
     discussion::initialize(&repo, &s, false).unwrap();
     let view = discussion::read(&repo, "example").unwrap();
     assert_eq!(view.progress.known_total, 300);

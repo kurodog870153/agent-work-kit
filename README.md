@@ -22,33 +22,39 @@ Agent Work Kit（`agent-work-kit`）提供 Work 與 Tooling 兩個 Skill，協�
 
 ## 3. 使用方式
 
-在 Codex 對話中以 `$work` 呼叫；在 Claude Code 對話中以 `/work` 呼叫。以下是 Codex 範例：
+### 建立 TASK
+
+在專案中開啟 Codex 或 Claude Code，直接描述想完成的工作。Codex 使用 `$work task`，Claude Code 使用 `/work task`：
 
 ```text
-$work <mode> -- <request>
+$work task -- 為網站新增聯絡表單，送出後顯示成功或失敗訊息，並驗證必填欄位
 ```
 
-Claude Code 使用相同的模式與參數：
+Claude Code 範例：
 
 ```text
-/work <mode> -- <request>
+/work task -- 為網站新增聯絡表單，送出後顯示成功或失敗訊息，並驗證必填欄位
 ```
 
-支援的模式：
+接著依對話完成規劃：
 
-1. `task`：規劃新需求並建立任務。
-2. `revise`：修訂需求或任務。
-3. `migration`：診斷工作資料並規劃遷移。
-4. `execute`：執行已確認的任務。
+1. 說明目標與限制，依提示提供需求編號並回答確認問題。Work 會保存原始需求及討論進度。
+2. 檢查 Work 提供的完整 TASK 預覽，包括工作範圍、順序與驗收條件；需要調整就直接指出。
+3. 確認預覽內容後，明確同意發布該版本的 TASK。Work 會建立正式任務並驗證結果；這一步不會開始執行任務。
 
-例如：
+若中途離開，使用先前確認的需求編號繼續。例如需求編號是 `example`：
 
 ```text
-$work task -- 建立一個包含 UI、frontend 與 backend 的網站
+$work task -- resume example
+```
+
+正式 TASK 建立後，如要開始工作，再指定任務並授權執行：
+
+```text
 $work execute -- 執行 example 的正式 TASK-001
 ```
 
-Work 會在建立或修訂正式任務前提供預覽，並在執行需要授權的操作前確認範圍。
+Claude Code 將上述 `$work` 換成 `/work`。其他模式：`revise` 用於修改已建立的需求或任務；`migration` 用於診斷舊工作資料。
 
 Tooling 是獨立的 Skill，負責驗證 Host 選定工具適用的政策來源。它可以單獨使用；Work 的操作需要工具規範時，Host 也會動態載入 Tooling。載入 Tooling 不代表授權執行工具。
 

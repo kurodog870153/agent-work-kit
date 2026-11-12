@@ -32,7 +32,8 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for release content
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -53,7 +54,8 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: python3 .github/scripts/release/release_publication_checks.py notes --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA" --title-file release-title.txt --notes-file release-notes.md --manifest-file release-content.json
-      - uses: actions/upload-artifact@v7
+      - name: Upload validated release content
+        uses: actions/upload-artifact@v7
         with:
           name: validated-release-content-attempt-${{ github.run_attempt }}
           path: |
@@ -75,10 +77,12 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for version tag
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - name: Download validated release content
+        uses: actions/download-artifact@v8
         with:
           name: validated-release-content-attempt-${{ needs.prepare-release-content.outputs.artifact-attempt }}
       - name: Verify prepared content identity
@@ -107,7 +111,8 @@ jobs:
       tag: ${{ needs.create-release-tag.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for tag validation
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -158,14 +163,17 @@ jobs:
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for asset verification
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - name: Download macOS release ZIPs
+        uses: actions/download-artifact@v8
         with:
           name: release-macos-arm64-attempt-${{ needs.package-ci.outputs.macos-artifact-attempt }}
           path: dist
-      - uses: actions/download-artifact@v8
+      - name: Download Windows release ZIPs
+        uses: actions/download-artifact@v8
         with:
           name: release-windows-x64-msvc-attempt-${{ needs.package-ci.outputs.windows-artifact-attempt }}
           path: dist
@@ -187,7 +195,8 @@ jobs:
           python3 .github/scripts/release/release_package.py checksums --output dist
           cd dist
           sha256sum --check SHA256SUMS.txt
-      - uses: actions/attest@v4
+      - name: Attest verified release assets
+        uses: actions/attest@v4
         with:
           subject-path: |
             dist/agent-work-kit-v${{ needs.package-ci.outputs.version }}-codex-macos-arm64.zip
@@ -210,7 +219,8 @@ jobs:
       - name: Record signed asset manifest digest
         id: digest
         run: echo "manifest_sha256=$(sha256sum dist/SHA256SUMS.txt | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v7
+      - name: Upload signed release assets
+        uses: actions/upload-artifact@v7
         with:
           name: signed-release-assets-attempt-${{ github.run_attempt }}
           path: dist/
@@ -233,15 +243,18 @@ jobs:
       manifest_sha256: ${{ needs.verify-and-attest-release-assets.outputs.manifest_sha256 }}
       artifact-attempt: ${{ needs.verify-and-attest-release-assets.outputs.artifact-attempt }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for release publication
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - name: Download signed release assets
+        uses: actions/download-artifact@v8
         with:
           name: signed-release-assets-attempt-${{ needs.verify-and-attest-release-assets.outputs.artifact-attempt }}
           path: dist
-      - uses: actions/download-artifact@v8
+      - name: Download validated release content
+        uses: actions/download-artifact@v8
         with:
           name: validated-release-content-attempt-${{ needs.prepare-release-content.outputs.artifact-attempt }}
       - name: Recheck signed asset bytes and identity
@@ -316,10 +329,12 @@ jobs:
       actions: read
       attestations: read
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out source for published release verification
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
+      - name: Download signed assets for published release verification
+        uses: actions/download-artifact@v8
         if: always()
         continue-on-error: true
         with:
