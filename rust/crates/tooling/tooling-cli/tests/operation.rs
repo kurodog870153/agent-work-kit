@@ -4,6 +4,66 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
+#[test]
+fn public_operation_example_matches_the_cli_request_contract() {
+    let output = Command::new(env!("CARGO_BIN_EXE_tooling"))
+        .args(["contract", "example", "--name", "operation-evaluate"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut request = response["data"]["request"].clone();
+    let (root, fixture_request) = fixture();
+    request["project_root"] = fixture_request["project_root"].clone();
+    request["target"] = fixture_request["target"].clone();
+    assert_eq!(evaluate(&root, &request).0, 0);
+    request["extra"] = json!(true);
+    assert_eq!(
+        evaluate(&root, &request).1["reason_code"],
+        "invalid_request_json"
+    );
+    request.as_object_mut().unwrap().remove("extra");
+    let invalid_output = Command::new(env!("CARGO_BIN_EXE_tooling"))
+        .args([
+            "contract",
+            "example",
+            "--name",
+            "operation-evaluate-invalid-missing-target",
+        ])
+        .output()
+        .unwrap();
+    let invalid_example: Value = serde_json::from_slice(&invalid_output.stdout).unwrap();
+    let mut invalid_request = invalid_example["data"]["request"].clone();
+    invalid_request["project_root"] = fixture_request["project_root"].clone();
+    assert_eq!(
+        evaluate(&root, &invalid_request).1["reason_code"],
+        "invalid_request_json"
+    );
+    request["target"] = json!(root.join("missing.txt"));
+    assert_eq!(
+        evaluate(&root, &request).1["reason_code"],
+        "target_boundary_invalid"
+    );
+    let project = root.join("subproject");
+    fs::create_dir(&project).unwrap();
+    request["project_root"] = json!(project);
+    request["target"] = json!(root.join("source.rs"));
+    assert_eq!(
+        evaluate(&root, &request).1["reason_code"],
+        "target_boundary_invalid"
+    );
+    #[cfg(unix)]
+    {
+        let escaped = project.join("escaped.txt");
+        std::os::unix::fs::symlink(root.join("source.rs"), &escaped).unwrap();
+        request["target"] = json!(escaped);
+        assert_eq!(
+            evaluate(&root, &request).1["reason_code"],
+            "target_boundary_invalid"
+        );
+    }
+}
+
 fn fixture() -> (PathBuf, Value) {
     let root = std::env::temp_dir().join(format!(
         "tooling-operation-cli-{}-{}",

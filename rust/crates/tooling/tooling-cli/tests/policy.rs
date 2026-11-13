@@ -5,6 +5,55 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
 
+fn public_example(name: &str) -> Value {
+    let (code, response) = invoke(&["contract", "example", "--name", name]);
+    assert_eq!(code, 0);
+    response["data"]["request"].clone()
+}
+
+#[test]
+fn public_policy_examples_match_the_cli_request_contract() {
+    let root = fixture();
+    let input = root.join("public.json");
+    let run = |value: &Value| {
+        fs::write(&input, serde_json::to_vec(value).unwrap()).unwrap();
+        invoke(&[
+            "policy",
+            "load",
+            "--skill-root",
+            root.to_str().unwrap(),
+            "--input-file",
+            input.to_str().unwrap(),
+        ])
+    };
+    let mut first = public_example("policy-load-first");
+    first["selected_paths"] = json!(["capabilities/deep"]);
+    let (code, loaded) = run(&first);
+    assert_eq!(code, 0, "{loaded:?}");
+    assert_eq!(
+        loaded["data"]["semantic_review"]["claim"]["compatible"],
+        false
+    );
+    let mut reload = public_example("policy-load-reload");
+    reload["selected_paths"] = json!(["capabilities/deep"]);
+    reload["previous"] = loaded["data"]["summary"].clone();
+    let (code, unchanged) = run(&reload);
+    assert_eq!(code, 0, "{unchanged:?}");
+    assert_eq!(
+        unchanged["data"]["change"],
+        json!({"added_or_invalidated":[],"removed":[]})
+    );
+    for invalid in [
+        public_example("policy-load-invalid-missing-previous"),
+        json!({"selected_paths":[],"applicable_references":[],"previous":null,"extra":true}),
+        json!({"selected_paths":"wrong","applicable_references":[],"previous":null}),
+    ] {
+        assert_eq!(run(&invalid).0, 3);
+    }
+    first["selected_paths"] = json!(["../escaped"]);
+    assert_eq!(run(&first).1["reason_code"], "invalid_selection");
+}
+
 fn fixture() -> PathBuf {
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
     let root = loop {

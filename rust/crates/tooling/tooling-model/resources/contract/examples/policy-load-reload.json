@@ -1,0 +1,6 @@
+{
+  "selected_paths": ["capabilities/code-analysis/ast"],
+  "applicable_references": [],
+  "previous": {"sources": []},
+  "semantic_review": {"reviewed": true, "compatible": true}
+}

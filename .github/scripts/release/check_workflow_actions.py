@@ -18,6 +18,7 @@ APPROVED = {
     "ruby/setup-ruby@v1",
     "./.github/workflows/rust-validation.yml",
     "./.github/workflows/build-and-validate-packages.yml",
+    "./.github/workflows/rust-workspace-report.yml",
     "./.github/actions/verify-release-package-checksums",
     "./.github/actions/select-release-rust-toolchain",
     "./.github/actions/setup-rust-validation-python",

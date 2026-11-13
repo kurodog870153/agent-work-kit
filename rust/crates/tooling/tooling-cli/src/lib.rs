@@ -91,6 +91,11 @@ fn command() -> Command {
         .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(true)
         .subcommand(
+            Command::new("contract")
+                .subcommand_required(true)
+                .subcommand(Command::new("example").arg(required("name"))),
+        )
+        .subcommand(
             Command::new("policy")
                 .subcommand_required(true)
                 .subcommand(
@@ -200,9 +205,17 @@ struct SemanticReview {
 struct PolicyLoadRequest {
     selected_paths: Vec<String>,
     applicable_references: Vec<String>,
+    #[serde(deserialize_with = "required_nullable_previous")]
     previous: Option<PolicySummary>,
     #[serde(default)]
     semantic_review: Option<SemanticReview>,
+}
+
+fn required_nullable_previous<'de, D>(deserializer: D) -> Result<Option<PolicySummary>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<PolicySummary>::deserialize(deserializer)
 }
 
 fn read_request<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T, CliError> {
@@ -400,6 +413,16 @@ pub fn run(tokens: &[String]) -> (i32, CliResult) {
         }
     };
     let result = match matches.subcommand() {
+        Some(("contract", contract)) => match contract.subcommand() {
+            Some(("example", args)) => {
+                let name = option(args, "name");
+                tooling_model::contract::request_example(name)
+                    .map(|raw| (json!({"name":name,"request":serde_json::from_str::<Value>(raw).expect("embedded public example is valid JSON")}), "ok"))
+                    .or_else(|| tooling_model::contract::response_example(name).map(|raw| (json!({"name":name,"response":serde_json::from_str::<Value>(raw).expect("embedded public example is valid JSON")}), "ok")))
+                    .ok_or_else(|| CliError::new(4, "unknown_contract_example", "The contract example is unknown.", json!({"name":name})))
+            }
+            _ => unreachable!("clap requires a contract subcommand"),
+        },
         Some(("policy", policy)) => match policy.subcommand() {
             Some(("discover", args)) => discover(args).map(|data| (data, "ok")),
             Some(("load", args)) => load(args).map(|data| (data, "ok")),
