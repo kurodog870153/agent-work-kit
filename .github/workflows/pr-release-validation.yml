@@ -60,25 +60,32 @@ jobs:
       contents: read
       actions: read
 
-  report-rust-workspace:
-    name: report Rust workspace validation
+  rust-validation-report:
+    name: Rust validation report
     needs: package-ci
-    uses: ./.github/workflows/rust-workspace-report.yml
-    with:
-      release: false
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
+    steps:
+      - name: Check out source for Rust validation report
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate evidence and upload report
+        uses: ./.github/actions/rust-validation-report
+        with:
+          release: 'false'
 
   confirm-release-validation:
     name: confirm release validation
     if: always()
-    needs: report-rust-workspace
+    needs: rust-validation-report
     runs-on: ubuntu-latest
     steps:
       - name: Require Rust workspace report to pass
         env:
-          REPORT_VALIDATION: ${{ needs.report-rust-workspace.result }}
+          REPORT_VALIDATION: ${{ needs.rust-validation-report.result }}
         run: |
           if [[ "$REPORT_VALIDATION" != success ]]; then
             echo "Rust workspace report did not pass: $REPORT_VALIDATION"

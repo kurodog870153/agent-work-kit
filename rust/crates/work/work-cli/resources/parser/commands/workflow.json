@@ -1,0 +1,146 @@
+{
+  "name": "workflow",
+  "help": "usage: work workflow [-h] {status,next} ...\n\npositional arguments:\n  {status,next}\n    status       Inspect deterministic workflow continuation without writing.\n    next         Inspect deterministic workflow continuation without writing.\n\noptions:\n  -h, --help     Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "status",
+      "help": "usage: work workflow status [-h] --requirement-id REQUIREMENT_ID\n                               [--task-path TASK_PATH]\n                               --user-config-root USER_CONFIG_ROOT\n                               [--skill-root SKILL_ROOT]\n                               [--instruction-maintenance]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n  --task-path TASK_PATH\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --instruction-maintenance\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "instruction_maintenance",
+          "flags": [
+            "--instruction-maintenance"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-workflow-state"
+    },
+    {
+      "name": "next",
+      "help": "usage: work workflow next --requirement-id REQUIREMENT_ID [--task-path TASK_PATH] --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT] [--instruction-maintenance]\n\nRetired: workflow next returns workflow_next_retired. Use workflow status for formal state; the Host chooses the next action.",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "instruction_maintenance",
+          "flags": [
+            "--instruction-maintenance"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-workflow-state"
+    }
+  ]
+}

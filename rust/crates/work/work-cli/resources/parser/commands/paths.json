@@ -1,0 +1,28 @@
+{
+  "name": "paths",
+  "help": "usage: work paths [-h] {resolve} ...\n\npositional arguments:\n  {resolve}\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "resolve",
+      "help": "usage: work paths resolve [-h] --requirement-id REQUIREMENT_ID\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

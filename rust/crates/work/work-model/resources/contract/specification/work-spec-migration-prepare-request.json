@@ -237,7 +237,7 @@
         "constraints": {},
         "name": "semantic_decisions",
         "reference": null,
-        "required": true,
+        "required": false,
         "type": "array<object>"
       }
     ],
@@ -246,18 +246,18 @@
     "optional": [
       "reason",
       "edits",
+      "task_context",
       "task_title",
       "task_summary",
       "execution_defaults",
       "tasks",
-      "task_context"
+      "semantic_decisions"
     ],
     "required": [
       "schema",
       "mode",
       "requirement_id",
-      "sources",
-      "semantic_decisions"
+      "sources"
     ],
     "schema": "work-contract-description"
   },

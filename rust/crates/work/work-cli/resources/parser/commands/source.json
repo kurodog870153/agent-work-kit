@@ -1,0 +1,120 @@
+{
+  "name": "source",
+  "help": "usage: work source [-h] {capture,read,validate} ...\n\npositional arguments:\n  {capture,read,validate}\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "capture",
+      "help": "usage: work source capture [-h] --input-file INPUT_FILE --payload-file PAYLOAD_FILE [--approved-sha256 APPROVED_SHA256]\n\noptions:\n  -h, --help  Return command help in a JSON response.\n  --input-file INPUT_FILE  Host-provided capture metadata JSON.\n  --payload-file PAYLOAD_FILE  Original source bytes.\n  --approved-sha256 APPROVED_SHA256  Approve the exact metadata, payload and project root.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "payload_file",
+          "flags": [
+            "--payload-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-source-capture-request",
+      "response_contract": "work-source-snapshot"
+    },
+    {
+      "name": "read",
+      "help": "usage: work source read [-h] --requirement-id REQUIREMENT_ID --source-id SOURCE_ID\n\noptions:\n  -h, --help  Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n  --source-id SOURCE_ID\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "source_id",
+          "flags": [
+            "--source-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-source-read"
+    },
+    {
+      "name": "validate",
+      "help": "usage: work source validate [-h] --requirement-id REQUIREMENT_ID --source-id SOURCE_ID\n\noptions:\n  -h, --help  Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n  --source-id SOURCE_ID\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "source_id",
+          "flags": [
+            "--source-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-source-validation"
+    }
+  ]
+}

@@ -48,11 +48,13 @@ module_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 installer_dir="$(cd -- "$module_dir/.." && pwd -P)"
 source_work="$root/skills/work"
 source_tooling="$root/skills/tooling"
+source_contract="$root/skills/contract"
 source "$installer_dir/cli/parse-options.sh"
 source "$installer_dir/target/preflight.sh"
 source "$installer_dir/transaction/work.sh"
 source "$installer_dir/install/work-install.sh"
 source "$installer_dir/install/tooling-install.sh"
+source "$installer_dir/install/contract-install.sh"
 source "$installer_dir/transaction/tooling.sh"
 source "$installer_dir/install/migration-cleanup.sh"
 source "$installer_dir/global-instructions/policy.sh"
@@ -246,9 +248,11 @@ fi
 skills_parent="$(installer_absolute_path "$skills_parent")"
 target="$skills_parent/work"
 tooling_target="$skills_parent/tooling"
+contract_target="$skills_parent/contract"
 installer_directory_path_safe "$skills_parent" || { installer_fail 'unsafe Skills directory'; exit 1; }
 installer_log 'Work target selected'
 installer_tooling_source_safe "$source_tooling" || { installer_fail 'Tooling source is missing or unsafe'; exit 1; }
+installer_contract_source_safe "$source_contract" || { installer_fail 'Contract source is missing or unsafe'; exit 1; }
 combined_path="$skills_parent/install-state.json"
 combined_temporary="$skills_parent/.install-state.json.tmp"
 if [[ -e "$combined_temporary" || -L "$combined_temporary" ]]; then
@@ -322,7 +326,7 @@ if [[ "$installer_cli_dry_run" != 1 ]]; then
     [[ -x "$tooling_binary" ]] && "$tooling_binary" --help >/dev/null 2>&1 || { installer_fail 'Tooling binary smoke test failed'; exit 1; }
 fi
 if [[ "$installer_cli_dry_run" != 1 && -d "$skills_parent" ]]; then
-    installer_tooling_recover "$tooling_target" "$source_tooling" "$tooling_version" "$tooling_binary" || exit 1
+    installer_tooling_recover "$tooling_target" "$source_tooling" "$tooling_version" "$tooling_binary" "$contract_target" "$source_contract" || exit 1
     if [[ "$combined_status" == installed ]] && ! installer_work_transaction_pending "$target" &&
        ! installer_tooling_transaction_pending "$tooling_target" &&
        { [[ -e "$target/install-state.json" || -L "$target/install-state.json" ]] ||
@@ -366,6 +370,11 @@ fi
 installer_inspect_target "$target" "$source_work" "$target_state_valid"
 installer_tooling_inspect "$tooling_target" "$source_tooling"
 tooling_kind="$installer_tooling_kind"
+installer_contract_inspect "$contract_target" "$source_contract"
+contract_kind="$installer_contract_kind"
+[[ "$contract_kind" == new || "$contract_kind" == managed ]] || {
+    installer_fail "Contract target cannot be installed: $installer_contract_reason"; exit 1;
+}
 tooling_prior_version="${installer_tooling_version:--}"
 tooling_confirmed=0
 if [[ "$tooling_kind" == first-update && "$installer_cli_non_interactive" != 1 ]]; then
@@ -429,8 +438,8 @@ if [[ "$installer_global_agents_action" == confirm ]]; then
     if [[ "$choice" == y ]]; then installer_global_agents_action=replace
     else installer_global_agents_action=skip; fi
 fi
-printf 'Work target: %s\nTooling target: %s\nVersion: %s; Global AGENTS: %s; Work action: %s; Tooling action: %s\n' \
-    "$target" "$tooling_target" "$version" "$global_enabled" "$installer_target_kind" "$tooling_kind"
+printf 'Work target: %s\nTooling target: %s\nContract target: %s\nVersion: %s; Global AGENTS: %s; Work action: %s; Tooling action: %s; Contract action: %s\n' \
+    "$target" "$tooling_target" "$contract_target" "$version" "$global_enabled" "$installer_target_kind" "$tooling_kind" "$contract_kind"
 if [[ "$installer_cli_dry_run" == 1 ]]; then printf 'Dry run: no installation target changed.\n'; exit 0; fi
 if [[ "$installer_cli_non_interactive" != 1 ]]; then
     choice="$(installer_prompt 'Proceed with installation? (y/n)' n)" || exit 1
@@ -470,11 +479,12 @@ fi
 installer_log 'Work transaction published and verified'
 printf 'Work installed at %s\n' "$target"
 if ! installer_tooling_publish "$tooling_target" "$source_tooling" "$tooling_version" "$tooling_state_json" \
-    "$installer_cli_non_interactive" "$tooling_confirmed" "$tooling_binary"; then
+    "$installer_cli_non_interactive" "$tooling_confirmed" "$tooling_binary" "$contract_target" "$source_contract"; then
     installer_fail "Tooling installation failed after Work was published; inspect $tooling_target and retry for recovery"
     exit 1
 fi
 printf 'Tooling installed at %s\n' "$tooling_target"
+printf 'Contract installed at %s\n' "$contract_target"
 if installer_work_transaction_pending "$target" || installer_tooling_transaction_pending "$tooling_target"; then
     installer_fail 'installation transaction cleanup is pending; preserve its recovery data'; exit 1
 fi

@@ -1,0 +1,10 @@
+{
+  "schema": "work-public-example-policy",
+  "fixture_only": [
+    "work-spec-migration-preview-request",
+    "work-spec-prepare",
+    "work-spec-reconciliation-preview-request",
+    "work-spec-transaction",
+    "work-spec-update"
+  ]
+}

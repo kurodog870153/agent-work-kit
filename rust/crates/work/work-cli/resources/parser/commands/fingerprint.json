@@ -1,0 +1,28 @@
+{
+  "name": "fingerprint",
+  "help": "usage: work fingerprint [-h] {text} ...\n\npositional arguments:\n  {text}\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "text",
+      "help": "usage: work fingerprint text [-h] --path PATH\n\noptions:\n  -h, --help   Return command help in a JSON response.\n  --path PATH\n",
+      "arguments": [
+        {
+          "name": "path",
+          "flags": [
+            "--path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

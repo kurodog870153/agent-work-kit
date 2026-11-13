@@ -15,7 +15,7 @@ metadata:
 
 ## Requirements
 
-本文件說明 Windows 與 macOS 的 Work 與 Tooling 安裝入口、模組責任和資料流。使用者操作見 [Release 安裝說明](../../docs/release/README.md)；安裝狀態與中斷處理分別見[安裝狀態](../../docs/release/install-state.md)和[安裝復原](../../docs/release/recovery.md)。
+本文件說明 Windows 與 macOS 的 Work、Tooling 與 Contract 安裝入口、模組責任和資料流。使用者操作見 [Release 安裝說明](../../docs/release/README.md)；安裝狀態與中斷處理分別見[安裝狀態](../../docs/release/install-state.md)和[安裝復原](../../docs/release/recovery.md)。
 
 ### 安裝入口與封裝邊界
 
@@ -37,6 +37,7 @@ flowchart LR
     Verify --> Core
     Core --> Work[Work 目錄]
     Core --> Tooling[Tooling 目錄]
+    Core --> Contract[Contract 目錄]
     Core --> Global[Host 對應的 Global Instructions]
 ```
 
@@ -50,7 +51,7 @@ flowchart LR
 
 目標預檢分別辨識空目錄、由有效父層狀態管理的 Skill，以及未知或不安全內容。沒有有效父層狀態的既有安裝會被保留並拒絕接管。正式寫入前，核心也檢查版本、正在使用的 Work binary 和 Global Instructions 的取代決策。Global Instructions 未啟用時，不參與其目標檢查或交易。
 
-Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。兩者將完整 Work 指令、binary 與新 Work 狀態放入暫存 Work，並準備完整 Tooling 與其狀態，再透過平台交易模組發布。安裝鎖、正式路徑切換、完成判定和中斷復原由[安裝復原](../../docs/release/recovery.md)說明。
+Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。兩者將完整 Work 指令、binary 與新 Work 狀態放入暫存 Work，並準備完整 Tooling、Contract 與其狀態，再透過平台交易模組發布。Contract 與 Tooling 使用同一交易及共同父層狀態，不另設獨立交易。安裝鎖、正式路徑切換、完成判定和中斷復原由[安裝復原](../../docs/release/recovery.md)說明。
 
 ### 模組位置
 
@@ -62,7 +63,8 @@ Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。
 | Work 安裝準備與驗證 | `installer/install/work-install.sh` | `installer/install/work-install.ps1` |
 | Work 與 Global Instructions 交易 | `installer/transaction/work.sh`、`installer/global-instructions/transaction.sh` | `installer/transaction/work.ps1`、`installer/global-instructions/transaction.ps1` |
 | Tooling 安裝準備與驗證 | `installer/install/tooling-install.sh` | `installer/install/tooling-install.ps1` |
-| Tooling 交易 | `installer/transaction/tooling.sh` | `installer/transaction/tooling.ps1` |
+| Contract 安裝準備與驗證 | `installer/install/contract-install.sh` | `installer/install/contract-install.ps1` |
+| Tooling 與 Contract 交易 | `installer/transaction/tooling.sh` | `installer/transaction/tooling.ps1` |
 | 路徑遷移清理 | `installer/install/migration-cleanup.sh` | `installer/install/migration-cleanup.ps1` |
 
 表內路徑分別相對於 `os-scripts/mac/` 與 `os-scripts/windows/`。`.github/scripts/release/` 負責產生與驗證 Release 資產，不參與使用者電腦上的安裝交易。

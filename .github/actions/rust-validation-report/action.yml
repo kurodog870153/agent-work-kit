@@ -1,0 +1,50 @@
+name: Rust validation report
+description: Validate Rust workspace and installed CLI evidence, then upload the report.
+inputs:
+  release:
+    description: Whether this is a release run.
+    required: true
+  macos-artifact-attempt:
+    description: Release attempt containing the macOS CLI smoke artifact.
+    required: false
+  windows-artifact-attempt:
+    description: Release attempt containing the Windows CLI smoke artifact.
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Download macOS Rust workspace results
+      uses: actions/download-artifact@v8
+      with:
+        name: rust-perf-macos
+        path: evidence/rust-macos
+    - name: Download Windows Rust workspace results
+      uses: actions/download-artifact@v8
+      with:
+        name: rust-perf-x86_64-pc-windows-msvc
+        path: evidence/rust-windows
+    - name: Download macOS installed CLI smoke
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.release == 'true' && format('cli-smoke-macos-arm64-attempt-{0}', inputs.macos-artifact-attempt) || 'cli-smoke-pr-macos-arm64' }}
+        path: evidence/smoke-macos
+    - name: Download Windows installed CLI smoke
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.release == 'true' && format('cli-smoke-windows-x64-msvc-attempt-{0}', inputs.windows-artifact-attempt) || 'cli-smoke-pr-windows-x64-msvc' }}
+        path: evidence/smoke-windows
+    - name: Compose Rust validation report
+      shell: bash
+      run: |
+        python3 -B .github/scripts/release/rust_workspace_report.py \
+          --rust-macos-arm64 evidence/rust-macos \
+          --rust-windows-x64-msvc evidence/rust-windows \
+          --smoke-macos-arm64 evidence/smoke-macos \
+          --smoke-windows-x64-msvc evidence/smoke-windows \
+          --commit "$GITHUB_SHA" --output dist/rust-workspace-report.md
+    - name: Upload Rust validation report
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.release == 'true' && format('rust-workspace-report-attempt-{0}', github.run_attempt) || 'rust-workspace-report-pr' }}
+        path: dist/rust-workspace-report.md
+        if-no-files-found: error

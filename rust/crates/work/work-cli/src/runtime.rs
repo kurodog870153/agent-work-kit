@@ -59,8 +59,8 @@ use work_infrastructure::task::storage::LocalTaskStorage;
 use work_infrastructure::workflow_storage::{WorkflowStateRequest, load_workflow_snapshot};
 
 use crate::CliResult;
-use crate::contract;
 use crate::parser::{ParseOutcome, ParsedCommand, parse_tokens};
+use contract_core::query;
 
 fn file_error(reason: &str) -> WorkError {
     WorkError::new(
@@ -323,6 +323,10 @@ fn string_list(parsed: &ParsedCommand, name: &str) -> Vec<String> {
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect()
+}
+
+fn contract_query_error(error: query::QueryError) -> WorkError {
+    WorkError::new(ExitCode::Contract, error.reason, error.message, json!({}))
 }
 
 fn required_input(input: Option<&FileInput>) -> Result<&FileInput, WorkError> {
@@ -1102,15 +1106,43 @@ fn dispatch_with_writer_family(
             "Invocation conversation commands are retired; the Host selects the Work mode.",
             json!({"command": parsed.path.join(" ")}),
         )),
-        ["contract", "list"] => Ok(work_flow::contract::list(&contract::EmbeddedRegistry)),
-        ["contract", "describe"] => work_flow::contract::describe(
-            &contract::EmbeddedRegistry,
+        ["contract", "list"] => query::list(
+            parsed.arguments.get("scope").and_then(Value::as_str),
+            parsed.arguments.get("prefix").and_then(Value::as_str),
+        )
+        .map_err(contract_query_error),
+        ["contract", "describe"] => {
+            if let Some(command) = parsed.arguments.get("command").and_then(Value::as_str) {
+                if parsed.arguments.contains_key("field")
+                    || parsed.arguments.contains_key("variant")
+                {
+                    return Err(WorkError::new(
+                        ExitCode::Contract,
+                        "invalid_contract_query",
+                        "--field and --variant require a contract ID.",
+                        json!({}),
+                    ));
+                }
+                query::describe_command(command).map_err(contract_query_error)
+            } else {
+                query::describe_contract(
+                    argument(parsed, "contract_id")?,
+                    parsed.arguments.get("field").and_then(Value::as_str),
+                    parsed.arguments.get("variant").and_then(Value::as_str),
+                )
+                .map_err(contract_query_error)
+            }
+        }
+        ["contract", "scaffold"] => query::scaffold(
             argument(parsed, "contract_id")?,
-        ),
-        ["contract", "scaffold"] => work_flow::contract::scaffold(
-            &contract::EmbeddedRegistry,
+            &string_list(parsed, "branch"),
+        )
+        .map_err(contract_query_error),
+        ["contract", "example"] => query::example_query(
             argument(parsed, "contract_id")?,
-        ),
+            argument(parsed, "scenario")?,
+        )
+        .map_err(contract_query_error),
         ["task", "validate"] => {
             let configs = skill_configs(&string_list(parsed, "skill_root"))?;
             let roots = skill_roots(&configs);
@@ -1612,19 +1644,18 @@ pub fn run_with_skill_root(tokens: &[String], skill_root: &Path) -> (i32, CliRes
             Some("interrupted" | "recovered" | "recovery_required" | "already_completed")
         );
         let mut response = CliResult::success(
-            if verbose || full_evidence {
+            if verbose
+                || full_evidence
+                || parsed.path.first().is_some_and(|name| name == "contract")
+            {
                 result
             } else {
                 brief(&result)
             },
             completed,
         );
-        if parsed.path == ["contract", "scaffold"] {
-            response.order_hint = parsed
-                .arguments
-                .get("contract_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
+        if parsed.path.first().is_some_and(|name| name == "contract") {
+            response.order_hint = Some("contract-compact".to_owned());
         } else if parsed.path == ["attempt", "render"] {
             response.order_hint = Some("attempt-render".to_owned());
         } else if parsed.path == ["correction", "render"] {
@@ -2382,35 +2413,30 @@ mod tests {
         };
         let (exit, catalog) = invoke(&["list"]);
         assert_eq!(exit, 0);
-        assert_eq!(catalog.data["schema"], "work-contract-catalog");
+        assert!(catalog.data["commands"].as_array().unwrap().len() > 100);
         let ids: Vec<_> = catalog.data["contracts"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|entry| entry["id"].as_str().unwrap())
+            .map(|entry| entry["contract_id"].as_str().unwrap())
             .collect();
         assert!(ids.contains(&"work-discussion-request"));
         assert!(!ids.contains(&"work-task-semantic-request"));
         assert!(!ids.contains(&"work-plan-prepare-request/v1"));
         let (exit, description) = invoke(&["describe", "work-contract-catalog"]);
         assert_eq!(exit, 0);
-        assert_eq!(description.data["schema"], "work-contract-description");
-        assert_eq!(description.data["id"], "work-contract-catalog");
+        assert_eq!(description.data["contract_id"], "work-contract-catalog");
+        assert!(description.data.get("example").is_none());
         let (exit, unknown) = invoke(&["describe", "work-unknown/v1"]);
         assert_eq!(exit, ExitCode::Contract as i32);
         assert_eq!(unknown.reason_code, "unknown_contract_id");
         let (exit, record) = invoke(&["scaffold", "work-record-finish-request"]);
         assert_eq!(exit, 0);
-        assert_eq!(record.data["schema"], "work-contract-scaffold");
-        assert_eq!(
-            record.data["canonical_order"],
-            json!([
-                "schema",
-                "record",
-                "modified_files",
-                "authorization_evidence"
-            ])
-        );
+        assert_eq!(record.data["contract_id"], "work-record-finish-request");
+        assert!(record.data["scaffold"].is_object());
+        assert!(record.data["unresolved_paths"].is_array());
+        assert!(record.data["selected_branches"].is_object());
+        assert!(record.data.get("example").is_none());
         let (exit, nonrequest) = invoke(&["scaffold", "work-contract-catalog"]);
         assert_eq!(exit, ExitCode::Contract as i32);
         assert_eq!(nonrequest.reason_code, "contract_scaffold_requires_request");
@@ -2423,29 +2449,29 @@ mod tests {
         let correction = "work-command-correction-request";
         let (exit, description) = invoke(&["describe", correction]);
         assert_eq!(exit, 0);
-        let command = description.data["fields"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|field| field["name"] == "actual_command")
-            .unwrap();
-        assert_eq!(
-            command["constraints"]["schema"]["discriminator"]["propertyName"],
-            "mode"
-        );
-        assert_eq!(
-            command["constraints"]["schema"]["oneOf"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
-        );
+        let command = &description.data["fields"]["actual_command"];
+        assert_eq!(command["type"], "object");
+        assert_eq!(command["details_available"], true);
+        let (exit, field) = invoke(&["describe", correction, "--field", "/actual_command"]);
+        assert_eq!(exit, 0);
+        assert_eq!(field.data["field"]["discriminator"], "mode");
+        assert_eq!(field.data["field"]["variants"].as_array().unwrap().len(), 2);
         let (exit, scaffold) = invoke(&["scaffold", correction]);
         assert_eq!(exit, 0);
-        assert_eq!(
-            scaffold.data["scaffold"]["actual_command"],
-            json!({"mode":"argv","argv":["tool"]})
+        assert_eq!(scaffold.data["scaffold"]["actual_command"], Value::Null);
+        assert!(
+            scaffold.data["unresolved_paths"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("/actual_command"))
         );
+        let (exit, selected) =
+            invoke(&["scaffold", correction, "--branch", "/actual_command=argv"]);
+        assert_eq!(exit, 0);
+        assert_eq!(selected.data["scaffold"]["actual_command"]["mode"], "argv");
+        let (exit, example) = invoke(&["example", correction, "--scenario", "default"]);
+        assert_eq!(exit, 0);
+        assert_eq!(example.data["contract_id"], correction);
     }
 
     #[test]

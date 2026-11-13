@@ -150,12 +150,11 @@ jobs:
       contents: read
       actions: read
 
-  report-rust-workspace:
-    name: report Rust workspace validation
+  rust-validation-report:
+    name: Rust validation report
     needs: package-ci
-    uses: ./.github/workflows/rust-workspace-report.yml
-    with:
-      release: true
+    runs-on: ubuntu-latest
+    outputs:
       tag: ${{ needs.package-ci.outputs.tag }}
       version: ${{ needs.package-ci.outputs.version }}
       macos-artifact-attempt: ${{ needs.package-ci.outputs.macos-artifact-attempt }}
@@ -164,10 +163,21 @@ jobs:
     permissions:
       contents: read
       actions: read
+    steps:
+      - name: Check out source for Rust validation report
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate evidence and upload report
+        uses: ./.github/actions/rust-validation-report
+        with:
+          release: 'true'
+          macos-artifact-attempt: ${{ needs.package-ci.outputs.macos-artifact-attempt }}
+          windows-artifact-attempt: ${{ needs.package-ci.outputs.windows-artifact-attempt }}
 
   verify-and-attest-release-assets:
     name: verify and attest release assets
-    needs: report-rust-workspace
+    needs: rust-validation-report
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -176,9 +186,9 @@ jobs:
       attestations: write
       artifact-metadata: write
     outputs:
-      tag: ${{ needs.report-rust-workspace.outputs.tag }}
-      version: ${{ needs.report-rust-workspace.outputs.version }}
-      release-content-artifact-attempt: ${{ needs.report-rust-workspace.outputs.release-content-artifact-attempt }}
+      tag: ${{ needs.rust-validation-report.outputs.tag }}
+      version: ${{ needs.rust-validation-report.outputs.version }}
+      release-content-artifact-attempt: ${{ needs.rust-validation-report.outputs.release-content-artifact-attempt }}
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
@@ -189,12 +199,12 @@ jobs:
       - name: Download macOS release ZIPs
         uses: actions/download-artifact@v8
         with:
-          name: release-macos-arm64-attempt-${{ needs.report-rust-workspace.outputs.macos-artifact-attempt }}
+          name: release-macos-arm64-attempt-${{ needs.rust-validation-report.outputs.macos-artifact-attempt }}
           path: dist
       - name: Download Windows release ZIPs
         uses: actions/download-artifact@v8
         with:
-          name: release-windows-x64-msvc-attempt-${{ needs.report-rust-workspace.outputs.windows-artifact-attempt }}
+          name: release-windows-x64-msvc-attempt-${{ needs.rust-validation-report.outputs.windows-artifact-attempt }}
           path: dist
       - name: Check immutable releases setting
         env:
@@ -205,7 +215,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.report-rust-workspace.outputs.tag }}
+          TAG: ${{ needs.rust-validation-report.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Verify ZIPs and create outer checksums
@@ -218,10 +228,10 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            dist/agent-work-kit-v${{ needs.report-rust-workspace.outputs.version }}-codex-macos-arm64.zip
-            dist/agent-work-kit-v${{ needs.report-rust-workspace.outputs.version }}-claude-macos-arm64.zip
-            dist/agent-work-kit-v${{ needs.report-rust-workspace.outputs.version }}-codex-windows-x64-msvc.zip
-            dist/agent-work-kit-v${{ needs.report-rust-workspace.outputs.version }}-claude-windows-x64-msvc.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-codex-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-claude-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-codex-windows-x64-msvc.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-claude-windows-x64-msvc.zip
             dist/install-agent-work-kit-from-github-release.command
             dist/install-agent-work-kit-from-github-release.bat
             dist/SHA256SUMS.txt
@@ -229,7 +239,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.report-rust-workspace.outputs.tag }}
+          TAG: ${{ needs.rust-validation-report.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           for asset in dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt; do

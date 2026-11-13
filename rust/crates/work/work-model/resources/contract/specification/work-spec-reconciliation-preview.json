@@ -145,7 +145,7 @@
         "constraints": {},
         "name": "migration_preview",
         "reference": "work-spec-migration-preview",
-        "required": false,
+        "required": true,
         "type": "null | object"
       },
       {
@@ -172,9 +172,7 @@
     ],
     "id": "work-spec-reconciliation-preview",
     "kind": "response",
-    "optional": [
-      "migration_preview"
-    ],
+    "optional": [],
     "required": [
       "schema",
       "status",
@@ -187,6 +185,7 @@
       "deviation_classifications",
       "ledger_path",
       "ledger",
+      "migration_preview",
       "fingerprint",
       "publication_required",
       "publication_ready"

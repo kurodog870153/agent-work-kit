@@ -1,0 +1,75 @@
+{
+  "name": "policy",
+  "help": "Discover and load policies",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "discover",
+      "help": "Discover a policy node",
+      "response_contract": "tooling-policy-discover-response",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "skill-root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "node",
+          "flags": [
+            "--node"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ]
+    },
+    {
+      "name": "load",
+      "help": "Load selected policies",
+      "request_contract": "tooling-policy-load-request",
+      "response_contract": "tooling-policy-load-response",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "skill-root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input-file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ]
+    }
+  ]
+}

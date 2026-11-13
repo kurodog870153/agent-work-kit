@@ -1,0 +1,423 @@
+[
+  {
+    "name": "record-begin",
+    "help": "usage: work execute record-begin [-h] --user-config-root USER_CONFIG_ROOT\n                                    --task-path TASK_PATH\n                                    --execution-dir EXECUTION_DIR\n                                    --task-id TASK_ID\n                                    [--skill-root SKILL_ROOT]\n                                    --record-id RECORD_ID\n                                    [--authorization-evidence AUTHORIZATION_EVIDENCE]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --record-id RECORD_ID\n  --authorization-evidence AUTHORIZATION_EVIDENCE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "record_id",
+        "flags": [
+          "--record-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "authorization_evidence",
+        "flags": [
+          "--authorization-evidence"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "response_contract": "work-record-begin"
+  },
+  {
+    "name": "command-correction",
+    "help": "usage: work execute command-correction [-h]\n                                          --user-config-root USER_CONFIG_ROOT\n                                          --task-path TASK_PATH\n                                          --execution-dir EXECUTION_DIR\n                                          --task-id TASK_ID\n                                          [--skill-root SKILL_ROOT]\n                                          --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-command-correction-request",
+    "response_contract": "work-command-correction"
+  },
+  {
+    "name": "record-finish",
+    "help": "usage: work execute record-finish [-h] --user-config-root USER_CONFIG_ROOT\n                                     --task-path TASK_PATH\n                                     --execution-dir EXECUTION_DIR\n                                     --task-id TASK_ID\n                                     [--skill-root SKILL_ROOT]\n                                     --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-record-finish-request",
+    "response_contract": "work-record-finish"
+  },
+  {
+    "name": "attempt-close",
+    "help": "usage: work execute attempt-close [-h] --user-config-root USER_CONFIG_ROOT\n                                     --task-path TASK_PATH\n                                     --execution-dir EXECUTION_DIR\n                                     --task-id TASK_ID\n                                     [--skill-root SKILL_ROOT]\n                                     --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-attempt-close-request",
+    "response_contract": "work-attempt-close"
+  },
+  {
+    "name": "correction-create",
+    "help": "usage: work execute correction-create [-h]\n                                         --user-config-root USER_CONFIG_ROOT\n                                         --task-path TASK_PATH\n                                         --execution-dir EXECUTION_DIR\n                                         --task-id TASK_ID\n                                         [--skill-root SKILL_ROOT]\n                                         --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-correction-create-request",
+    "response_contract": "work-correction-create"
+  }
+]

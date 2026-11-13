@@ -1,7 +1,6 @@
 //! Work use cases and their ports.
 
 pub mod artifact_paths;
-pub mod contract;
 pub mod discussion;
 pub mod error;
 pub mod execution;

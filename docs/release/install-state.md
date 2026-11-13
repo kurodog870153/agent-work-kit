@@ -1,15 +1,15 @@
 # 安裝狀態
 
-安裝器會在 Work 與 Tooling 的共同父目錄存放一份 `install-state.json`。它用來辨識目前安裝的版本與位置，並決定重新安裝時可沿用哪些設定。這個檔案由安裝器管理，不需要手動建立或修改。
+安裝器會在 Work、Tooling 與 Contract 的共同父目錄存放一份 `install-state.json`。它用來辨識目前安裝的版本與位置，並決定重新安裝時可沿用哪些設定。這個檔案由安裝器管理，不需要手動建立或修改。
 
 ## 1. 檔案位置
 
 | 狀態 | 預設狀態檔位置 |
 | --- | --- |
-| Codex 的 Work 與 Tooling | `~/.agents/skills/install-state.json` |
-| Claude Code 的 Work 與 Tooling | `~/.claude/skills/install-state.json` |
+| Codex 的 Work、Tooling 與 Contract | `~/.agents/skills/install-state.json` |
+| Claude Code 的 Work、Tooling 與 Contract | `~/.claude/skills/install-state.json` |
 
-使用 `--skills-dir <path>` 時，Work 與 Tooling 會改裝在指定目錄下的 `work/` 與 `tooling/`，狀態檔也會跟著移動。
+使用 `--skills-dir <path>` 時，三個 Skill 會改裝在指定目錄下的 `work/`、`tooling/` 與 `contract/`，狀態檔也會跟著移動。
 
 ## 2. 狀態檔記錄什麼
 

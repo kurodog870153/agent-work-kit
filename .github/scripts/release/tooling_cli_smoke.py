@@ -32,15 +32,32 @@ def run_tooling_public_smoke(skill_root):
             raise AssertionError(f"Tooling help missing: {args!r}")
 
     def example(name):
-        return invoke("contract", "example", "--name", name)["data"]["request"]
+        if name.startswith("policy-load-"):
+            contract_id, scenario = "tooling-policy-load-request", name.removeprefix("policy-load-")
+        elif name.startswith("operation-evaluate-"):
+            contract_id, scenario = "tooling-operation-evaluate-request", name.removeprefix("operation-evaluate-")
+        else:
+            contract_id, scenario = "tooling-operation-evaluate-request", "valid"
+        return invoke("contract", "example", contract_id, "--scenario", scenario)["data"]["example"]
 
-    for name in ("policy-discover-response", "policy-load-response",
-                 "operation-evaluate-response", "error-response"):
-        response = invoke("contract", "example", "--name", name)["data"]["response"]
+    for contract_id in ("tooling-policy-discover-response", "tooling-policy-load-response",
+                        "tooling-operation-evaluate-response"):
+        response = invoke("contract", "example", contract_id, "--scenario", "default")["data"]["example"]
+        if not isinstance(response, dict):
+            raise AssertionError(f"invalid public response example: {contract_id}")
+    for scenario in ("success", "error"):
+        response = invoke("contract", "example", "tooling-cli-result", "--scenario", scenario)["data"]["example"]
         if response["schema"] != "tooling-cli-result" or not isinstance(response["data"], dict):
-            raise AssertionError(f"invalid public response example: {name}")
-    if invoke("contract", "example", "--name", "unknown", expected=4)["reason_code"] != "unknown_contract_example":
-        raise AssertionError("unknown contract example was accepted")
+            raise AssertionError(f"invalid public envelope example: {scenario}")
+    if invoke("contract", "example", "tooling-cli-result", "--scenario", "unknown", expected=4)["reason_code"] != "unknown_scenario":
+        raise AssertionError("unknown scenario was accepted")
+    index = invoke("contract", "list")["data"]
+    if not index["commands"] or not index["contracts"]:
+        raise AssertionError("installed Tooling contract index is empty")
+    if invoke("contract", "describe", "tooling-policy-load-request")["data"].get("example") is not None:
+        raise AssertionError("default description embedded a full example")
+    if "previous" not in invoke("contract", "scaffold", "tooling-policy-load-request")["data"]["scaffold"]:
+        raise AssertionError("required nullable field was omitted")
 
     with tempfile.TemporaryDirectory() as directory:
         fixture = Path(directory) / "project"

@@ -1,6 +1,5 @@
 //! Work command flows composed from feature entries.
 
-pub mod contract;
 pub mod discussion;
 pub mod error;
 pub mod execution;

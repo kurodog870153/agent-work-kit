@@ -7,12 +7,18 @@ use serde_json::{Value, json};
 #[test]
 fn public_operation_example_matches_the_cli_request_contract() {
     let output = Command::new(env!("CARGO_BIN_EXE_tooling"))
-        .args(["contract", "example", "--name", "operation-evaluate"])
+        .args([
+            "contract",
+            "example",
+            "tooling-operation-evaluate-request",
+            "--scenario",
+            "valid",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success());
     let response: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let mut request = response["data"]["request"].clone();
+    let mut request = response["data"]["example"].clone();
     let (root, fixture_request) = fixture();
     request["project_root"] = fixture_request["project_root"].clone();
     request["target"] = fixture_request["target"].clone();
@@ -27,13 +33,14 @@ fn public_operation_example_matches_the_cli_request_contract() {
         .args([
             "contract",
             "example",
-            "--name",
-            "operation-evaluate-invalid-missing-target",
+            "tooling-operation-evaluate-request",
+            "--scenario",
+            "invalid-missing-target",
         ])
         .output()
         .unwrap();
     let invalid_example: Value = serde_json::from_slice(&invalid_output.stdout).unwrap();
-    let mut invalid_request = invalid_example["data"]["request"].clone();
+    let mut invalid_request = invalid_example["data"]["example"].clone();
     invalid_request["project_root"] = fixture_request["project_root"].clone();
     assert_eq!(
         evaluate(&root, &invalid_request).1["reason_code"],

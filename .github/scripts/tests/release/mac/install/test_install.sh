@@ -16,6 +16,7 @@ root="$scratch/package"
 mkdir -p -- "$root/skills" "$root/bin" "$root/instructions" "$scratch/home" "$scratch/shims"
 cp -R -- "$repo_root/skills/work" "$root/skills/work"
 cp -R -- "$repo_root/skills/tooling" "$root/skills/tooling"
+cp -R -- "$repo_root/skills/contract" "$root/skills/contract"
 cp -- "$repo_root/instructions/global-instructions.md" "$root/instructions/global-instructions.md"
 write_test_release_info "$base_version" codex
 mkdir -p -- "$root/installer/state"
@@ -54,8 +55,14 @@ bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$roo
    ! -e "$target/install-state.json" &&
    ! -e "${target%/*}/tooling/install-state.json" &&
    -x "${target%/*}/tooling/scripts/tooling" &&
+   -f "${target%/*}/contract/SKILL.md" &&
+   -f "${target%/*}/contract/references/instruction-loading/queries.md" &&
    -f "${target%/*}/tooling/references/instructions/interfaces/mcp/instructions.md" &&
    ! -e "${target%/*}/tooling/references/instructions/interfaces/repl" ]] || exit 1
+[[ ! -L "${target%/*}/contract" && "$(cd -- "${target%/*}/contract" && pwd -P)" == "${target%/*}/contract" ]] || exit 1
+work_contract="$("$target/scripts/work" --project-root "$scratch" contract describe work-cli-result)" || exit 1
+tooling_contract="$("${target%/*}/tooling/scripts/tooling" contract describe tooling-cli-result)" || exit 1
+MSYS_NO_PATHCONV=1 node -e 'const [w,t]=process.argv.slice(1).map(JSON.parse); if(w.status!=="success"||w.data.contract_id!=="work-cli-result"||t.status!=="success"||t.data.contract_id!=="tooling-cli-result") process.exit(1)' "$work_contract" "$tooling_contract" || exit 1
 codex_state_before="$(cat -- "${target%/*}/install-state.json")"
 write_test_release_info "$base_version" claude
 claude_parent="$scratch/claude-skills"
@@ -87,6 +94,13 @@ if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$
 fi
 [[ "$(cat -- "${target%/*}/tooling/unknown.txt")" == keep ]] || exit 1
 rm -- "${target%/*}/tooling/unknown.txt"
+printf keep > "${target%/*}/contract/unknown.txt"
+if bash "$repo_root/os-scripts/mac/installer/install/install-core.sh" package "$root" --host codex \
+    --non-interactive --global-instructions no --skills-dir "${target%/*}" >/dev/null 2>&1; then
+    printf 'FAIL: unknown Contract content was accepted.\n' >&2; exit 1
+fi
+[[ "$(cat -- "${target%/*}/contract/unknown.txt")" == keep ]] || exit 1
+rm -- "${target%/*}/contract/unknown.txt"
 legacy_parent="$scratch/legacy-tooling"
 mkdir -p -- "$legacy_parent"
 cp -R -- "${target%/*}/tooling" "$legacy_parent/tooling"
@@ -412,6 +426,7 @@ cp -- "$repo_root/rust/Cargo.toml" "$source_project/rust/Cargo.toml"
 cp -R -- "$repo_root/os-scripts/mac" "$source_project/os-scripts/mac"
 cp -R -- "$repo_root/skills/work" "$source_project/skills/work"
 cp -R -- "$repo_root/skills/tooling" "$source_project/skills/tooling"
+cp -R -- "$repo_root/skills/contract" "$source_project/skills/contract"
 cp -- "$repo_root/os-scripts/common/installer/options.tsv" "$source_project/os-scripts/mac/installer/cli/options.tsv"
 mkdir -p -- "$source_project/os-scripts/common/installer"
 cp -- "$repo_root/os-scripts/common/installer/install-state.json" "$source_project/os-scripts/common/installer/install-state.json"

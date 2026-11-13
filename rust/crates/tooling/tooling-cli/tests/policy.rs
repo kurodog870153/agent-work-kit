@@ -6,9 +6,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{Value, json};
 
 fn public_example(name: &str) -> Value {
-    let (code, response) = invoke(&["contract", "example", "--name", name]);
+    let scenario = name
+        .strip_prefix("policy-load-")
+        .expect("policy load scenario");
+    let (code, response) = invoke(&[
+        "contract",
+        "example",
+        "tooling-policy-load-request",
+        "--scenario",
+        scenario,
+    ]);
     assert_eq!(code, 0);
-    response["data"]["request"].clone()
+    response["data"]["example"].clone()
 }
 
 #[test]

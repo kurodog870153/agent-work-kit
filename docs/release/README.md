@@ -1,6 +1,6 @@
 # Agent Work Kit Release 安裝
 
-每個 ZIP 對應一個 Host 與平台，包含預編譯 Work binary、Work 與 Tooling Skill、共用規範及安裝器。Host 可選 Codex 或 Claude Code。
+每個 ZIP 對應一個 Host 與平台，包含預編譯 Work／Tooling binary、Work／Tooling／Contract Skill、共用規範及安裝器。Host 可選 Codex 或 Claude Code。
 
 ## 1. 下載
 
@@ -79,7 +79,7 @@ echo "SHA-256 驗證通過：$zip"
 
 ### 3.2 預覽安裝動作
 
-以下範例只列出預計動作，不修改正式安裝目標。Work 與 Tooling 均完整安裝。
+以下範例只列出預計動作，不修改正式安裝目標。Work、Tooling 與 Contract 均完整安裝。
 
 Windows PowerShell：
 
@@ -115,7 +115,7 @@ macOS Terminal：
 ./install-agent-work-kit-from-package.command
 ```
 
-安裝器每次安裝完整 Work 與 Tooling。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
+安裝器每次安裝完整 Work、Tooling 與 Contract。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
 
 ### 3.4 可用參數
 
@@ -124,7 +124,7 @@ macOS Terminal：
 1. `--help` 或 `-h`：顯示用法，不安裝。
 2. `--host codex|claude`：選擇 Host；非互動模式必填。
 3. `--global-instructions yes|no`：啟用或停用 Global Instructions。
-4. `--skills-dir <path>`：指定 Work 與 Tooling 的共同父目錄；路徑含空白時須加引號。
+4. `--skills-dir <path>`：指定 Work、Tooling 與 Contract 的共同父目錄；路徑含空白時須加引號。
 5. `--instructions-dir <path>`：指定 Global Instructions 所在目錄；路徑含空白時須加引號。
 6. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
 7. `--dry-run`：列出預計動作，不修改正式安裝目標。
@@ -134,8 +134,8 @@ macOS Terminal：
 
 安裝器會依目標目錄的狀態處理：
 
-1. Work 與 Tooling 目錄不存在或為空時，視為首次安裝；沒有父層 `install-state.json` 是正常情況。
-2. Work 或 Tooling 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。
+1. Work、Tooling 與 Contract 目錄不存在或為空時，視為首次安裝；沒有父層 `install-state.json` 是正常情況。
+2. 任一 Skill 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。
 3. 已選擇安裝 Global Instructions，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
 4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到 Global Instructions 差異等必須確認的情況，會拒絕安裝並保留原目標。
 

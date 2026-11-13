@@ -48,16 +48,18 @@ def run_work_public_smoke():
         return process.returncode, payload
 
 
-    def contract(contract_id):
-        code, payload = cli("contract", "describe", contract_id, user_config=False)
+    def contract_example(contract_id):
+        code, payload = cli("contract", "example", contract_id, "--scenario", "default", user_config=False)
         assert code == 0, payload
-        return payload["data"]
+        assert payload["data"]["valid"] is True, payload
+        return payload["data"]["example"]
 
 
-    def branch_example(name):
-        request = contract("work-discussion-request")
-        command = next(field for field in request["fields"] if field["name"] == "command")
-        return command["constraints"]["schema"]["$defs"][name]["examples"][0]
+    def field_example(pointer, variant):
+        code, payload = cli("contract", "describe", "work-discussion-request",
+                            "--field", pointer, "--variant", variant, user_config=False)
+        assert code == 0, payload
+        return payload["data"]["field"]["constraints"]["examples"][0]
 
 
     def selection(name, command, request):
@@ -103,7 +105,7 @@ def run_work_public_smoke():
     say("Executed with the installed `work` binary against a fresh empty project."
         if INSTALLED_BINARY else
         "Executed with a temporary Work Skill and the locally built `work` binary against a fresh empty project.")
-    say("Every request below was built from `contract describe` output and the")
+    say("Every request below was built from on-demand contract descriptions and")
     say("published examples; no Rust private structure was read.")
     say()
     say("## Public contract checks")
@@ -125,7 +127,7 @@ def run_work_public_smoke():
     say()
     say("### 1.1 Capture the original requirement as an immutable Source")
     say()
-    capture_example = contract("work-source-capture-request")["example"]
+    capture_example = contract_example("work-source-capture-request")
     metadata = dict(capture_example)
     metadata["requirement_id"] = "example"
     metadata["source"] = {"kind": "file", "path": "request.txt", "media_type": "text/plain"}
@@ -136,7 +138,7 @@ def run_work_public_smoke():
         "Build the export feature.\n")
     io.open(metadata_path, "w", encoding="utf-8", newline="\n").write(
         json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
-    say("Source of the request shape: `contract describe work-source-capture-request` → `example`.")
+    say("Source of the request shape: `contract example work-source-capture-request --scenario default`.")
     say()
     say("```console")
     say("$ work --project-root <root> source capture --input-file capture.json --payload-file request.txt")
@@ -164,11 +166,7 @@ def run_work_public_smoke():
 
     say("### 1.2 Open the Discussion at revision 1")
     say()
-    init_example = None
-    request_contract = contract("work-discussion-request")
-    for field in request_contract["fields"]:
-        if field["name"] == "command":
-            init_example = field["constraints"]["schema"]["$defs"]["InitBranch"]["examples"][0]
+    init_example = field_example("/command", "init")
     say("Source of the request shape: `contract describe work-discussion-request` →")
     say("`command.constraints.schema.$defs.InitBranch.examples[0]`.")
     say("The caller supplies semantics plus `commit.operation_id`; `operation_sha256`")
@@ -265,8 +263,8 @@ def run_work_public_smoke():
     say("`task preview` and `task apply` take the same `work-discussion-request` shape,")
     say("with kind `preview` / `apply` (see `constraints.trigger_paths`).")
     say()
-    say("Source of planning shapes: `contract describe work-task-index` and")
-    say("`contract describe work-discussion-request` → `UpdatePlanningChange.examples[0]`.")
+    say("Source of planning shapes: `contract example work-task-index --scenario default` and")
+    say("`contract describe work-discussion-request --field /command/operation/change --variant update_planning`.")
     say("Selection fingerprints are returned by the public selection-build commands.")
     say()
     say("```console")
@@ -276,7 +274,7 @@ def run_work_public_smoke():
                        {"decision": "base_only", "skills": []})
     say("```")
     say()
-    index_example = contract("work-task-index")["example"]
+    index_example = contract_example("work-task-index")
     manifest_path = os.path.join(ROOT, "outputs", "work", "sources", "example", "SRC-001", "manifest.json")
     manifest = json.load(io.open(manifest_path, encoding="utf-8"))
     full_session = None
@@ -323,7 +321,7 @@ def run_work_public_smoke():
     say(json.dumps(result, ensure_ascii=False))
     assert code == 0, result
     view = result["data"]["data"]["view"]
-    task = branch_example("UpdatePlanningChange")["task"]
+    task = field_example("/command/operation/change", "update_planning")["task"]
     task["title"] = "Deliver CSV export"
     task["goal"] = "Produce and verify a CSV export"
     task["acceptance_criteria"][0]["id"] = "TASK-001-ACCEPTANCE-001"

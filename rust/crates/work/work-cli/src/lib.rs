@@ -128,7 +128,9 @@ impl CliResult {
         let _: work_model::contract::CliEnvelope =
             serde_json::from_value(serde_json::to_value(self)?)
                 .expect("CLI result matches its model");
-        let mut bytes = if let Some(orders) = self
+        let mut bytes = if self.order_hint.as_deref() == Some("contract-compact") {
+            serde_json::to_vec(self)?
+        } else if let Some(orders) = self
             .order_hint
             .as_deref()
             .and_then(contract::scaffold_order)

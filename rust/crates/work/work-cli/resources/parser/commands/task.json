@@ -1,0 +1,216 @@
+{
+  "name": "task",
+  "help": "usage: work task [-h] {preview,apply,recover,validate} ...\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "preview",
+      "help": "usage: work task preview [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "apply",
+      "help": "usage: work task apply [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "recover",
+      "help": "usage: work task recover [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "validate",
+      "help": "usage: work task validate [-h] --user-config-root USER_CONFIG_ROOT\n                             [--skill-root SKILL_ROOT] (--path PATH |\n                             --input-file INPUT_FILE) [--task-path TASK_PATH]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --path PATH\n  --input-file INPUT_FILE\n  --task-path TASK_PATH\n",
+      "arguments": [
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "path",
+          "flags": [
+            "--path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "path",
+            "input_file"
+          ]
+        }
+      ],
+      "children": []
+    }
+  ]
+}

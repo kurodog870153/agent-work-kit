@@ -5,8 +5,8 @@
     "kind": "semantic_request",
     "caller_constructible": true,
     "canonical_order": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "result_sha256", "status", "exit_code", "output_complete"],
-    "required": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "result_sha256", "status", "exit_code", "output_complete"],
-    "optional": [],
+    "required": ["schema", "task_id", "attempt_id", "record_id", "task_collection_sha256", "authorization_sha256", "file_version", "command_sha256", "result_origin", "result_reference", "result_sha256", "status", "output_complete"],
+    "optional": ["exit_code"],
     "example": {
       "schema": "work-host-execution-report",
       "task_id": "TASK-001",
@@ -36,7 +36,7 @@
       {"name": "result_reference", "type": "string", "required": true, "reference": null, "constraints": {}},
       {"name": "result_sha256", "type": "string", "required": true, "reference": null, "constraints": {"format": "sha256 of raw result_reference bytes"}},
       {"name": "status", "type": "string", "required": true, "reference": null, "constraints": {"values": ["exited", "rejected", "unknown", "partial"]}},
-      {"name": "exit_code", "type": "integer | null", "required": true, "reference": null, "constraints": {"exited": "required; other statuses: null"}},
+      {"name": "exit_code", "type": "integer | null", "required": false, "reference": null, "constraints": {"exited": "required; other statuses: null"}},
       {"name": "output_complete", "type": "boolean", "required": true, "reference": null, "constraints": {"exited": true}}
     ]
   },

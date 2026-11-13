@@ -1,0 +1,433 @@
+[
+  {
+    "name": "command-binding",
+    "help": "usage: work execute command-binding --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT]\n\nRead and validate the reserved formal CMD binding for Host execution.",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "command-prepare",
+    "help": "usage: work execute command-prepare [-h]\n                                       --user-config-root USER_CONFIG_ROOT\n                                       --task-path TASK_PATH\n                                       --execution-dir EXECUTION_DIR\n                                       --task-id TASK_ID\n                                       [--skill-root SKILL_ROOT]\n                                       --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-command-run-request",
+    "response_contract": "work-command-preview"
+  },
+  {
+    "name": "deviation-prepare-semantic",
+    "help": "usage: work execute deviation-prepare-semantic [-h]\n                                                  --user-config-root USER_CONFIG_ROOT\n                                                  --task-path TASK_PATH\n                                                  --execution-dir EXECUTION_DIR\n                                                  --task-id TASK_ID\n                                                  [--skill-root SKILL_ROOT]\n                                                  --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-execution-deviation-semantic-request",
+    "response_contract": "work-execution-deviation-preview"
+  },
+  {
+    "name": "deviation-record",
+    "help": "usage: work execute deviation-record [-h]\n                                        --user-config-root USER_CONFIG_ROOT\n                                        --task-path TASK_PATH\n                                        --execution-dir EXECUTION_DIR\n                                        --task-id TASK_ID\n                                        [--skill-root SKILL_ROOT]\n                                        --input-file INPUT_FILE\n                                        --approved-sha256 APPROVED_SHA256\n                                        --authorization-evidence AUTHORIZATION_EVIDENCE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n  --approved-sha256 APPROVED_SHA256\n  --authorization-evidence AUTHORIZATION_EVIDENCE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "approved_sha256",
+        "flags": [
+          "--approved-sha256"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "authorization_evidence",
+        "flags": [
+          "--authorization-evidence"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "response_contract": "work-execution-deviation-record"
+  },
+  {
+    "name": "command-run",
+    "help": "usage: work execute command-run [-h] --user-config-root USER_CONFIG_ROOT\n                                   --task-path TASK_PATH\n                                   --execution-dir EXECUTION_DIR\n                                   --task-id TASK_ID [--skill-root SKILL_ROOT]\n                                   --input-file INPUT_FILE\n                                   --approved-sha256 APPROVED_SHA256\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --user-config-root USER_CONFIG_ROOT\n  --task-path TASK_PATH\n  --execution-dir EXECUTION_DIR\n  --task-id TASK_ID\n  --skill-root SKILL_ROOT\n  --input-file INPUT_FILE\n  --approved-sha256 APPROVED_SHA256\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "approved_sha256",
+        "flags": [
+          "--approved-sha256"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": [],
+    "request_contract": "work-command-run-request",
+    "response_contract": "work-command-result"
+  }
+]

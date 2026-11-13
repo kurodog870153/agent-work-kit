@@ -57,9 +57,12 @@ pub enum ParseOutcome {
 fn manifest() -> &'static Manifest {
     static MANIFEST: OnceLock<Manifest> = OnceLock::new();
     MANIFEST.get_or_init(|| {
-        let value: Manifest =
-            serde_json::from_str(include_str!("../../resources/parser/commands.json"))
-                .expect("valid command inventory");
+        let value: Manifest = serde_json::from_value(
+            contract_core::command_tree("work")
+                .expect("work command inventory")
+                .clone(),
+        )
+        .expect("valid command inventory");
         assert_eq!(value.schema, "work-command-tree");
         value
     })
@@ -196,8 +199,181 @@ mod tests {
     }
 
     #[test]
+    fn every_public_help_mentions_its_declared_arguments() {
+        fn check(node: &CommandSpec, path: &str) {
+            let declared: std::collections::BTreeSet<_> = node
+                .arguments
+                .iter()
+                .flat_map(|argument| argument.flags.iter())
+                .filter(|flag| flag.starts_with("--"))
+                .map(String::as_str)
+                .collect();
+            let mentioned: std::collections::BTreeSet<_> = node
+                .help
+                .match_indices("--")
+                .map(|(start, _)| {
+                    let tail = &node.help[start..];
+                    let end = tail
+                        .find(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-')
+                        .unwrap_or(tail.len());
+                    &tail[..end]
+                })
+                .filter(|flag| *flag != "--help")
+                .collect();
+            assert_eq!(
+                mentioned, declared,
+                "{path}: help flags differ from metadata"
+            );
+            for argument in &node.arguments {
+                let labels = if argument.flags.is_empty() {
+                    vec![argument.name.to_uppercase(), argument.name.clone()]
+                } else {
+                    argument.flags.clone()
+                };
+                assert!(
+                    labels.iter().any(|label| node.help.contains(label)),
+                    "{path}: help omits {}",
+                    argument.name
+                );
+                if let Some(choices) = &argument.choices {
+                    for choice in choices {
+                        assert!(
+                            node.help.contains(choice),
+                            "{path}: help omits {} choice {choice}",
+                            argument.name
+                        );
+                    }
+                }
+            }
+            for child in &node.children {
+                check(child, &format!("{path} {}", child.name));
+            }
+        }
+        check(&manifest().root, "work");
+    }
+
+    #[test]
+    fn every_public_leaf_obeys_argument_metadata() {
+        fn arguments(node: &CommandSpec) -> (Vec<String>, Vec<(usize, usize)>) {
+            let selected_groups: std::collections::BTreeSet<_> = node
+                .exclusive_groups
+                .iter()
+                .filter(|group| group.required)
+                .filter_map(|group| group.members.first())
+                .map(String::as_str)
+                .collect();
+            let mut tokens = Vec::new();
+            let mut required = Vec::new();
+            for argument in &node.arguments {
+                if !argument.required && !selected_groups.contains(argument.name.as_str()) {
+                    continue;
+                }
+                let mut segment = Vec::new();
+                if let Some(flag) = argument.flags.first() {
+                    segment.push(flag.clone());
+                }
+                if !argument.boolean {
+                    segment.push(
+                        argument
+                            .choices
+                            .as_ref()
+                            .and_then(|choices| choices.first())
+                            .cloned()
+                            .unwrap_or_else(|| "x".to_owned()),
+                    );
+                }
+                let start = tokens.len();
+                tokens.extend(segment);
+                required.push((start, tokens.len()));
+            }
+            (tokens, required)
+        }
+        fn check(
+            node: &CommandSpec,
+            prefix: Vec<String>,
+            mut required: Vec<(usize, usize)>,
+            count: &mut usize,
+        ) {
+            let (local, local_required) = arguments(node);
+            let offset = prefix.len();
+            required.extend(
+                local_required
+                    .into_iter()
+                    .map(|(start, end)| (start + offset, end + offset)),
+            );
+            let mut tokens = prefix;
+            tokens.extend(local);
+            if node.children.is_empty() {
+                assert!(
+                    parse_tokens(&tokens).is_ok(),
+                    "{tokens:?}: valid metadata input"
+                );
+                for (start, end) in required {
+                    let mut omitted = tokens.clone();
+                    let segment: Vec<_> = omitted.drain(start..end).collect();
+                    assert!(
+                        parse_tokens(&omitted).is_err(),
+                        "{tokens:?}: missing {segment:?}"
+                    );
+                }
+                for argument in &node.arguments {
+                    if argument.choices.is_none() {
+                        continue;
+                    }
+                    let mut invalid = tokens.clone();
+                    if let Some(flag) = argument.flags.first() {
+                        if let Some(index) = invalid.iter().position(|token| token == flag) {
+                            invalid[index + 1] = "__invalid_choice__".to_owned();
+                        } else {
+                            invalid.extend([flag.clone(), "__invalid_choice__".to_owned()]);
+                        }
+                        assert!(
+                            parse_tokens(&invalid).is_err(),
+                            "{tokens:?}: invalid choice for {}",
+                            argument.name
+                        );
+                    }
+                }
+                for group in &node.exclusive_groups {
+                    if group.members.len() < 2 {
+                        continue;
+                    }
+                    let mut conflicting = tokens.clone();
+                    for name in group.members.iter().take(2) {
+                        let argument = node.arguments.iter().find(|arg| arg.name == *name).unwrap();
+                        let Some(flag) = argument.flags.first() else {
+                            continue;
+                        };
+                        if conflicting.iter().any(|token| token == flag) {
+                            continue;
+                        }
+                        conflicting.push(flag.clone());
+                        if !argument.boolean {
+                            conflicting.push("x".to_owned());
+                        }
+                    }
+                    assert!(
+                        parse_tokens(&conflicting).is_err(),
+                        "{tokens:?}: exclusive arguments accepted"
+                    );
+                }
+                *count += 1;
+            } else {
+                for child in &node.children {
+                    let mut child_tokens = tokens.clone();
+                    child_tokens.push(child.name.clone());
+                    check(child, child_tokens, required.clone(), count);
+                }
+            }
+        }
+        let mut count = 0;
+        check(&manifest().root, Vec::new(), Vec::new(), &mut count);
+        assert_eq!(count, 90);
+    }
+
+    #[test]
     fn command_manifest_keeps_all_current_contract_public_leaves() {
-        assert_eq!(leaves(&manifest().root), 89);
+        assert_eq!(leaves(&manifest().root), 90);
         command(&manifest().root).debug_assert();
     }
 

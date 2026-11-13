@@ -1,0 +1,20 @@
+{
+  "schema": "tooling-command-tree",
+  "root": {
+    "name": "tooling",
+    "help": "Tooling policy and contract commands",
+    "arguments": [],
+    "exclusive_groups": [],
+    "children": [
+      {
+        "ref": "commands/contract.json"
+      },
+      {
+        "ref": "commands/policy.json"
+      },
+      {
+        "ref": "commands/operation.json"
+      }
+    ]
+  }
+}

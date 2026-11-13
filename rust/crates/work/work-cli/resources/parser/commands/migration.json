@@ -1,0 +1,390 @@
+{
+  "name": "migration",
+  "help": "usage: work migration [-h] {analyze,prepare,preview,apply,verify,recover} ...\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "analyze",
+      "help": "usage: work migration analyze --requirement-id ID [--artifact {source,task,execute}] [--evidence-path PATH]\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "artifact",
+          "flags": [
+            "--artifact"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": [
+            "source",
+            "task",
+            "execute"
+          ],
+          "help": null
+        },
+        {
+          "name": "evidence_path",
+          "flags": [
+            "--evidence-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": "Preserve a project-relative file as opaque migration evidence."
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-artifact-migration-analysis"
+    },
+    {
+      "name": "prepare",
+      "help": "usage: work migration prepare --input-file INPUT_FILE [--user-config-root ROOT] [--skill-root ROOT] [--output-file FILE]\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "output_file",
+          "flags": [
+            "--output-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-spec-migration-prepare-request",
+      "response_contract": "work-artifact-migration-request"
+    },
+    {
+      "name": "preview",
+      "help": "usage: work migration preview (--request-path PATH | --input-file FILE) [--approved-sha256 SHA256] [--user-config-root ROOT] [--skill-root ROOT]\n",
+      "arguments": [
+        {
+          "name": "request_path",
+          "flags": [
+            "--request-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-spec-migration-preview-request",
+      "response_contract": "work-spec-migration-preview"
+    },
+    {
+      "name": "apply",
+      "help": "usage: work migration apply (--request-path PATH | --input-file FILE) --approved-sha256 SHA256 [--user-config-root ROOT] [--skill-root ROOT]\n",
+      "arguments": [
+        {
+          "name": "request_path",
+          "flags": [
+            "--request-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-spec-migration-publication"
+    },
+    {
+      "name": "recover",
+      "help": "usage: work migration recover (--request-path PATH | --input-file FILE) --approved-sha256 SHA256 [--user-config-root ROOT] [--skill-root ROOT]\n",
+      "arguments": [
+        {
+          "name": "request_path",
+          "flags": [
+            "--request-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "verify",
+      "help": "usage: work migration verify (--input-file FILE | --request-path PATH) --approved-sha256 SHA256 [--user-config-root ROOT] [--skill-root ROOT]\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "request_path",
+          "flags": [
+            "--request-path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

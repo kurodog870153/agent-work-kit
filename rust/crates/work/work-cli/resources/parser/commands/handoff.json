@@ -1,0 +1,404 @@
+{
+  "name": "handoff",
+  "help": "usage: work handoff [-h] {validate,render,build-discussion,verify-task-to-execute,build-task-to-execute,build-execute-to-task,verify-execute-to-task} ...\n\npositional arguments:\n  {validate,render,build-discussion,verify-task-to-execute,build-task-to-execute,build-execute-to-task,verify-execute-to-task}\n\noptions:\n  -h, --help Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "validate",
+      "help": "usage: work handoff validate [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "render",
+      "help": "usage: work handoff render [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "build-discussion",
+      "help": "usage: work handoff build-discussion [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "verify-task-to-execute",
+      "help": "usage: work handoff verify-task-to-execute [-h] --input-file INPUT_FILE\n                                              --user-config-root USER_CONFIG_ROOT\n                                              [--skill-root SKILL_ROOT]\n                                              --task-path TASK_PATH\n                                              --task-id TASK_ID\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --task-path TASK_PATH\n  --task-id TASK_ID\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_id",
+          "flags": [
+            "--task-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "build-task-to-execute",
+      "help": "usage: work handoff build-task-to-execute [-h] --input-file INPUT_FILE\n                                             --user-config-root USER_CONFIG_ROOT\n                                             [--skill-root SKILL_ROOT]\n                                             --task-path TASK_PATH\n                                             --task-id TASK_ID\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --task-path TASK_PATH\n  --task-id TASK_ID\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_id",
+          "flags": [
+            "--task-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "build-execute-to-task",
+      "help": "usage: work handoff build-execute-to-task [-h] --input-file INPUT_FILE\n                                             --user-config-root USER_CONFIG_ROOT\n                                             [--skill-root SKILL_ROOT]\n                                             --task-path TASK_PATH\n                                             --task-id TASK_ID\n                                             (--attempt-id ATTEMPT_ID |\n                                             --preflight)\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --task-path TASK_PATH\n  --task-id TASK_ID\n  --attempt-id ATTEMPT_ID\n  --preflight\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_id",
+          "flags": [
+            "--task-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "attempt_id",
+          "flags": [
+            "--attempt-id"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "preflight",
+          "flags": [
+            "--preflight"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "attempt_id",
+            "preflight"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "verify-execute-to-task",
+      "help": "usage: work handoff verify-execute-to-task [-h] --input-file INPUT_FILE\n                                              --task-path TASK_PATH\n                                              --user-config-root USER_CONFIG_ROOT\n                                              [--skill-root SKILL_ROOT]\n                                              --task-id TASK_ID\n                                              (--attempt-id ATTEMPT_ID |\n                                              --preflight)\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --task-path TASK_PATH\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --task-id TASK_ID\n  --attempt-id ATTEMPT_ID\n  --preflight\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_path",
+          "flags": [
+            "--task-path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "task_id",
+          "flags": [
+            "--task-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "attempt_id",
+          "flags": [
+            "--attempt-id"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "preflight",
+          "flags": [
+            "--preflight"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "attempt_id",
+            "preflight"
+          ]
+        }
+      ],
+      "children": []
+    }
+  ]
+}

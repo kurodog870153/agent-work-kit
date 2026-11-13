@@ -1,0 +1,84 @@
+{
+  "name": "hierarchy",
+  "help": "usage: work hierarchy [-h] {resolve,selection-build,selection-validate} ...\n\npositional arguments:\n  {resolve,selection-build,selection-validate}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "resolve",
+      "help": "usage: work hierarchy resolve [-h] --work-directory {task,execute}\n                                 [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --work-directory {task,execute}\n",
+      "arguments": [
+        {
+          "name": "work_directory",
+          "flags": [
+            "--work-directory"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task",
+            "execute"
+          ],
+          "help": null
+        },
+        {
+          "name": "paths",
+          "flags": [],
+          "required": false,
+          "nargs": "*",
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-hierarchy"
+    },
+    {
+      "name": "selection-build",
+      "help": "usage: work hierarchy selection-build [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-hierarchy-selection"
+    },
+    {
+      "name": "selection-validate",
+      "help": "usage: work hierarchy selection-validate [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-hierarchy-selection-validation"
+    }
+  ]
+}
