@@ -41,11 +41,11 @@ Tooling 與 Work 透過 `skill-api` 讀取並驗證共用來源。Tooling 的政
 | `work-model` | 定義資料型別、欄位結構、公開資料契約的 `struct`／`enum` 與單一型別的基本不變條件。 | 無 |
 | `work-operations` | 以模型實作純驗證、跨模型計算、轉換、canonical bytes 與指紋。 | `work-model` |
 | `work-feature` | 提供單一功能的業務入口，組合純操作並定義取得外部資料所需的 ports。 | `work-operations`、`work-model` |
-| `work-flow` | 組合功能，提供多數公開業務命令的流程入口。 | `work-feature`、`work-model` |
+| `work-flow` | 組合功能，提供所有公開業務命令的流程入口。 | `work-feature`、`work-model` |
 | `work-infrastructure` | 實作 Feature ports，以及檔案、Git、程序、時鐘、鎖、交易與復原等外部能力。 | `work-feature`、`work-operations`、`work-model` |
 | `work-cli` | 解析命令、組裝 Flow 與 Infrastructure，將流程結果轉成公開輸出。 | `work-flow`、`work-infrastructure`、`work-model` |
 
-這是 Work 內部 crate 的**允許清單**，不是每個 crate 必須加入的依賴；需要 Skill 能力時只直接依賴 `skill-api`。任何未列出的 Work 內部直接依賴都違反目標架構；不得藉由重新匯出或測試依賴引入反向邊。上層可以直接使用允許的底層模型型別。一般業務命令由 CLI 進入 Flow，再由 Flow 呼叫 Feature、Feature 呼叫 Operations；現行 `execute command-binding` 與 `execute file-binding/file-record` 等命令在 CLI 組裝正式上下文後，直接呼叫 Infrastructure 的專用入口。Flow 不直接執行 Operations；CLI 不直接執行 Feature 或 Operations。Infrastructure 可以使用純操作處理儲存資料，不決定業務流程。
+這是 Work 內部 crate 的**允許清單**，不是每個 crate 必須加入的依賴；需要 Skill 能力時只直接依賴 `skill-api`。任何未列出的 Work 內部直接依賴都違反目標架構；不得藉由重新匯出或測試依賴引入反向邊。上層可以直接使用允許的底層模型型別。所有公開業務命令均由 CLI 進入 Flow；Work Flow 呼叫 Feature，由 Feature 使用 Operations 與所需 Ports；Tooling Flow 依既有架構組合 Feature／Infrastructure。CLI 可在允許的 Crate 依賴方向內建立及注入 Infrastructure Adapter，但不得直接執行 Infrastructure 的業務操作，也不得直接執行 Feature 或 Operations 業務入口。Flow 不直接執行 Operations；Infrastructure 可以使用純操作處理儲存資料，不決定業務流程。
 
 ```mermaid
 flowchart LR
@@ -67,6 +67,8 @@ flowchart LR
 ```
 
 箭頭表示**程式碼依賴**，包含 Work 對 `skill-api` 的現行直接依賴；`work-flow` 與 `work-cli` 沒有直接依賴它。呼叫結果與錯誤會返回呼叫端；這不構成反向 crate 依賴。同一 crate 內可以按業務概念分模組，也可以互相引用；本架構強制的是六個 Work crate 之間的方向，不宣稱已限制 crate 內所有模組引用。
+
+**上圖是允許的程式碼依賴，不代表 CLI 可依任何依賴邊繞過 Flow 執行業務操作。**
 
 #### Tooling crate 與現行依賴
 
@@ -91,19 +93,27 @@ flowchart LR
     tooling_feature --> skill_api
 ```
 
+### CLI 與 Flow 呼叫邊界
+
+1. **所有 Work 與 Tooling 公開業務命令必須經過各自的 Flow 入口。** CLI 只負責參數解析、Help、輸入輸出、錯誤映射及依賴組裝，不得直接呼叫 Feature、Operations 或 Infrastructure 的業務操作入口。
+2. **CLI 可在現有 Crate 允許清單內依賴 Infrastructure，作為 Composition Root 建立並注入 Adapter、Repository 與 Port 實作。** `work-cli` 允許依賴 `work-infrastructure`；`tooling-cli` 原有依賴清單不因本規則自動新增 `tooling-infrastructure`。
+3. Work Flow 透過 Feature 定義的 Ports 使用 Infrastructure 能力；Tooling Flow 沿既有允許依賴方向呼叫 Tooling Feature／Infrastructure。Infrastructure 實作外部能力及持久化，不替代 Feature／Flow 的業務授權、流程或 Recovery 政策。
+4. CLI 不得以外部能力、Context 準備或 Infrastructure 專用 API 為名，繞過 Flow 進行正式業務讀取、驗證、發布及復原。純 Parser／Help、輸出映射與 Adapter 建構不屬業務執行。
+5. 使用既有 Architecture Guard 驗證 Crate 依賴及 CLI→Flow 呼叫路徑；無法靜態證明的授權、時序、證據與副作用由現有整合測試驗收，不新增守門框架。
+
 ### 呼叫、資料與 port
 
-1. Work CLI 解析命令並組裝 Infrastructure 的具體實作。多數業務命令將請求與實作交給 Flow；部分 Execute 命令直接呼叫 Infrastructure 的專用入口，仍需建立及驗證正式執行上下文。Tooling CLI 經 `tooling-flow` 進入，目標驗證由 Flow 直接呼叫 Infrastructure。
+1. Work CLI 解析命令並組裝 Infrastructure 的具體實作，所有正式業務命令均將請求及所需依賴交由 Work Flow；Tooling CLI 的業務命令均進入 `tooling-flow`，目標驗證由 Tooling Flow 依既有架構呼叫 Infrastructure。
 2. Flow 決定流程順序、組合所需的 Feature，並可使用 Model 型別作為輸入與輸出。Flow 不直接操作檔案、Git、程序或純操作函式。
 3. Feature 負責單一功能的業務行為，使用 Operations 及自己定義的 port 介面。port 描述功能需要什麼資料或外部效果，不指定檔案與 Git 等能力的具體實作。
 4. Operations 只依賴 Model，處理不需要檔案、Git、環境或程序的規則。Model 維護型別本身的基本不變條件；跨欄位、跨模型的驗證與轉換放在 Operations。
-5. Work Infrastructure 實作 Feature ports。CLI 是 composition root，負責將這些實作接到 Flow 或專用執行入口；Work Feature 與 Flow 均不依賴 Infrastructure。Tooling 的現行 Flow 則直接依賴其 Infrastructure。
+5. Work Infrastructure 實作 Feature ports。Work CLI 作為 Composition Root，可依 Crate 允許清單建立並注入 Infrastructure Adapter，但**所有業務命令仍必經 Flow**；Work Feature 與 Flow 均不依賴 Infrastructure。Tooling 的現行 Flow 則依既有 Crate 方向直接依賴其 Infrastructure。
 
 ### 模組與公開 API
 
 每個 crate 內按業務概念組織模組，而非按技術動作平鋪。例如 Task 對應現有的 `work_model::task`、`work_operations::task`、`work_feature::task` 與 `work_flow::task`；正式 Task 發布的公開入口則經 Discussion 流程。不是每個業務概念都需要出現在所有 crate，也不增加 `work-feature-task` 等按功能拆出的 crate。
 
-各 crate 僅公開上層需要的型別、port 與入口；內部實作優先保持私有或使用 `pub(crate)`。Model 定義資料形狀與欄位契約；Operations 定義 canonical 序列化、指紋等演算法。公開 API 應使用對應的 Flow／Feature 業務入口，或已定義且驗證正式上下文的 Infrastructure 專用入口。
+各 crate 僅公開上層需要的型別、port 與入口；內部實作優先保持私有或使用 `pub(crate)`。Model 定義資料形狀與欄位契約；Operations 定義 canonical 序列化、指紋等演算法。公開 CLI 的業務入口一律使用對應 Flow；Feature／Infrastructure 內部仍可提供依 Port／正式 Context 定義的能力，但 CLI 不得繞過 Flow 直接執行其業務操作。
 
 `work-operations::derivation` 集中定義跨檔案指紋、交易身分與衍生資料演算法。Feature 組合這些純操作，Infrastructure 提供原始 bytes 與持久化能力；衍生演算法不在呼叫端重複實作。
 
@@ -136,7 +146,7 @@ Work 的正式資料驗證與 Tooling 的政策探索互相獨立：Tooling 政�
 
 Feature 透過 repository 與 port 介面取得執行能力、來源資料及儲存結果。Infrastructure 按外部系統與平台組織 adapter，封裝檔案 metadata、程序執行、資源查詢與持久化實作；平台 API 不進入 Model、Operations、Feature 或 Flow。
 
-Runtime 的 owner、manifest 與 inventory 型別由 Model 定義，路徑、身分及指紋規則由 Operations 定義。Infrastructure 實作 workspace 配置、writer lock，以及各操作所需的寫入、交易暫存、Journal、回讀與復原；CLI 透過 Flow 或專用執行入口使用這些能力。
+Runtime 的 owner、manifest 與 inventory 型別由 Model 定義，路徑、身分及指紋規則由 Operations 定義。Infrastructure 實作 workspace 配置、writer lock，以及各操作所需的寫入、交易暫存、Journal、回讀與復原；CLI 只透過對應 Flow 業務入口使用這些能力，並依現有 Crate 允許清單組裝所需 Adapter。
 
 現行公開 CLI 的 CMD／OP／VAL 程序由 Host 執行；`execute command-prepare` 與 `execute command-run` 已退役。Model 定義綁定與 Host 回報型別；Operations 定義授權、版本及驗證條件等純規則。Infrastructure 在 `command-binding` 凍結正式 CMD 與宣告輸入，在 `record-finish` 重讀專案內 Host 證據及原始 SHA。公開 Work 流程不啟動 CMD，也不代替 Host 選擇工具。
 
