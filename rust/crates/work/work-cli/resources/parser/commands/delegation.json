@@ -1,0 +1,92 @@
+{
+  "name": "delegation",
+  "help": "usage: work delegation [-h] {validate,build} ...\n\npositional arguments:\n  {validate,build}\n    validate        Check an internal role envelope without granting\n                    authority.\n    build           Build a role envelope from formal source and semantic\n                    input.\n\noptions:\n  -h, --help        Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "validate",
+      "help": "usage: work delegation validate [-h] --input-file INPUT_FILE\n                                   --role {task-coordinator,execute,task-skill,artifact-editor}\n                                   --sender {parent,task-coordinator}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --role {task-coordinator,execute,task-skill,artifact-editor}\n  --sender {parent,task-coordinator}\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "role",
+          "flags": [
+            "--role"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task-coordinator",
+            "execute",
+            "task-skill",
+            "artifact-editor"
+          ],
+          "help": null
+        },
+        {
+          "name": "sender",
+          "flags": [
+            "--sender"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "parent",
+            "task-coordinator"
+          ],
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "build",
+      "help": "usage: work delegation build [-h] --input-file INPUT_FILE [--skill-root SKILL_ROOT]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --skill-root SKILL_ROOT\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

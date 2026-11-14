@@ -396,7 +396,10 @@ fn registry_all_serde_and_queries_accept_only_one_current_identity() {
             serde_json::from_value::<PublicSchema>(json!(id)).unwrap(),
             schema
         );
-        assert_eq!(work_cli::contract::describe(id).unwrap()["id"], id);
+        assert_eq!(
+            contract_core::contract(id).unwrap()["description"]["id"],
+            id
+        );
         let entry = registry
             .catalog
             .contracts
@@ -404,7 +407,12 @@ fn registry_all_serde_and_queries_accept_only_one_current_identity() {
             .find(|entry| entry.id == id)
             .unwrap();
         if entry.caller_constructible {
-            inspect_value(&work_cli::contract::scaffold(id).unwrap(), id, "$").unwrap();
+            inspect_value(
+                &serde_json::to_value(registry.items[id].scaffold.as_ref().unwrap()).unwrap(),
+                id,
+                "$",
+            )
+            .unwrap();
         }
         for version in [1, 2] {
             let alias = format!("{id}/v{version}");
@@ -412,8 +420,11 @@ fn registry_all_serde_and_queries_accept_only_one_current_identity() {
                 serde_json::from_value::<PublicSchema>(json!(alias)).is_err(),
                 "{alias}"
             );
-            assert!(work_cli::contract::describe(&alias).is_err(), "{alias}");
-            assert!(work_cli::contract::scaffold(&alias).is_err(), "{alias}");
+            assert!(contract_core::contract(&alias).is_none(), "{alias}");
+            assert!(
+                contract_core::query::scaffold(&alias, &[]).is_err(),
+                "{alias}"
+            );
         }
     }
 }
@@ -548,8 +559,7 @@ fn production_sources_do_not_reintroduce_old_contract_branches() {
 
 #[test]
 fn instruction_command_tree_has_no_fresh_compatibility_writers() {
-    let tree: Value =
-        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
+    let tree = contract_core::command_tree("work").unwrap();
     let node = tree["root"]["children"]
         .as_array()
         .unwrap()

@@ -340,13 +340,15 @@ mod tests {
             snapshot["bundle"],
             snapshot_skill_bundle(&repository.roots[0].path.join("work")).unwrap()
         );
-        assert!(
-            repository
-                .catalog(&HashSet::new(), &HashSet::from(["work".into()]))
-                .unwrap()["skills"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        let catalog = repository
+            .catalog(&HashSet::new(), &HashSet::from(["work".into()]))
+            .unwrap();
+        let names: HashSet<_> = catalog["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|skill| skill["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, HashSet::from(["contract"]));
     }
 }

@@ -1,0 +1,68 @@
+{
+  "name": "correction",
+  "help": "usage: work correction [-h] {validate,render} ...\n\npositional arguments:\n  {validate,render}\n\noptions:\n  -h, --help         Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "validate",
+      "help": "usage: work correction validate [-h] (--path PATH |\n                                   --input-file INPUT_FILE)\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --path PATH\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "path",
+          "flags": [
+            "--path"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "path",
+            "input_file"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "render",
+      "help": "usage: work correction render [-h] --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

@@ -30,6 +30,7 @@ PLATFORMS = {
             "os-scripts/mac/installer/install/install-core.sh",
             "os-scripts/mac/installer/install/work-install.sh",
             "os-scripts/mac/installer/install/tooling-install.sh",
+            "os-scripts/mac/installer/install/contract-install.sh",
             "os-scripts/mac/installer/install/migration-cleanup.sh",
             "os-scripts/mac/installer/state/state-core.js",
             "os-scripts/mac/installer/state/work-state.js",
@@ -53,6 +54,7 @@ PLATFORMS = {
             "os-scripts/windows/installer/install/install-core.ps1",
             "os-scripts/windows/installer/install/work-install.ps1",
             "os-scripts/windows/installer/install/tooling-install.ps1",
+            "os-scripts/windows/installer/install/contract-install.ps1",
             "os-scripts/windows/installer/install/migration-cleanup.ps1",
             "os-scripts/windows/installer/lock/mutex.ps1",
             "os-scripts/windows/installer/state/state-core.ps1",
@@ -86,13 +88,13 @@ def checked_workspace_version(repository):
 
 def tracked_skill_files(repository):
     result = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "skills/work", "skills/tooling"],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "skills/work", "skills/tooling", "skills/contract"],
         cwd=repository,
         check=True,
         capture_output=True,
     )
     deleted = subprocess.run(
-        ["git", "ls-files", "-z", "--deleted", "--", "skills/work", "skills/tooling"],
+        ["git", "ls-files", "-z", "--deleted", "--", "skills/work", "skills/tooling", "skills/contract"],
         cwd=repository,
         check=True,
         capture_output=True,
@@ -105,6 +107,8 @@ def tracked_skill_files(repository):
         raise ValueError("Work skill entry is missing")
     if not any(path == Path("skills/tooling/SKILL.md") for path in paths):
         raise ValueError("Tooling skill entry is missing")
+    if not any(path == Path("skills/contract/SKILL.md") for path in paths):
+        raise ValueError("Contract skill entry is missing")
     return paths
 
 

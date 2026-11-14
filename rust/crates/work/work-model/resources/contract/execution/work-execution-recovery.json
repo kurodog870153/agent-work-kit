@@ -81,7 +81,7 @@
         "constraints": {},
         "name": "index_path",
         "reference": null,
-        "required": true,
+        "required": false,
         "type": "string"
       },
       {
@@ -126,6 +126,7 @@
       "attempt_path",
       "correction_id",
       "correction_path",
+      "index_path",
       "affected_task_ids",
       "record_id",
       "attempt_status"
@@ -135,7 +136,6 @@
       "transaction",
       "task_id",
       "attempt_id",
-      "index_path",
       "lock_status",
       "status"
     ],

@@ -603,6 +603,35 @@ mod receipt_candidate_tests {
     use serde_json::json;
 
     #[test]
+    fn registered_nullable_fields_match_command_result_deserialization() {
+        let registry = crate::contract::data::registry_value();
+        let description = &registry["items"]["work-command-result"]["description"];
+        let field = |name: &str| {
+            description["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|field| field["name"] == name)
+                .unwrap()
+        };
+        assert_eq!(field("exit_code")["required"], true);
+        assert_eq!(field("exit_code")["type"], "integer | null");
+        assert_eq!(field("receipt_dir")["required"], false);
+        assert_eq!(field("receipt_dir")["type"], "null | string");
+
+        let mut example = description["example"].clone();
+        serde_json::from_value::<PreparedCommandResult>(example.clone()).unwrap();
+        example.as_object_mut().unwrap().remove("exit_code");
+        assert!(serde_json::from_value::<PreparedCommandResult>(example.clone()).is_err());
+        example["exit_code"] = Value::Null;
+        serde_json::from_value::<PreparedCommandResult>(example.clone()).unwrap();
+        example.as_object_mut().unwrap().remove("receipt_dir");
+        serde_json::from_value::<PreparedCommandResult>(example.clone()).unwrap();
+        example["receipt_dir"] = Value::Null;
+        serde_json::from_value::<PreparedCommandResult>(example).unwrap();
+    }
+
+    #[test]
     fn prepared_recovery_response_binds_directory_and_isolates_legacy_shape() {
         let registry = crate::contract::data::registry_value();
         let mut legacy =

@@ -1712,11 +1712,10 @@ fn check_help(node: &Value, path: &mut Vec<String>, count: &mut usize) {
 
 #[test]
 fn every_public_leaf_has_frozen_help_at_process_boundary() {
-    let manifest: Value = serde_json::from_str(include_str!("../resources/parser/commands.json"))
-        .expect("command manifest");
+    let manifest = contract_core::command_tree("work").expect("command manifest");
     let mut count = 0;
     check_help(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 89);
+    assert_eq!(count, 90);
 }
 
 #[test]
@@ -1733,12 +1732,11 @@ fn public_command_tree_matches_frozen_baseline() {
         }
     }
 
-    let manifest: Value =
-        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
+    let manifest = contract_core::command_tree("work").unwrap();
     let mut commands = Vec::new();
     collect(&manifest["root"], &mut Vec::new(), &mut commands);
     commands.sort();
-    assert_eq!(commands.len(), 89);
+    assert_eq!(commands.len(), 90);
     assert!(
         commands
             .iter()
@@ -1828,6 +1826,7 @@ fn public_command_tree_matches_frozen_baseline() {
                 && command != "execute command-binding"
                 && command != "execute file-binding"
                 && command != "execute file-record"
+                && command != "contract example"
                 && ![
                     "execute file-prepare",
                     "execute file-apply",
@@ -2690,11 +2689,10 @@ fn every_public_command_help_returns_one_json_response() {
         }
     }
 
-    let manifest: Value =
-        serde_json::from_str(include_str!("../resources/parser/commands.json")).unwrap();
+    let manifest = contract_core::command_tree("work").unwrap();
     let mut count = 0;
     check(&manifest["root"], &mut Vec::new(), &mut count);
-    assert_eq!(count, 109);
+    assert_eq!(count, 110);
 }
 
 #[test]

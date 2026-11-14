@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
+use contract_core::query;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tooling_flow::operation;
@@ -79,41 +80,23 @@ fn failure(error: CliError) -> (i32, CliResult) {
     )
 }
 
-fn required(name: &'static str) -> Arg {
-    Arg::new(name)
-        .long(name)
-        .required(true)
-        .action(ArgAction::Set)
+fn command() -> Command {
+    contract_core::clap_command("tooling")
+        .expect("validated Tooling command tree")
+        .version(env!("CARGO_PKG_VERSION"))
 }
 
-fn command() -> Command {
-    Command::new("tooling")
-        .version(env!("CARGO_PKG_VERSION"))
-        .subcommand_required(true)
-        .subcommand(
-            Command::new("contract")
-                .subcommand_required(true)
-                .subcommand(Command::new("example").arg(required("name"))),
-        )
-        .subcommand(
-            Command::new("policy")
-                .subcommand_required(true)
-                .subcommand(
-                    Command::new("discover")
-                        .arg(required("skill-root"))
-                        .arg(required("node")),
-                )
-                .subcommand(
-                    Command::new("load")
-                        .arg(required("skill-root"))
-                        .arg(required("input-file")),
-                ),
-        )
-        .subcommand(
-            Command::new("operation")
-                .subcommand_required(true)
-                .subcommand(Command::new("evaluate").arg(required("input-file"))),
-        )
+fn query_error(error: query::QueryError) -> CliError {
+    CliError::new(
+        4,
+        error.reason,
+        "The contract query is invalid.",
+        json!({"detail":error.message}),
+    )
+}
+
+fn optional<'a>(matches: &'a ArgMatches, name: &str) -> Option<&'a str> {
+    matches.get_one::<String>(name).map(String::as_str)
 }
 
 fn option<'a>(matches: &'a ArgMatches, name: &str) -> &'a str {
@@ -414,12 +397,41 @@ pub fn run(tokens: &[String]) -> (i32, CliResult) {
     };
     let result = match matches.subcommand() {
         Some(("contract", contract)) => match contract.subcommand() {
+            Some(("list", args)) => query::list(optional(args, "scope"), optional(args, "prefix"))
+                .map(|data| (data, "ok"))
+                .map_err(query_error),
+            Some(("describe", args)) => {
+                let result = if let Some(path) = optional(args, "command") {
+                    if optional(args, "field").is_some() || optional(args, "variant").is_some() {
+                        Err(query::QueryError {
+                            reason: "invalid_contract_query",
+                            message: "--field and --variant require a contract ID.".into(),
+                        })
+                    } else {
+                        query::describe_command(path)
+                    }
+                } else {
+                    query::describe_contract(
+                        option(args, "contract_id"),
+                        optional(args, "field"),
+                        optional(args, "variant"),
+                    )
+                };
+                result.map(|data| (data, "ok")).map_err(query_error)
+            }
+            Some(("scaffold", args)) => {
+                let branches = args
+                    .get_many::<String>("branch")
+                    .map(|items| items.cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                query::scaffold(option(args, "contract_id"), &branches)
+                    .map(|data| (data, "ok"))
+                    .map_err(query_error)
+            }
             Some(("example", args)) => {
-                let name = option(args, "name");
-                tooling_model::contract::request_example(name)
-                    .map(|raw| (json!({"name":name,"request":serde_json::from_str::<Value>(raw).expect("embedded public example is valid JSON")}), "ok"))
-                    .or_else(|| tooling_model::contract::response_example(name).map(|raw| (json!({"name":name,"response":serde_json::from_str::<Value>(raw).expect("embedded public example is valid JSON")}), "ok")))
-                    .ok_or_else(|| CliError::new(4, "unknown_contract_example", "The contract example is unknown.", json!({"name":name})))
+                query::example_query(option(args, "contract_id"), option(args, "scenario"))
+                    .map(|data| (data, "ok"))
+                    .map_err(query_error)
             }
             _ => unreachable!("clap requires a contract subcommand"),
         },
@@ -437,5 +449,307 @@ pub fn run(tokens: &[String]) -> (i32, CliResult) {
     match result {
         Ok((data, reason)) => (0, success(data, reason)),
         Err(error) => failure(error),
+    }
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    use super::*;
+
+    #[test]
+    fn every_tooling_leaf_obeys_argument_metadata() {
+        fn check(
+            node: &Value,
+            prefix: Vec<String>,
+            inherited: Vec<(usize, usize)>,
+            count: &mut usize,
+        ) {
+            let mut tokens = prefix;
+            let mut required = inherited;
+            let selected_groups: std::collections::BTreeSet<_> = node["exclusive_groups"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|group| group["required"] == true)
+                .filter_map(|group| group["members"].as_array()?.first()?.as_str())
+                .collect();
+            for argument in node["arguments"].as_array().unwrap() {
+                if argument["required"] != true
+                    && !selected_groups.contains(argument["name"].as_str().unwrap())
+                {
+                    continue;
+                }
+                let start = tokens.len();
+                if let Some(flag) = argument["flags"].as_array().unwrap().first() {
+                    tokens.push(flag.as_str().unwrap().to_owned());
+                }
+                if argument["boolean"] != true {
+                    let value = argument["choices"]
+                        .as_array()
+                        .and_then(|items| items.first())
+                        .and_then(Value::as_str)
+                        .unwrap_or("x");
+                    tokens.push(value.to_owned());
+                }
+                required.push((start, tokens.len()));
+            }
+            let children = node["children"].as_array().unwrap();
+            if children.is_empty() {
+                let parse = |args: &[String]| {
+                    contract_core::clap_command("tooling")
+                        .unwrap()
+                        .try_get_matches_from(
+                            std::iter::once("tooling".to_owned()).chain(args.iter().cloned()),
+                        )
+                };
+                assert!(parse(&tokens).is_ok(), "{tokens:?}: valid metadata input");
+                for (start, end) in required {
+                    let mut omitted = tokens.clone();
+                    omitted.drain(start..end);
+                    assert!(
+                        parse(&omitted).is_err(),
+                        "{tokens:?}: missing required argument"
+                    );
+                }
+                for argument in node["arguments"].as_array().unwrap() {
+                    if !argument["choices"].is_array() {
+                        continue;
+                    }
+                    let Some(flag) = argument["flags"]
+                        .as_array()
+                        .unwrap()
+                        .first()
+                        .and_then(Value::as_str)
+                    else {
+                        continue;
+                    };
+                    let mut invalid = tokens.clone();
+                    if let Some(index) = invalid.iter().position(|token| token == flag) {
+                        invalid[index + 1] = "__invalid_choice__".to_owned();
+                    } else {
+                        invalid.extend([flag.to_owned(), "__invalid_choice__".to_owned()]);
+                    }
+                    assert!(
+                        parse(&invalid).is_err(),
+                        "{tokens:?}: invalid choice accepted"
+                    );
+                }
+                for group in node["exclusive_groups"].as_array().unwrap() {
+                    let members = group["members"].as_array().unwrap();
+                    if members.len() < 2 {
+                        continue;
+                    }
+                    let mut conflicting = tokens.clone();
+                    for member in members.iter().take(2) {
+                        let argument = node["arguments"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|argument| argument["name"] == *member)
+                            .unwrap();
+                        if let Some(flag) = argument["flags"]
+                            .as_array()
+                            .unwrap()
+                            .first()
+                            .and_then(Value::as_str)
+                        {
+                            if conflicting.iter().any(|token| token == flag) {
+                                continue;
+                            }
+                            conflicting.push(flag.to_owned());
+                            if argument["boolean"] != true {
+                                conflicting.push("x".to_owned());
+                            }
+                        }
+                    }
+                    assert!(
+                        parse(&conflicting).is_err(),
+                        "{tokens:?}: exclusive arguments accepted"
+                    );
+                }
+                *count += 1;
+            } else {
+                for child in children {
+                    let mut path = tokens.clone();
+                    path.push(child["name"].as_str().unwrap().to_owned());
+                    check(child, path, required.clone(), count);
+                }
+            }
+        }
+        let tree = contract_core::command_tree("tooling").unwrap();
+        let mut count = 0;
+        check(&tree["root"], Vec::new(), Vec::new(), &mut count);
+        assert_eq!(count, 7);
+    }
+
+    #[test]
+    fn every_public_tooling_example_matches_metadata_and_applicable_model() {
+        fn check_presence<T: serde::de::DeserializeOwned>(
+            id: &str,
+            scenario: &str,
+            description: &Value,
+            example: &Value,
+        ) {
+            for field in description["fields"].as_array().unwrap() {
+                let name = field["name"].as_str().unwrap();
+                let mut omitted = example.clone();
+                omitted.as_object_mut().unwrap().remove(name);
+                assert_eq!(
+                    serde_json::from_value::<T>(omitted).is_ok(),
+                    field["required"] == false,
+                    "{id}/{scenario}/{name}: presence differs from metadata"
+                );
+                if field["type"] == "nullable_object" {
+                    let mut explicit_null = example.clone();
+                    explicit_null[name] = Value::Null;
+                    assert!(
+                        serde_json::from_value::<T>(explicit_null).is_ok(),
+                        "{id}/{scenario}/{name}: null rejected"
+                    );
+                }
+            }
+        }
+        fn matches_type(value: &Value, declared: &str) -> bool {
+            match declared {
+                "nullable_object" => value.is_null() || value.is_object(),
+                "string" => value.is_string(),
+                "boolean" => value.is_boolean(),
+                "integer" => value.is_i64() || value.is_u64(),
+                "array" => value.is_array(),
+                "object" => value.is_object(),
+                "literal" | "any" => true,
+                _ => false,
+            }
+        }
+        let mut count = 0;
+        for (id, scenarios) in contract_core::examples() {
+            if !id.starts_with("tooling-") {
+                continue;
+            }
+            let description = &contract_core::contract(id).unwrap()["description"];
+            for (scenario, record) in scenarios.as_object().unwrap() {
+                let example = &record["example"];
+                let valid = record["valid"].as_bool().unwrap();
+                if valid {
+                    let fields = example
+                        .as_object()
+                        .expect("positive Tooling example object");
+                    for required in description["required"].as_array().unwrap() {
+                        assert!(
+                            fields.contains_key(required.as_str().unwrap()),
+                            "{id}/{scenario}: required {required}"
+                        );
+                    }
+                    for name in fields.keys() {
+                        assert!(
+                            description["fields"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .any(|field| field["name"] == name.as_str()),
+                            "{id}/{scenario}: unknown {name}"
+                        );
+                    }
+                    for field in description["fields"].as_array().unwrap() {
+                        let name = field["name"].as_str().unwrap();
+                        if let Some(value) = fields.get(name) {
+                            assert!(
+                                matches_type(value, field["type"].as_str().unwrap()),
+                                "{id}/{scenario}/{name}: type mismatch"
+                            );
+                        }
+                    }
+                }
+                match id {
+                    "tooling-policy-load-request" => {
+                        assert_eq!(
+                            serde_json::from_value::<PolicyLoadRequest>(example.clone()).is_ok(),
+                            valid,
+                            "{id}/{scenario}"
+                        );
+                        if valid {
+                            check_presence::<PolicyLoadRequest>(id, scenario, description, example);
+                        }
+                    }
+                    "tooling-operation-evaluate-request" => {
+                        assert_eq!(
+                            serde_json::from_value::<operation::EvaluateRequest>(example.clone())
+                                .is_ok(),
+                            valid,
+                            "{id}/{scenario}"
+                        );
+                        if valid {
+                            check_presence::<operation::EvaluateRequest>(
+                                id,
+                                scenario,
+                                description,
+                                example,
+                            );
+                        }
+                    }
+                    "tooling-cli-result" => {
+                        assert!(valid);
+                        serde_json::from_value::<tooling_model::contract::CliEnvelope>(
+                            example.clone(),
+                        )
+                        .unwrap();
+                    }
+                    "tooling-policy-discover-response"
+                    | "tooling-policy-load-response"
+                    | "tooling-operation-evaluate-response" => {
+                        assert!(valid, "{id}/{scenario}: response has no request validator");
+                    }
+                    _ => panic!("{id}/{scenario}: missing example classification"),
+                }
+                count += 1;
+            }
+        }
+        assert_eq!(count, 10);
+    }
+
+    #[test]
+    fn policy_load_nullable_metadata_matches_request_deserialization() {
+        let description = &contract_core::contract("tooling-policy-load-request")
+            .expect("public contract")["description"];
+        assert!(
+            description["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("previous"))
+        );
+        assert!(
+            description["optional"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("semantic_review"))
+        );
+        let fields = description["fields"].as_array().unwrap();
+        let previous = fields
+            .iter()
+            .find(|field| field["name"] == "previous")
+            .unwrap();
+        assert_eq!(previous["type"], "nullable_object");
+        assert_eq!(previous["required"], true);
+        let review = fields
+            .iter()
+            .find(|field| field["name"] == "semantic_review")
+            .unwrap();
+        assert_eq!(review["required"], false);
+        assert_eq!(review["type"], "nullable_object");
+
+        let base = json!({"selected_paths":[],"applicable_references":[],"previous":null});
+        assert!(serde_json::from_value::<PolicyLoadRequest>(base.clone()).is_ok());
+        let mut missing = base.clone();
+        missing.as_object_mut().unwrap().remove("previous");
+        assert!(serde_json::from_value::<PolicyLoadRequest>(missing).is_err());
+        let mut value = base.clone();
+        value["previous"] = json!([]);
+        assert!(serde_json::from_value::<PolicyLoadRequest>(value).is_err());
+        let mut value = base.clone();
+        value["semantic_review"] = json!({"reviewed":true,"compatible":true});
+        assert!(serde_json::from_value::<PolicyLoadRequest>(value).is_ok());
+        let mut value = base;
+        value["semantic_review"] = Value::Null;
+        assert!(serde_json::from_value::<PolicyLoadRequest>(value).is_ok());
     }
 }

@@ -1,0 +1,376 @@
+{
+  "name": "discussion",
+  "help": "usage: work discussion [-h] {init,read,status,update,question,answer,history,recover} ...\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "init",
+      "help": "usage: work discussion init [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "read",
+      "help": "usage: work discussion read [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "status",
+      "help": "usage: work discussion status [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "update",
+      "help": "usage: work discussion update [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "question",
+      "help": "usage: work discussion question [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "answer",
+      "help": "usage: work discussion answer [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "history",
+      "help": "usage: work discussion history [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    },
+    {
+      "name": "recover",
+      "help": "usage: work discussion recover [-h] --input-file INPUT_FILE --user-config-root USER_CONFIG_ROOT [--skill-root SKILL_ROOT]\n\nProcess work-discussion-request; requirement, revisions, authorization and approvals are bound in the request.\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-discussion-request",
+      "response_contract": "work-discussion-result"
+    }
+  ]
+}

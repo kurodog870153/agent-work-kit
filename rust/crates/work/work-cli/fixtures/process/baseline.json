@@ -51,10 +51,14 @@
         "--project-root",
         "<PROJECT_ROOT>",
         "contract",
-        "list"
+        "list",
+        "--scope",
+        "commands",
+        "--prefix",
+        "work contract"
       ],
       "exit_code": 0,
-      "stdout": "{\n  \"schema\": \"work-cli-result\",\n  \"status\": \"success\",\n  \"reason_code\": \"ok\",\n  \"message\": \"The command completed successfully.\",\n  \"data\": {\n    \"schema\": \"work-contract-catalog\"\n  }\n}\n",
+      "stdout": "{\"schema\":\"work-cli-result\",\"status\":\"success\",\"reason_code\":\"ok\",\"message\":\"The command completed successfully.\",\"data\":{\"commands\":[\"work contract\",\"work contract describe\",\"work contract example\",\"work contract list\",\"work contract scaffold\"],\"contracts\":[]}}\n",
       "stderr": ""
     },
     {

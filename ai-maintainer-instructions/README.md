@@ -9,6 +9,7 @@
 | `skills/` | 共用 Skill Bootstrap，以及 Work／Tooling 指令架構。 |
 | `release/` | 版本升級、Release 內容準備與安裝器架構。 |
 | `rust/` | Rust Workspace 的 crate 責任、公開契約與資料流，以及 Work 測試 fixture。 |
+| `issues/` | GitHub Issue 的資料盤點、疑問討論與任務規劃。 |
 
 ## 選讀方式
 

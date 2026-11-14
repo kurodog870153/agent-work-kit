@@ -1,0 +1,48 @@
+{
+  "name": "invocation",
+  "help": "usage: work invocation {parse,confirm} ...\n\nRetired: invocation parse/confirm return invocation_command_retired. The Host selects the Work mode.",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "parse",
+      "help": "usage: work invocation parse --input-file INPUT_FILE\n\nRetired: invocation parse returns invocation_command_retired.",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "confirm",
+      "help": "usage: work invocation confirm --input-file INPUT_FILE\n\nRetired: invocation confirm returns invocation_command_retired.",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

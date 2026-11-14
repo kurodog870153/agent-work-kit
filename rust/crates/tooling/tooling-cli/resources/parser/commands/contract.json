@@ -1,0 +1,165 @@
+{
+  "name": "contract",
+  "help": "Inspect public contracts",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "list",
+      "help": "List public commands and contracts",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "scope",
+          "flags": [
+            "--scope"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "commands",
+            "contracts"
+          ],
+          "help": "Select one index."
+        },
+        {
+          "name": "prefix",
+          "flags": [
+            "--prefix"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Match the start of a full command path or contract ID."
+        }
+      ]
+    },
+    {
+      "name": "describe",
+      "help": "Describe a public contract or command",
+      "children": [],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "contract_id",
+            "command"
+          ]
+        }
+      ],
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Contract ID."
+        },
+        {
+          "name": "command",
+          "flags": [
+            "--command"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Full CLI command path."
+        },
+        {
+          "name": "field",
+          "flags": [
+            "--field"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "RFC 6901 data field pointer."
+        },
+        {
+          "name": "variant",
+          "flags": [
+            "--variant"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Discriminator variant."
+        }
+      ]
+    },
+    {
+      "name": "scaffold",
+      "help": "Build a required field skeleton",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Contract ID."
+        },
+        {
+          "name": "branch",
+          "flags": [
+            "--branch"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": "Select a discriminator object branch."
+        }
+      ]
+    },
+    {
+      "name": "example",
+      "help": "Show one public example",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Contract ID."
+        },
+        {
+          "name": "scenario",
+          "flags": [
+            "--scenario"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Example scenario."
+        }
+      ]
+    }
+  ]
+}

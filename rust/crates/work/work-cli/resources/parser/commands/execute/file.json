@@ -1,0 +1,482 @@
+[
+  {
+    "name": "file-binding",
+    "help": "usage: work execute file-binding [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "file-record",
+    "help": "usage: work execute file-record [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "file-prepare",
+    "help": "usage: work execute file-prepare [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "file-apply",
+    "help": "usage: work execute file-apply [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "file-recovery-prepare",
+    "help": "usage: work execute file-recovery-prepare [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  },
+  {
+    "name": "file-restore",
+    "help": "usage: work execute file-restore [-h] --user-config-root USER_CONFIG_ROOT --task-path TASK_PATH --execution-dir EXECUTION_DIR --task-id TASK_ID [--skill-root SKILL_ROOT] --input-file INPUT_FILE\n",
+    "arguments": [
+      {
+        "name": "user_config_root",
+        "flags": [
+          "--user-config-root"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_path",
+        "flags": [
+          "--task-path"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "execution_dir",
+        "flags": [
+          "--execution-dir"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "task_id",
+        "flags": [
+          "--task-id"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "skill_root",
+        "flags": [
+          "--skill-root"
+        ],
+        "required": false,
+        "nargs": null,
+        "append": true,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      },
+      {
+        "name": "input_file",
+        "flags": [
+          "--input-file"
+        ],
+        "required": true,
+        "nargs": null,
+        "append": false,
+        "boolean": false,
+        "choices": null,
+        "help": null
+      }
+    ],
+    "exclusive_groups": [],
+    "children": []
+  }
+]

@@ -4,45 +4,6 @@ use serde_json::Value;
 
 use crate::common::CliStatus;
 
-pub fn request_example(name: &str) -> Option<&'static str> {
-    match name {
-        "policy-load-first" => Some(include_str!(
-            "../../resources/contract/examples/policy-load-first.json"
-        )),
-        "policy-load-reload" => Some(include_str!(
-            "../../resources/contract/examples/policy-load-reload.json"
-        )),
-        "operation-evaluate" => Some(include_str!(
-            "../../resources/contract/examples/operation-evaluate.json"
-        )),
-        "policy-load-invalid-missing-previous" => Some(include_str!(
-            "../../resources/contract/examples/policy-load-invalid-missing-previous.json"
-        )),
-        "operation-evaluate-invalid-missing-target" => Some(include_str!(
-            "../../resources/contract/examples/operation-evaluate-invalid-missing-target.json"
-        )),
-        _ => None,
-    }
-}
-
-pub fn response_example(name: &str) -> Option<&'static str> {
-    match name {
-        "policy-discover-response" => Some(include_str!(
-            "../../resources/contract/examples/policy-discover-response.json"
-        )),
-        "policy-load-response" => Some(include_str!(
-            "../../resources/contract/examples/policy-load-response.json"
-        )),
-        "operation-evaluate-response" => Some(include_str!(
-            "../../resources/contract/examples/operation-evaluate-response.json"
-        )),
-        "error-response" => Some(include_str!(
-            "../../resources/contract/examples/error-response.json"
-        )),
-        _ => None,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CliSchema {
     #[serde(rename = "tooling-cli-result")]
@@ -92,13 +53,12 @@ mod tests {
 
     #[test]
     fn embedded_response_examples_follow_the_public_envelope() {
-        for name in [
-            "policy-discover-response",
-            "policy-load-response",
-            "operation-evaluate-response",
-            "error-response",
+        for raw in [
+            include_str!("../../resources/contract/examples/policy-discover-response.json"),
+            include_str!("../../resources/contract/examples/policy-load-response.json"),
+            include_str!("../../resources/contract/examples/operation-evaluate-response.json"),
+            include_str!("../../resources/contract/examples/error-response.json"),
         ] {
-            let raw = response_example(name).unwrap();
             let _: CliEnvelope = serde_json::from_str(raw).unwrap();
         }
     }

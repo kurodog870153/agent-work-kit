@@ -1,0 +1,195 @@
+{
+  "name": "instructions",
+  "help": "usage: work instructions [-h]\n                            {catalog,resolve,load,select,impact,recover} ...\n\npositional arguments:\n  {catalog,resolve,load,select,impact,recover}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "catalog",
+      "help": "usage: work instructions catalog --mode {task,execute,all}\n\nRetired: Host discovery is required; Work validates explicit formal instruction selections.",
+      "arguments": [
+        {
+          "name": "mode",
+          "flags": [
+            "--mode"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task",
+            "execute",
+            "all"
+          ],
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-instruction-catalog"
+    },
+    {
+      "name": "resolve",
+      "help": "usage: work instructions resolve [-h] --mode {task,execute}\n                                    [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --mode {task,execute}\n",
+      "arguments": [
+        {
+          "name": "mode",
+          "flags": [
+            "--mode"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task",
+            "execute"
+          ],
+          "help": null
+        },
+        {
+          "name": "paths",
+          "flags": [],
+          "required": false,
+          "nargs": "*",
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "load",
+      "help": "usage: work instructions load [-h] --mode {task,execute}\n                                 [--reference REFERENCE]\n                                 [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --mode {task,execute}\n  --reference REFERENCE\n",
+      "arguments": [
+        {
+          "name": "mode",
+          "flags": [
+            "--mode"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task",
+            "execute"
+          ],
+          "help": null
+        },
+        {
+          "name": "reference",
+          "flags": [
+            "--reference"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "paths",
+          "flags": [],
+          "required": false,
+          "nargs": "*",
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "select",
+      "help": "usage: work instructions select [-h] --mode {task,execute}\n                                   [--reference REFERENCE]\n                                   [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --mode {task,execute}\n  --reference REFERENCE\n",
+      "arguments": [
+        {
+          "name": "mode",
+          "flags": [
+            "--mode"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "task",
+            "execute"
+          ],
+          "help": null
+        },
+        {
+          "name": "reference",
+          "flags": [
+            "--reference"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "paths",
+          "flags": [],
+          "required": false,
+          "nargs": "*",
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "impact",
+      "help": "usage: work instructions impact [-h]\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+      "arguments": [],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "recover",
+      "help": "usage: work instructions recover [-h] --journal-path JOURNAL_PATH --approved-sha256 APPROVED_SHA256\n",
+      "arguments": [
+        {
+          "name": "journal_path",
+          "flags": [
+            "--journal-path"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

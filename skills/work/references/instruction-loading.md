@@ -6,6 +6,7 @@
 4. Keep user decisions, Host permissions and Work formal approvals distinct. Stop a dependent formal operation on Source or Instruction drift, invalid TASK or Attempt, missing approval, scope mismatch or uncertain transaction state. Formal Artifact locks, journals, publication and recovery remain Work CLI responsibilities.
 5. Load only modules whose conditions below hold. Each route resolves to one regular file directly under `references/instruction-loading/` after realpath validation; reject duplicate, missing or escaped paths. Modules cannot route other modules. Source identities, raw SHA, applicable fingerprints, ancestors and References must be revalidated when affected.
 6. Tooling is an independent optional Skill. The Host may activate it for an operation requiring its Policy. Work does not require Tooling for unrelated operations and does not add Tooling sources to formal `required_instruction_sources`, `source_order`, Selection Manifest or TASK fingerprint. Use `tool-policy-integration.md` only to check the separation of the two formal boundaries.
+7. When public command or JSON contract details are needed, the Host may activate the sibling Contract Skill on demand. Its queries do not join Work formal Instruction Selection, change the TASK fingerprint, or authorize a Work operation. Use this Work Skill's CLI transport and formal validation rules for completed requests.
 
 ## Modules
 

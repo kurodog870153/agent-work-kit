@@ -1,0 +1,40 @@
+{
+  "name": "workspace",
+  "help": "usage: work workspace [-h] {create} ...\n\npositional arguments:\n  {create}\n    create    Allocate a current transaction workspace.\n\noptions:\n  -h, --help  Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "create",
+      "help": "usage: work workspace create [-h] [--requirement-id REQUIREMENT_ID]\n                                --workflow-id WORKFLOW_ID\n\nAllocate outputs/work/transactions with inputs, requests, responses and envelopes.\nUse returned data.paths and preserve every allocated workspace.\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --requirement-id REQUIREMENT_ID\n  --workflow-id WORKFLOW_ID\n",
+      "arguments": [
+        {
+          "name": "requirement_id",
+          "flags": [
+            "--requirement-id"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "workflow_id",
+          "flags": [
+            "--workflow-id"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

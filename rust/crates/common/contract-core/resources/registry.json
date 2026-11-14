@@ -1,0 +1,11 @@
+{
+  "schema": "public-contract-registry-sources",
+  "work_commands": "../../work/work-cli/resources/parser/commands.json",
+  "tooling_commands": "../../tooling/tooling-cli/resources/parser/commands.json",
+  "work_contracts": "../../work/work-model/resources/contract",
+  "work_example_policy": "../../work/work-model/resources/contract/example-policy.json",
+  "tooling_contracts": "../../tooling/tooling-model/resources/contract",
+  "query_data_schemas": "resources/query-data-schemas.json",
+  "tooling_examples": "../../tooling/tooling-model/resources/contract/examples",
+  "tooling_example_catalog": "../../tooling/tooling-model/resources/contract/example-catalog.json"
+}

@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 host-environment = { path = "../../common/host-environment" }
+contract-core = { path = "../../common/contract-core" }
 tooling-model = { path = "../tooling-model" }
 tooling-flow = { path = "../tooling-flow" }
 clap.workspace = true

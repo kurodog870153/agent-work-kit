@@ -1,0 +1,518 @@
+{
+  "name": "specification",
+  "help": "usage: work specification [-h] {prepare,preview,apply,verify,recover,reconciliation-prepare,reconciliation-preview,reconciliation-apply,reconciliation-recover} ...\n\npositional arguments:\n  {prepare,preview,apply,verify,recover,reconciliation-prepare,reconciliation-preview,reconciliation-apply,reconciliation-recover}\n    prepare             Prepare a semantic specification revision.\n    preview             Validate and review a prepared revision.\n    apply               Publish an approved revision.\n    verify              Verify a published revision.\n    recover             Recover an interrupted approved revision.\n    reconciliation-prepare\n                        Prepare execution deviation reconciliation.\n    reconciliation-preview\n                        Review execution deviation reconciliation.\n    reconciliation-apply\n                        Publish approved execution deviation reconciliation.\n    reconciliation-recover\n                        Recover approved execution deviation reconciliation.\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "prepare",
+      "help": "usage: work specification prepare [-h] --input-file INPUT_FILE\n                                 --user-config-root USER_CONFIG_ROOT\n                                 [--skill-root SKILL_ROOT]\n                                 [--output-file OUTPUT_FILE] [--summary]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --output-file OUTPUT_FILE\n  --summary\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "output_file",
+          "flags": [
+            "--output-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "summary",
+          "flags": [
+            "--summary"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-spec-prepare-request",
+      "response_contract": "work-spec-prepare"
+    },
+    {
+      "name": "preview",
+      "help": "usage: work specification preview [-h] --input-file INPUT_FILE\n                                  --user-config-root USER_CONFIG_ROOT\n                                  [--skill-root SKILL_ROOT] [--summary]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --summary\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "summary",
+          "flags": [
+            "--summary"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "apply",
+      "help": "usage: work specification apply [-h] --input-file INPUT_FILE\n                                --user-config-root USER_CONFIG_ROOT\n                                [--skill-root SKILL_ROOT]\n                                --approved-sha256 APPROVED_SHA256 [--summary]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --approved-sha256 APPROVED_SHA256\n  --summary\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "summary",
+          "flags": [
+            "--summary"
+          ],
+          "required": false,
+          "nargs": 0,
+          "append": false,
+          "boolean": true,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "recover",
+      "help": "usage: work specification recover [-h] --input-file INPUT_FILE\n                                 --user-config-root USER_CONFIG_ROOT\n                                 [--skill-root SKILL_ROOT]\n                                 --approved-sha256 APPROVED_SHA256\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --approved-sha256 APPROVED_SHA256\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "verify",
+      "help": "usage: work specification verify [-h] --input-file INPUT_FILE\n                                --user-config-root USER_CONFIG_ROOT\n                                [--skill-root SKILL_ROOT]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "reconciliation-preview",
+      "help": "usage: work specification reconciliation-preview [-h] --input-file INPUT_FILE\n                                           --user-config-root USER_CONFIG_ROOT\n                                           [--skill-root SKILL_ROOT]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-spec-reconciliation-preview-request",
+      "response_contract": "work-spec-reconciliation-preview"
+    },
+    {
+      "name": "reconciliation-prepare",
+      "help": "usage: work specification reconciliation-prepare [-h] --input-file INPUT_FILE\n                                           --user-config-root USER_CONFIG_ROOT\n                                           [--skill-root SKILL_ROOT]\n                                           [--output-file OUTPUT_FILE]\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --output-file OUTPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "output_file",
+          "flags": [
+            "--output-file"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "request_contract": "work-spec-reconciliation-prepare-request",
+      "response_contract": "work-spec-prepare"
+    },
+    {
+      "name": "reconciliation-apply",
+      "help": "usage: work specification reconciliation-apply [-h] --input-file INPUT_FILE\n                                         --user-config-root USER_CONFIG_ROOT\n                                         [--skill-root SKILL_ROOT]\n                                         --approved-sha256 APPROVED_SHA256\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --approved-sha256 APPROVED_SHA256\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "reconciliation-recover",
+      "help": "usage: work specification reconciliation-recover [-h] --input-file INPUT_FILE\n                                         --user-config-root USER_CONFIG_ROOT\n                                         [--skill-root SKILL_ROOT]\n                                         --approved-sha256 APPROVED_SHA256\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --input-file INPUT_FILE\n  --user-config-root USER_CONFIG_ROOT\n  --skill-root SKILL_ROOT\n  --approved-sha256 APPROVED_SHA256\n",
+      "arguments": [
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "user_config_root",
+          "flags": [
+            "--user-config-root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "skill_root",
+          "flags": [
+            "--skill-root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "approved_sha256",
+          "flags": [
+            "--approved-sha256"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

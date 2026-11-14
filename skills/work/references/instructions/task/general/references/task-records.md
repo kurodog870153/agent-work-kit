@@ -63,7 +63,7 @@ metadata:
 
 ## 7. Query the current contract
 
-1. [Required] Use `<work-cli> contract describe work-task-index`, `work-task-item` and `work-task-collection-fingerprint` to query fields, canonical order, constraints, nested references and valid examples.
+1. [Required] Use `<work-cli> contract describe work-task-index`, `work-task-item` and `work-task-collection-fingerprint` for compact field indexes; query specific constraints with `--field <pointer>` and a registered illustrative example with `contract example <id> --scenario default`. Formal Task output and validation, not a Contract query, determine canonical order and publishability.
 2. [Required] Source, Execution, Specification, Migration and Reconciliation use their registered CLI contracts. Treat actual contract descriptions and validators as structural authority; do not maintain copied full JSON templates.
 
 ## 8. Minimal outcomes and shared-file review

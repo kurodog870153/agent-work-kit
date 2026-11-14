@@ -30,6 +30,10 @@ Work 以 Model、Operations、Feature、Flow、Infrastructure 與 CLI 分離資�
 
 Skill 的 `skill-model` 定義共用型別，`skill-operations` 實作純規則與指紋，`skill-feature` 組合 Catalog 與階層規則，`skill-infrastructure` 負責來源、Bundle 與 YAML 解析；`skill-api` 限定公開型別及操作。Tooling 的政策與 Host 證據型別、純規則分別屬於 `tooling-model` 與 `tooling-operations` 的目標責任；現行政策功能主要在 `tooling-feature`，目標邊界檢查在 `tooling-infrastructure`，`tooling-flow` 組合用例，`tooling-cli` 解析命令並映射 JSON 回應與退出碼。
 
+公開 CLI 契約查詢由 `common/contract-core` 建置共用索引並提供查詢；Work 與 Tooling 的契約 JSON 仍由各自的 Model 資源目錄持有，命令樹仍由各自的 CLI 資源目錄持有。共用索引不承接領域 Validator、Host Routing 或授權判定。
+
+Work 的每份契約紀錄保留在所屬領域目錄，並持有公開 ID、欄位清單、必要條件與 scaffold 資料。可獨立維護的大型 schema 放在同領域的 `schemas/`；大型完整 Example 快照放在同領域的 `fixtures/`，由 `example-policy.json` 排除於公開 Scenario。資源由只含 `$ref` 的物件引用，路徑以 `work-model/resources/contract/` 為基準；建置時展開引用，供既有 Model 回歸測試使用。小型 Example 保持內嵌並可公開；不得只為縮小檔案而切割單一字串或建立編號片段。JSON Schema 的 `#/$defs/...` 是 schema 內部引用，不作資源路徑處理。
+
 Tooling 與 Work 透過 `skill-api` 讀取並驗證共用來源。Tooling 的政策差異與操作判定不進入 Skill；Work 的正式選取、Task／Attempt 與 Host 驗證不進入 Skill。兩個 CLI 輸出各自的公開契約。下表及 Work 圖描述 Work 的 crate 依賴；後面的 Tooling 小節描述 Tooling 的現行依賴及責任，不把尚未實作的層次當成現有呼叫路徑。
 
 | Crate | 職責 | 允許直接依賴的其他 Work crate |

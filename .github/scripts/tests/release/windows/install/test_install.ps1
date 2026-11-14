@@ -52,6 +52,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $root 'skills') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/work') -Destination (Join-Path $root 'skills/work') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/tooling') -Destination (Join-Path $root 'skills/tooling') -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/contract') -Destination (Join-Path $root 'skills/contract') -Recurse
     New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force | Out-Null
     Copy-Item -LiteralPath $binary -Destination (Join-Path $root 'bin/work.exe')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'rust/target/release/tooling.exe') -Destination (Join-Path $root 'bin/tooling.exe')
@@ -73,12 +74,15 @@ try {
     & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'package core first install failed' }
     $toolingTarget = Join-Path (Split-Path -Parent $target) 'tooling'
+    $contractTarget = Join-Path (Split-Path -Parent $target) 'contract'
     $parentState = Join-Path (Split-Path -Parent $target) 'install-state.json'
     if (-not (Test-Path -LiteralPath (Join-Path $target 'scripts/work.exe')) -or
         -not (Test-Path -LiteralPath $parentState) -or
         (Test-Path -LiteralPath (Join-Path $target 'install-state.json')) -or
         (Test-Path -LiteralPath (Join-Path $toolingTarget 'install-state.json')) -or
         -not (Test-Path -LiteralPath (Join-Path $toolingTarget 'scripts/tooling.exe')) -or
+        -not (Test-Path -LiteralPath (Join-Path $contractTarget 'SKILL.md')) -or
+        -not (Test-Path -LiteralPath (Join-Path $contractTarget 'references/instruction-loading/queries.md')) -or
         -not (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/mcp/instructions.md')) -or
         (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/repl'))) { throw 'installed files missing or removed REPL retained' }
     $state = Get-Content -LiteralPath $parentState -Raw | ConvertFrom-Json
@@ -87,6 +91,16 @@ try {
         $null -ne $state.global_instructions_dir -or $state.status -ne 'installed' -or
         @($state.PSObject.Properties).Count -ne 6) {
         throw 'installed state is wrong'
+    }
+    if (((Get-Item -LiteralPath $contractTarget -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+        (Resolve-Path -LiteralPath $contractTarget).Path -cne (Join-Path (Split-Path -Parent $target) 'contract')) {
+        throw 'installed Contract path is unsafe'
+    }
+    $workContract = & (Join-Path $target 'scripts/work.exe') --project-root $scratch contract describe work-cli-result | ConvertFrom-Json
+    $toolingContract = & (Join-Path $toolingTarget 'scripts/tooling.exe') contract describe tooling-cli-result | ConvertFrom-Json
+    if ($workContract.status -cne 'success' -or $workContract.data.contract_id -cne 'work-cli-result' -or
+        $toolingContract.status -cne 'success' -or $toolingContract.data.contract_id -cne 'tooling-cli-result') {
+        throw 'installed Contract Skill cannot locate matching Work and Tooling queries'
     }
     $claudeParent = Join-Path $scratch 'claude-skills'
     $claudeGlobal = Join-Path $scratch 'claude-global'
@@ -131,6 +145,20 @@ try {
     if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
         [IO.File]::ReadAllText($toolingMarker) -cne 'keep') { throw 'unknown Tooling content was accepted or changed' }
     Remove-Item -LiteralPath $toolingMarker
+    $contractMarker = Join-Path $contractTarget 'unknown.txt'
+    [IO.File]::WriteAllText($contractMarker, 'keep')
+    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
+        [IO.File]::ReadAllText($contractMarker) -cne 'keep') { throw 'unknown Contract content was accepted or changed' }
+    Remove-Item -LiteralPath $contractMarker
+    $contractSourceEntry = Join-Path $root 'skills/contract/SKILL.md'
+    $heldContractSource = Join-Path $scratch 'held-contract-skill.md'
+    Move-Item -LiteralPath $contractSourceEntry -Destination $heldContractSource
+    try {
+        if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
+            [IO.File]::ReadAllText($parentState) -cne $codexStateBefore) {
+            throw 'missing Contract source was accepted or changed install state'
+        }
+    } finally { Move-Item -LiteralPath $heldContractSource -Destination $contractSourceEntry }
     $legacyToolingParent = Join-Path $scratch 'legacy-tooling'
     New-Item -ItemType Directory -Path $legacyToolingParent | Out-Null
     Copy-Item -LiteralPath $toolingTarget -Destination (Join-Path $legacyToolingParent 'tooling') -Recurse
@@ -347,6 +375,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/windows') -Destination (Join-Path $sourceProject 'os-scripts/windows') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/work') -Destination (Join-Path $sourceProject 'skills/work') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/tooling') -Destination (Join-Path $sourceProject 'skills/tooling') -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/contract') -Destination (Join-Path $sourceProject 'skills/contract') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/options.tsv') -Destination (Join-Path $sourceProject 'os-scripts/windows/installer/cli/options.tsv')
     New-Item -ItemType Directory -Path (Join-Path $sourceProject 'os-scripts/common/installer') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/install-state.json') -Destination (Join-Path $sourceProject 'os-scripts/common/installer/install-state.json')

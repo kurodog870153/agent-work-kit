@@ -1,0 +1,165 @@
+{
+  "name": "contract",
+  "help": "usage: work contract [-h] {list,describe,scaffold,example} ...\n\npositional arguments:\n  {list,describe,scaffold,example}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "list",
+      "help": "usage: work contract list [-h] [--scope {commands,contracts}] [--prefix PREFIX]\n",
+      "arguments": [
+        {
+          "name": "scope",
+          "flags": [
+            "--scope"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": [
+            "commands",
+            "contracts"
+          ],
+          "help": "Select one index."
+        },
+        {
+          "name": "prefix",
+          "flags": [
+            "--prefix"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Match the start of a full command path or contract ID."
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "describe",
+      "help": "usage: work contract describe [-h] [--command COMMAND | contract_id] [--field FIELD] [--variant VARIANT]\n",
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "command",
+          "flags": [
+            "--command"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Full CLI command path."
+        },
+        {
+          "name": "field",
+          "flags": [
+            "--field"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "RFC 6901 data field pointer."
+        },
+        {
+          "name": "variant",
+          "flags": [
+            "--variant"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Discriminator variant."
+        }
+      ],
+      "exclusive_groups": [
+        {
+          "required": true,
+          "members": [
+            "contract_id",
+            "command"
+          ]
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "scaffold",
+      "help": "usage: work contract scaffold [-h] contract_id [--branch POINTER=VARIANT]...\n",
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "branch",
+          "flags": [
+            "--branch"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": "Select a discriminator object branch."
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    },
+    {
+      "name": "example",
+      "help": "usage: work contract example [-h] contract_id --scenario SCENARIO\n",
+      "arguments": [
+        {
+          "name": "contract_id",
+          "flags": [],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Contract ID."
+        },
+        {
+          "name": "scenario",
+          "flags": [
+            "--scenario"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": "Example scenario."
+        }
+      ],
+      "exclusive_groups": [],
+      "children": []
+    }
+  ]
+}

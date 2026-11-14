@@ -11,7 +11,7 @@ $CliArgs = @()
 if ($args.Count -gt 4) { $CliArgs = [string[]] $args[4..($args.Count - 1)] }
 $installerRoot = Split-Path -Parent $PSScriptRoot
 foreach ($module in @('cli/parse-options.ps1', 'state/state-core.ps1', 'target/preflight.ps1', 'lock/mutex.ps1',
-    'transaction/work.ps1', 'install/work-install.ps1', 'install/tooling-install.ps1', 'transaction/tooling.ps1', 'install/migration-cleanup.ps1', 'global-instructions/policy.ps1', 'global-instructions/transaction.ps1')) {
+    'transaction/work.ps1', 'install/work-install.ps1', 'install/tooling-install.ps1', 'install/contract-install.ps1', 'transaction/tooling.ps1', 'install/migration-cleanup.ps1', 'global-instructions/policy.ps1', 'global-instructions/transaction.ps1')) {
     . (Join-Path $installerRoot $module)
 }
 
@@ -104,6 +104,7 @@ function Remove-InstallerChildStates {
 function Invoke-InstallerCore {
     $sourceWork = Join-Path $Root 'skills/work'
     $sourceTooling = Join-Path $Root 'skills/tooling'
+    $sourceContract = Join-Path $Root 'skills/contract'
     $stateTemplatePath = if ($Mode -eq 'source') {
         Join-Path $Root 'os-scripts/common/installer/install-state.json'
     } else {
@@ -113,6 +114,7 @@ function Invoke-InstallerCore {
     if ($cli.Action -eq 'help') { Get-InstallerCliUsage; return }
     if ($cli.Verbose) { Write-Output 'Installer options parsed.' }
     if (-not (Test-InstallerToolingSource -Source $sourceTooling)) { throw 'Tooling source is missing or unsafe' }
+    if (-not (Test-InstallerContractSource -Source $sourceContract)) { throw 'Contract source is missing or unsafe' }
     if ($null -eq $cli.InstallerHost) {
         $choice = Read-InstallerChoice -Prompt 'Select Host: 1) Codex, 2) Claude Code' -Default ''
         switch ($choice) {
@@ -122,7 +124,7 @@ function Invoke-InstallerCore {
         }
     }
     $install = {
-    param($sourceWork, $sourceTooling, $cli, $Root, $Mode, $stateTemplatePath)
+    param($sourceWork, $sourceTooling, $sourceContract, $cli, $Root, $Mode, $stateTemplatePath)
     $selectedHost = $cli.InstallerHost
     $releaseInfo = if ($Mode -eq 'package') {
         Get-Content -LiteralPath (Join-Path $Root 'release-info.json') -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
@@ -181,6 +183,7 @@ function Invoke-InstallerCore {
     if (-not (Test-InstallerDirectoryPathSafe -Path $skillsParent)) { throw 'unsafe Skills directory' }
     $target = Join-Path $skillsParent 'work'
     $toolingTarget = Join-Path $skillsParent 'tooling'
+    $contractTarget = Join-Path $skillsParent 'contract'
     $combinedPath = Join-Path $skillsParent 'install-state.json'
     $pendingStatePath = Join-Path $skillsParent '.install-state.json.tmp'
     $previousStatePath = Join-Path $skillsParent '.install-state.json.previous'
@@ -275,7 +278,8 @@ function Invoke-InstallerCore {
         }
     }
     if (-not $cli.DryRun -and (Test-Path -LiteralPath $skillsParent -PathType Container)) {
-        Restore-InstallerInterruptedTooling -Target $toolingTarget -Source $sourceTooling -Version $toolingVersion -Binary $toolingBinary
+        Restore-InstallerInterruptedTooling -Target $toolingTarget -Source $sourceTooling -Version $toolingVersion -Binary $toolingBinary `
+            -ContractTarget $contractTarget -ContractSource $sourceContract
         if ($null -ne $combinedState -and $combinedState.status -eq 'installed' -and
             -not (Test-InstallerWorkTransactionPending -Target $target) -and
             @(Get-InstallerToolingTransactions -Target $toolingTarget).Count -eq 0) {
@@ -325,6 +329,10 @@ function Invoke-InstallerCore {
     }
     $inspection = Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $targetStateValid
     $toolingInspection = Inspect-InstallerToolingTarget -Target $toolingTarget -Source $sourceTooling -InstallerHost $selectedHost
+    $contractInspection = Inspect-InstallerContractTarget -Target $contractTarget -Source $sourceContract -InstallerHost $selectedHost
+    if ($contractInspection.Kind -notin @('new', 'managed')) {
+        throw "Contract target cannot be installed: $($contractInspection.Reason)"
+    }
     $toolingConfirmed = $false
     if ($toolingInspection.Kind -eq 'first-update' -and -not $cli.NonInteractive) {
         Write-Output "Existing Tooling without valid install-state.json: $toolingTarget"
@@ -383,7 +391,7 @@ function Invoke-InstallerCore {
     }
     Write-Output "Work target: $target"
     Write-Output "Tooling target: $toolingTarget"
-    Write-Output "Version: $version; Global AGENTS: $globalEnabled; Work action: $($inspection.Kind); Tooling action: $($toolingInspection.Kind)"
+    Write-Output "Version: $version; Global AGENTS: $globalEnabled; Work action: $($inspection.Kind); Tooling action: $($toolingInspection.Kind); Contract action: $($contractInspection.Kind)"
     if ($cli.DryRun) { Write-Output 'Dry run: no installation target changed.'; return }
     if (-not $cli.NonInteractive) {
         if ((Read-InstallerChoice -Prompt 'Proceed with installation? (y/n)' -Default 'n') -ne 'y') { throw 'installation cancelled' }
@@ -428,11 +436,12 @@ function Invoke-InstallerCore {
         if ($cli.Verbose) { Write-Output 'Installer: Work transaction published and verified' }
         Write-Output "Work installed at $result"
         try {
-            $toolingResult = Invoke-InstallerToolingTransaction -Target $toolingTarget -Source $sourceTooling -Version $toolingVersion -Binary $toolingBinary -StateJson $toolingStateJson -NonInteractive $cli.NonInteractive -Confirmed $toolingConfirmed -InstallerHost $selectedHost
+            $toolingResult = Invoke-InstallerToolingTransaction -Target $toolingTarget -Source $sourceTooling -ContractTarget $contractTarget -ContractSource $sourceContract -Version $toolingVersion -Binary $toolingBinary -StateJson $toolingStateJson -NonInteractive $cli.NonInteractive -Confirmed $toolingConfirmed -InstallerHost $selectedHost
         } catch {
             throw "Tooling installation failed after Work was published; inspect $toolingTarget and retry for recovery. $_"
         }
         Write-Output "Tooling installed at $toolingResult"
+        Write-Output "Contract installed at $contractTarget"
         if ((Test-InstallerWorkTransactionPending -Target $target) -or
             @(Get-InstallerToolingTransactions -Target $toolingTarget).Count -gt 0) {
             throw 'installation transaction cleanup is pending; preserve its recovery data'
@@ -461,7 +470,7 @@ function Invoke-InstallerCore {
         throw
     }
     }
-    Invoke-InstallerLocked -Transaction $install -Arguments @($sourceWork, $sourceTooling, $cli, $Root, $Mode, $stateTemplatePath) -InstallerHost $cli.InstallerHost
+    Invoke-InstallerLocked -Transaction $install -Arguments @($sourceWork, $sourceTooling, $sourceContract, $cli, $Root, $Mode, $stateTemplatePath) -InstallerHost $cli.InstallerHost
 }
 
 try {

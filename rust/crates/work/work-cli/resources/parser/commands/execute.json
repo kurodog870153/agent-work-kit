@@ -1,0 +1,26 @@
+{
+  "name": "execute",
+  "help": "usage: work execute [-h]\n                       {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,command-binding,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore,file-binding,file-record} ...\n\npositional arguments:\n  {preflight,worktree,attempt-start,attempt-start-prepare,recover-attempt-start,record-begin,command-correction,command-binding,record-finish,attempt-close,correction-create,recover,recovery-prepare,command-prepare,deviation-prepare-semantic,deviation-record,command-run,file-prepare,file-apply,file-recovery-prepare,file-restore,file-binding,file-record}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "ref": "commands/execute/file.json"
+    },
+    {
+      "ref": "commands/execute/setup.json"
+    },
+    {
+      "ref": "commands/execute/attempt_start.json"
+    },
+    {
+      "ref": "commands/execute/record.json"
+    },
+    {
+      "ref": "commands/execute/recovery.json"
+    },
+    {
+      "ref": "commands/execute/command.json"
+    }
+  ]
+}

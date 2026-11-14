@@ -1,0 +1,10 @@
+{
+  "contract-list-data": {"type":"object","required":["commands","contracts"],"properties":{"commands":{"type":"array"},"contracts":{"type":"array"}},"additionalProperties":false},
+  "contract-describe-data": {"oneOf":[
+    {"type":"object","required":["contract_id","kind","fields","scenarios"],"properties":{"contract_id":{"type":"string"},"kind":{"type":"string"},"fields":{"type":"object"},"scenarios":{"type":"array"}},"additionalProperties":false},
+    {"type":"object","required":["contract_id","field"],"properties":{"contract_id":{"type":"string"},"field":{"type":"object"}},"additionalProperties":false},
+    {"type":"object","required":["command","arguments"],"properties":{"command":{"type":"string"},"arguments":{"type":"array"},"request_contract":{"type":"string"},"response_contract":{"type":"string"}},"additionalProperties":false}
+  ]},
+  "contract-scaffold-data": {"type":"object","required":["contract_id","scaffold","unresolved_paths","selected_branches"],"properties":{"contract_id":{"type":"string"},"scaffold":{"type":"object"},"unresolved_paths":{"type":"array","items":{"type":"string"}},"selected_branches":{"type":"object"}},"additionalProperties":false},
+  "contract-example-data": {"type":"object","required":["contract_id","scenario","valid","example"],"properties":{"contract_id":{"type":"string"},"scenario":{"type":"string"},"valid":{"type":"boolean"},"example":{}},"additionalProperties":false}
+}

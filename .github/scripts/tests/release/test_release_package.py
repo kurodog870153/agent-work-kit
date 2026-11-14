@@ -28,13 +28,15 @@ class ReleasePackageTests(unittest.TestCase):
             with patch("version_guard.validate_lock", return_value=workspace_version):
                 self.assertEqual(checked_version(repository), release_version)
 
-    def test_both_skills_and_new_instruction_modules_are_packaged(self):
+    def test_three_skills_and_new_instruction_modules_are_packaged(self):
         repository = Path(__file__).resolve().parents[4]
         paths = tracked_skill_files(repository)
         self.assertIn(Path("skills/work/SKILL.md"), paths)
         self.assertIn(Path("skills/work/references/instruction-loading/tool-policy-integration.md"), paths)
         self.assertIn(Path("skills/tooling/SKILL.md"), paths)
         self.assertIn(Path("skills/tooling/references/instruction-loading.md"), paths)
+        self.assertIn(Path("skills/contract/SKILL.md"), paths)
+        self.assertIn(Path("skills/contract/references/instruction-loading.md"), paths)
         self.assertNotIn(Path("skills/tooling/references/instructions/interfaces/repl/instructions.md"), paths)
         self.assertFalse(any(path.name == ".DS_Store" for path in paths))
         self.assertNotIn(Path("skills/work/references/instruction-loading/handoff.md"), paths)
@@ -101,6 +103,7 @@ class ReleasePackageTests(unittest.TestCase):
             skill_files = [
                 "skills/work/SKILL.md", "skills/work/references/instruction-loading.md",
                 "skills/tooling/SKILL.md", "skills/tooling/references/instruction-loading.md",
+                "skills/contract/SKILL.md", "skills/contract/references/instruction-loading.md",
             ]
             for name in skill_files:
                 path = repository / name

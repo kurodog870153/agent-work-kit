@@ -1,0 +1,140 @@
+{
+  "name": "skills",
+  "help": "usage: work skills [-h]\n                      {catalog,snapshot,selection-validate,selection-build} ...\n\npositional arguments:\n  {catalog,snapshot,selection-validate,selection-build}\n\noptions:\n  -h, --help            Return command help in a JSON response.\n",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "catalog",
+      "help": "usage: work skills catalog --root ROOT [--disabled-source DISABLED_SOURCE]\n\nRetired: Host discovery is required; Work validates explicit formal skill selections.",
+      "arguments": [
+        {
+          "name": "root",
+          "flags": [
+            "--root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "disabled_source",
+          "flags": [
+            "--disabled-source"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-skill-catalog"
+    },
+    {
+      "name": "snapshot",
+      "help": "usage: work skills snapshot [-h] --root ROOT --source SOURCE\n\noptions:\n  -h, --help       Return command help in a JSON response.\n  --root ROOT\n  --source SOURCE\n",
+      "arguments": [
+        {
+          "name": "root",
+          "flags": [
+            "--root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "source",
+          "flags": [
+            "--source"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-skill-snapshot"
+    },
+    {
+      "name": "selection-validate",
+      "help": "usage: work skills selection-validate [-h] --root ROOT\n                                         --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --root ROOT\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "root",
+          "flags": [
+            "--root"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-skill-selection-validation"
+    },
+    {
+      "name": "selection-build",
+      "help": "usage: work skills selection-build [-h] [--root ROOT]\n                                      --input-file INPUT_FILE\n\noptions:\n  -h, --help            Return command help in a JSON response.\n  --root ROOT\n  --input-file INPUT_FILE\n",
+      "arguments": [
+        {
+          "name": "root",
+          "flags": [
+            "--root"
+          ],
+          "required": false,
+          "nargs": null,
+          "append": true,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        },
+        {
+          "name": "input_file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ],
+      "exclusive_groups": [],
+      "children": [],
+      "response_contract": "work-skill-selection"
+    }
+  ]
+}

@@ -1,16 +1,16 @@
 # Tooling CLI public contract
 
-Use the executable inside the discovered Tooling Skill root: `scripts/tooling` on macOS or `scripts/tooling.exe` on Windows. Invoke `--help`, `contract example --help`, `policy discover --help`, `policy load --help`, and `operation evaluate --help` there. Do not assume `tooling` is on `PATH`. The CLI reads UTF-8 JSON files for the two `--input-file` commands. Its output is one JSON object on stdout; the exit code is part of the result.
+Use the executable inside the discovered Tooling Skill root: `scripts/tooling` on macOS or `scripts/tooling.exe` on Windows. Invoke `--help`, `contract describe --command "tooling policy load"`, `policy discover --help`, `policy load --help`, and `operation evaluate --help` there. Do not assume `tooling` is on `PATH`. The CLI reads UTF-8 JSON files for the two `--input-file` commands. Its output is one JSON object on stdout; the exit code is part of the result. Follow the on-demand Contract Skill for query semantics.
 
-The authoritative JSON request examples are embedded from `tooling-model/resources/contract/examples` into the CLI. Obtain them with `contract example --name policy-load-first`, `contract example --name policy-load-reload`, or `contract example --name operation-evaluate`. Each success response has `data.request`; save that object as the UTF-8 JSON request file after substituting local paths or the previous summary. The reload example's empty `previous.sources` is a shape example, not a saved prior result; replace it with the previous successful `data.summary`.
+Obtain request examples with `contract example tooling-policy-load-request --scenario first`, `--scenario reload`, or `contract example tooling-operation-evaluate-request --scenario valid`. Each success response has `data.example`; save that object as the UTF-8 JSON request file after substituting local paths or the previous summary. The reload example's empty `previous.sources` is a shape example, not a saved prior result; replace it with the previous successful `data.summary`.
 
-Rejection examples are `contract example --name policy-load-invalid-missing-previous` and `contract example --name operation-evaluate-invalid-missing-target`. After replacing any local path placeholder, each must return exit code 3 with `reason_code: "invalid_request_json"` when submitted to its respective command. These illustrate a missing required field; other invalid cases are listed below.
+Rejection examples are `contract example tooling-policy-load-request --scenario invalid-missing-previous` and `contract example tooling-operation-evaluate-request --scenario invalid-missing-target`. Their `data.valid` is `false`; after replacing any local path placeholder, each must return exit code 3 with `reason_code: "invalid_request_json"` when submitted to its respective business command. These illustrate a missing required field; other invalid cases are listed below.
 
 With `<tooling>` set to the absolute installed executable and `<skill-root>` set to its parent Skill directory, the complete argv forms are:
 
 ```text
 <tooling> --help
-<tooling> contract example --name policy-load-first
+<tooling> contract example tooling-policy-load-request --scenario first
 <tooling> policy discover --skill-root <skill-root> --node .
 <tooling> policy load --skill-root <skill-root> --input-file <request.json>
 <tooling> operation evaluate --input-file <request.json>
@@ -45,6 +45,6 @@ Every processed command returns `{"schema":"tooling-cli-result","status":"succes
 
 `operation evaluate` success has `reason_code: "target_valid"` and `data` with `target_valid: true`, `canonical_target`, `authorization_verified: false`, `tool_fit_verified: false`, `outcome_verified: false`. Failure uses `reason_code: "target_boundary_invalid"` for a missing, invalid or escaped target. The Host must separately determine all three unverified conditions.
 
-Complete illustrative response envelopes are available through `contract example --name policy-discover-response`, `policy-load-response`, `operation-evaluate-response`, and `error-response`. They show response shape and status semantics; example digests and paths are illustrative, not observed evidence. Read the returned `data.response` object.
+Illustrative response data is available through `contract example tooling-policy-discover-response --scenario default`, `tooling-policy-load-response --scenario default`, and `tooling-operation-evaluate-response --scenario default`. Complete envelope examples use `tooling-cli-result --scenario success|error`. These show response shape and status semantics; example digests and paths are illustrative, not observed evidence. Read the returned `data.example` object.
 
 Examples of failures: malformed JSON or missing fields → `invalid_request_json` (3); duplicate or undeclared applicable Reference → `invalid_references` (4); invalid previous summary → `invalid_previous_summary` (4); invalid policy source → `policy_source_invalid` (5); unreadable request file → `input_file_read_failed` (8). The rejected command's `data` carries diagnostic fields that vary by reason. Legacy Host-claim fields in evaluate are rejected as `operation_contract_retired` (4).

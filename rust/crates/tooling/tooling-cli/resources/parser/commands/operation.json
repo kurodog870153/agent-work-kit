@@ -1,0 +1,30 @@
+{
+  "name": "operation",
+  "help": "Evaluate operation boundaries",
+  "arguments": [],
+  "exclusive_groups": [],
+  "children": [
+    {
+      "name": "evaluate",
+      "help": "Evaluate an operation",
+      "request_contract": "tooling-operation-evaluate-request",
+      "response_contract": "tooling-operation-evaluate-response",
+      "exclusive_groups": [],
+      "children": [],
+      "arguments": [
+        {
+          "name": "input-file",
+          "flags": [
+            "--input-file"
+          ],
+          "required": true,
+          "nargs": null,
+          "append": false,
+          "boolean": false,
+          "choices": null,
+          "help": null
+        }
+      ]
+    }
+  ]
+}

@@ -310,6 +310,20 @@ def assert_state_for_host(work, version, workspace_version, global_agents, globa
         raise AssertionError(f"installed Tooling public smoke failed: {smoke.stdout} {smoke.stderr}")
     if (tooling / "references/instructions/interfaces/repl").exists():
         raise AssertionError("installed Tooling retained the removed REPL interface")
+    contract = work.parent / "contract"
+    if contract.is_symlink() or contract.resolve() != work.parent.resolve() / "contract":
+        raise AssertionError("installed Contract Skill escapes the shared Skills parent")
+    for required in ("SKILL.md", "references/instruction-loading.md", "references/instruction-loading/queries.md"):
+        if not (contract / required).is_file():
+            raise AssertionError(f"installed Contract omitted {required}")
+    for executable, args, expected_id in (
+        (binary, ("--project-root", str(work.parent), "contract", "describe", "work-cli-result"), "work-cli-result"),
+        (tooling_binary, ("contract", "describe", "tooling-cli-result"), "tooling-cli-result"),
+    ):
+        result = subprocess.run([str(executable), *args], check=True, capture_output=True, timeout=30)
+        response = json.loads(result.stdout)
+        if response.get("status") != "success" or response.get("data", {}).get("contract_id") != expected_id:
+            raise AssertionError(f"installed Contract query failed: {expected_id}")
 
 
 def assert_no_work_transactions(work):

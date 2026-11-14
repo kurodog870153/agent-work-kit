@@ -19,7 +19,72 @@
       "collection_contract"
     ],
     "example": {
-      "collection_contract": {},
+      "collection_contract": {
+        "acceptance_criteria": [
+          {
+            "criterion": "The result is verified.",
+            "id": "ACCEPTANCE-001"
+          }
+        ],
+        "artifacts": {
+          "execution": "outputs/work/executions/example",
+          "source": "outputs/work/sources/example",
+          "task": "outputs/work/tasks/example/index.json"
+        },
+        "hierarchy_selection": {
+          "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "decision": "general_only",
+          "entries": [],
+          "schema": "work-hierarchy-selection",
+          "selected_paths": [],
+          "selection_sha256": "5b6cb01927d653c3a02a0a4a56e010d9c98ba5aa42032e7f54686f55141a0403"
+        },
+        "instruction_selection": {
+          "instructions_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "references": [],
+          "sources": [
+            {
+              "canonical_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "kind": "instruction",
+              "logical_name": "task.general"
+            }
+          ]
+        },
+        "readiness": {
+          "spec_id": "TASK-SPEC-001",
+          "status": "passed"
+        },
+        "requirement_id": "example",
+        "schema": "work-task-collection-projection",
+        "skill_selection": {
+          "decision": "base_only",
+          "schema": "work-skill-selection",
+          "selection_sha256": "a09357ef9f22c43dca16b489da61b287838bf64963a5956bf52ae0327e04a959",
+          "skills": []
+        },
+        "source": {
+          "kind": "snapshot",
+          "manifest": {
+            "captured_at": "2026-10-03T00:00:00Z",
+            "content": {
+              "path": "source.txt",
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "size": 0
+            },
+            "requirement_id": "example",
+            "schema": "work-source-snapshot",
+            "source": {
+              "kind": "user_text"
+            },
+            "source_id": "SRC-001"
+          }
+        },
+        "spec_id": "TASK-SPEC-001",
+        "status": "confirmed",
+        "summary": "Example tasks.",
+        "tasks": [],
+        "title": "Example"
+      },
       "hierarchy_selection_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "instructions_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "requirement_id": "example",

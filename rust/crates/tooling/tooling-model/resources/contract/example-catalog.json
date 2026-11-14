@@ -1,0 +1,12 @@
+[
+  {"contract_id":"tooling-policy-load-request","scenario":"first","valid":true,"file":"policy-load-first.json"},
+  {"contract_id":"tooling-policy-load-request","scenario":"reload","valid":true,"file":"policy-load-reload.json"},
+  {"contract_id":"tooling-policy-load-request","scenario":"invalid-missing-previous","valid":false,"file":"policy-load-invalid-missing-previous.json"},
+  {"contract_id":"tooling-operation-evaluate-request","scenario":"valid","valid":true,"file":"operation-evaluate.json"},
+  {"contract_id":"tooling-operation-evaluate-request","scenario":"invalid-missing-target","valid":false,"file":"operation-evaluate-invalid-missing-target.json"},
+  {"contract_id":"tooling-policy-discover-response","scenario":"default","valid":true,"file":"policy-discover-response.json","extract":"data"},
+  {"contract_id":"tooling-policy-load-response","scenario":"default","valid":true,"file":"policy-load-response.json","extract":"data"},
+  {"contract_id":"tooling-operation-evaluate-response","scenario":"default","valid":true,"file":"operation-evaluate-response.json","extract":"data"},
+  {"contract_id":"tooling-cli-result","scenario":"success","valid":true,"file":"policy-load-response.json"},
+  {"contract_id":"tooling-cli-result","scenario":"error","valid":true,"file":"error-response.json"}
+]
