@@ -5,10 +5,5 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-host-environment = { path = "../../common/host-environment" }
-skill-api = { path = "../../skill/skill-api" }
+contract-core = { path = "../../common/contract-core" }
 serde.workspace = true
-serde_json.workspace = true
-
-[build-dependencies]
-serde_json.workspace = true

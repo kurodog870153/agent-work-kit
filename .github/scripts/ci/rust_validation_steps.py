@@ -18,36 +18,38 @@ def set_up_toolchain():
 
 
 def build_release_binaries():
-    for package in ("work-cli", "tooling-cli"):
+    for package in ("work-cli", "skill-cli"):
         run_checked("cargo", "build", "--release", "--locked", "-p", package)
 
 
 def smoke_test_binaries():
     suffix = ".exe" if sys.platform == "win32" else ""
-    for binary in ("work", "tooling"):
+    for binary in ("work", "skill"):
         run_checked(str(Path("target/release") / f"{binary}{suffix}"), "--help")
 
 
-def verify_host_activation():
+def simulate_host():
     suffix = ".exe" if sys.platform == "win32" else ""
     run_checked(
         sys.executable,
         "-B",
-        "../.github/scripts/tests/release/test_host_activation_modes.py",
+        "../.github/scripts/release/host_simulation.py",
         "--work",
         f"target/release/work{suffix}",
-        "--tooling",
-        f"target/release/tooling{suffix}",
+        "--skill",
+        f"target/release/skill{suffix}",
+        "--skills-dir",
+        "../skills",
         "--evidence",
-        ".ci-perf/host-activation.json",
+        ".ci-perf/host-simulation.json",
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("setup", "build", "smoke", "activation"))
+    parser.add_argument("action", choices=("setup", "build", "smoke", "simulation"))
     args = parser.parse_args()
-    {"setup": set_up_toolchain, "build": build_release_binaries, "smoke": smoke_test_binaries, "activation": verify_host_activation}[args.action]()
+    {"setup": set_up_toolchain, "build": build_release_binaries, "smoke": smoke_test_binaries, "simulation": simulate_host}[args.action]()
 
 
 if __name__ == "__main__":

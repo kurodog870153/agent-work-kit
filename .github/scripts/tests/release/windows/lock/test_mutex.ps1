@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 . (Join-Path $repoRoot 'os-scripts/windows/installer/lock/mutex.ps1')
-$result = Invoke-InstallerLocked -Transaction { param($value) "ok:$value" } -Arguments @('normal') -InstallerHost 'codex'
-if ($result -ne 'ok:normal') { throw 'normal transaction failed' }
+$result = Invoke-InstallerLocked -Transaction { 'ok' }
+if ($result -ne 'ok') { throw 'normal transaction failed' }
 $scratch = Join-Path $repoRoot ('.installer-test-lock.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolvedScratch = (Resolve-Path -LiteralPath $scratch).Path
@@ -13,7 +13,7 @@ $job = $null
 try {
     $job = Start-Job -ArgumentList $marker -ScriptBlock {
         param($path)
-        $mutex = [Threading.Mutex]::new($false, 'Global\AgentWorkKitInstallCodex')
+        $mutex = [Threading.Mutex]::new($false, 'Global\AgentWorkKitInstall')
         $null = $mutex.WaitOne(0)
         Set-Content -LiteralPath $path -Value 'ready'
         Start-Sleep -Seconds 30
@@ -23,16 +23,16 @@ try {
     for ($attempt = 0; $attempt -lt 100 -and -not (Test-Path -LiteralPath $marker); $attempt++) { Start-Sleep -Milliseconds 100 }
     if (-not (Test-Path -LiteralPath $marker)) { throw 'lock holder did not start' }
     try {
-        $null = Invoke-InstallerLocked -Transaction { 'unexpected' } -InstallerHost 'codex'
+        $null = Invoke-InstallerLocked -Transaction { 'unexpected' }
         throw 'concurrent installation acquired lock'
     } catch {
-        if ($_.Exception.Message -notmatch 'another Work installation') { throw }
+        if ($_.Exception.Message -notmatch 'another installation') { throw }
     }
     Stop-Job $job
     $null = Wait-Job $job
-    $result = Invoke-InstallerLocked -Transaction { 'after-abandon' } -InstallerHost 'codex'
+    $result = Invoke-InstallerLocked -Transaction { 'after-abandon' }
     if ($result -ne 'after-abandon') { throw 'abandoned mutex was not recovered' }
-    Write-Output 'Windows native lock cases passed.'
+    Write-Output 'Windows installation lock cases passed.'
 } finally {
     if ($null -ne $job) { Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -Force -ErrorAction SilentlyContinue }
     if ((Resolve-Path -LiteralPath $scratch).Path -eq $resolvedScratch) { Remove-Item -LiteralPath $resolvedScratch -Recurse -Force }

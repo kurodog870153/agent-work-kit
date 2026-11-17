@@ -5,5 +5,5 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+contract-core = { path = "../../common/contract-core" }
 serde.workspace = true
-serde_json.workspace = true

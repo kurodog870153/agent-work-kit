@@ -9,11 +9,10 @@ name = "work"
 path = "src/main.rs"
 
 [dependencies]
-ci-timing = { path = "../../common/ci-timing" }
+clap.workspace = true
 contract-core = { path = "../../common/contract-core" }
+serde.workspace = true
+serde_json.workspace = true
 work-flow = { path = "../work-flow" }
 work-infrastructure = { path = "../work-infrastructure" }
 work-model = { path = "../work-model" }
-serde.workspace = true
-serde_json.workspace = true
-clap.workspace = true

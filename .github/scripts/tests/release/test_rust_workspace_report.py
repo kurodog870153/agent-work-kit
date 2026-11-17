@@ -29,11 +29,10 @@ class RustWorkspaceReportTests(unittest.TestCase):
             (rust[platform] / ".ci-perf/performance.json").write_text(json.dumps(result), encoding="utf-8")
             for host in HOSTS:
                 content = ("# Installed Rust CLI smoke evidence\n\n"
-                           "$ work --project-root <root> task validate\n"
-                           "## Tooling CLI smoke\n\n```json\n" +
-                           json.dumps({"first_sources": 4, "changed_sources": 5,
-                                       "target_boundary": "target_valid",
-                                       "incompatible_policy_blocked": True}) + "\n```\n")
+                           "## Host simulation\n\n```json\n" +
+                           json.dumps({"work_contracts": 25, "skill_contracts": 5, "on_demand_sources": 3,
+                                       "discussion_versions": 3, "trace_anchors": 6,
+                                       "independent_skills": ["work", "tooling"]}) + "\n```\n")
                 (smoke[platform] / f"{host}-{platform}.md").write_text(content, encoding="utf-8")
         return rust, smoke
 

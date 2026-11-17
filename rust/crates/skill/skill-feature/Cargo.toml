@@ -5,4 +5,5 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-serde_json.workspace = true
+skill-model = { path = "../skill-model" }
+skill-operations = { path = "../skill-operations" }

@@ -1,444 +1,116 @@
-param([string] $Binary)
 $ErrorActionPreference = 'Stop'
+# Installer core scenarios on a temporary target with stub binaries (fixtures are generated here).
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
-$baseVersion = ([IO.File]::ReadAllText((Join-Path $repoRoot 'VERSION'))).Trim()
-$parts = [version] $baseVersion
-$nextVersion = "$($parts.Major).$($parts.Minor).$($parts.Build + 1)"
-$olderVersion = if ($parts.Build -gt 0) { "$($parts.Major).$($parts.Minor).$($parts.Build - 1)" }
-    elseif ($parts.Minor -gt 0) { "$($parts.Major).$($parts.Minor - 1).0" }
-    else { "$($parts.Major - 1).0.0" }
-$workspaceManifest = [IO.File]::ReadAllText((Join-Path $repoRoot 'rust/Cargo.toml'))
-$workspaceVersion = [regex]::Match($workspaceManifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$').Groups[1].Value
-if ([string]::IsNullOrEmpty($workspaceVersion)) { throw 'Rust workspace test version is missing' }
-function Write-TestReleaseInfo {
-    param([string] $Root, [string] $Version, [string] $InstallerHost)
-    [IO.File]::WriteAllText((Join-Path $Root 'release-info.json'),
-        ([ordered]@{ host = $InstallerHost; target = 'x86_64-pc-windows-msvc'; version = $Version; rust_workspace_version = $workspaceVersion } | ConvertTo-Json -Compress))
-}
-if ([string]::IsNullOrEmpty($Binary)) { $Binary = Join-Path $repoRoot 'rust/target/release/work.exe' }
-$binary = (Resolve-Path -LiteralPath $Binary).Path
-if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'native Work binary is required for core fixture' }
+$core = Join-Path $repoRoot 'os-scripts/windows/installer/install/install-core.ps1'
 $scratch = Join-Path $repoRoot ('.installer-test-core.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolved = (Resolve-Path -LiteralPath $scratch).Path
 if (-not $resolved.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
     -not ([IO.Path]::GetFileName($resolved) -match '^\.installer-test-core\.[0-9a-f]{32}$')) { throw 'unsafe cleanup path' }
-$originalUserProfile = $env:USERPROFILE
-$originalHome = $env:HOME
-$originalPath = $env:PATH
-$originalTestWorkBinary = $env:TEST_WORK_BINARY
-$originalTestToolingBinary = $env:TEST_TOOLING_BINARY
-$testHome = Join-Path $scratch 'home'
-New-Item -ItemType Directory -Path $testHome | Out-Null
-$env:USERPROFILE = $testHome
-$env:HOME = $testHome
-function Test-CoreRejected {
-    param([string] $Core, [string] $Root, [string] $Target)
+$originalProfile = $env:USERPROFILE
+
+function Fail([string] $Message) { throw "FAIL: $Message" }
+function Run([string[]] $Arguments, [hashtable] $Environment = @{}) {
+    foreach ($key in $Environment.Keys) { Set-Item -Path "env:$key" -Value $Environment[$key] }
+    # Expected failures write to stderr; with 'Stop' the merged stderr would throw instead of returning the exit code.
     $ErrorActionPreference = 'Continue'
-    & powershell.exe -NoProfile -File $Core -Mode package -Root $Root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $Target) 2>$null | Out-Null
-    return $LASTEXITCODE -ne 0
+    try {
+        $output = & pwsh -NoProfile -File $core -Mode package -Root $root @Arguments --non-interactive --skills-dir $skills 2>&1
+        return [pscustomobject]@{ Code = $LASTEXITCODE; Output = ($output | Out-String) }
+    } finally { foreach ($key in $Environment.Keys) { Remove-Item -Path "env:$key" -ErrorAction SilentlyContinue } }
 }
-function Invoke-CombinedRecoveryExpectedFailure {
-    param([string] $Core, [string] $Root, [string] $Global, [string] $Work)
-    $ErrorActionPreference = 'Continue'
-    @('y', 'y') | & powershell.exe -NoProfile -File $Core -Mode package -Root $Root --host codex --global-instructions yes --instructions-dir $Global --skills-dir (Split-Path -Parent $Work) 2>$null | Out-Null
-    return $LASTEXITCODE
+function Get-Snapshot {
+    $lines = foreach ($base in @($scratch + '\t', $scratch + '\g')) {
+        if (Test-Path -LiteralPath $base) {
+            Get-ChildItem -LiteralPath $base -Recurse -File -Force | ForEach-Object {
+                "$($_.FullName.Substring($scratch.Length))  $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+            }
+        }
+    }
+    return (@($lines) | Sort-Object) -join "`n"
 }
+
 try {
-    $linkedCodex = Join-Path $scratch 'linked-codex'
-    New-Item -ItemType Directory -Path $linkedCodex | Out-Null
-    New-Item -ItemType Junction -Path (Join-Path $testHome '.codex') -Target $linkedCodex | Out-Null
     $root = Join-Path $scratch 'package'
-    New-Item -ItemType Directory -Path (Join-Path $root 'skills') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/work') -Destination (Join-Path $root 'skills/work') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/tooling') -Destination (Join-Path $root 'skills/tooling') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/contract') -Destination (Join-Path $root 'skills/contract') -Recurse
-    New-Item -ItemType Directory -Path (Join-Path $root 'bin') -Force | Out-Null
-    Copy-Item -LiteralPath $binary -Destination (Join-Path $root 'bin/work.exe')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'rust/target/release/tooling.exe') -Destination (Join-Path $root 'bin/tooling.exe')
-    New-Item -ItemType Directory -Path (Join-Path $root 'instructions') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'instructions/global-instructions.md') -Destination (Join-Path $root 'instructions/global-instructions.md')
-    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
-    New-Item -ItemType Directory -Path (Join-Path $root 'installer/state') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/install-state.json') -Destination (Join-Path $root 'installer/state/install-state.json')
-    $target = Join-Path $scratch 'installed/work'
-    $core = Join-Path $repoRoot 'os-scripts/windows/installer/install/install-core.ps1'
-    $sourceEntry = Join-Path $repoRoot 'os-scripts/windows/install-agent-work-kit-from-source.bat'
-    $specialDirectory = ([string]::Concat([char]0x76EE, [char]0x9304)) + ' & ' +
-        ([string]::Concat([char]0x7A7A, [char]0x767D))
-    $specialTarget = Join-Path (Join-Path $scratch $specialDirectory) 'work'
-    & $sourceEntry --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $specialTarget) --dry-run | Out-Null
-    if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $specialTarget)) { throw 'Source batch argument boundary failed' }
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) --dry-run | Out-Null
-    if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath $target)) { throw 'dry run modified target or failed' }
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'package core first install failed' }
-    $toolingTarget = Join-Path (Split-Path -Parent $target) 'tooling'
-    $contractTarget = Join-Path (Split-Path -Parent $target) 'contract'
-    $parentState = Join-Path (Split-Path -Parent $target) 'install-state.json'
-    if (-not (Test-Path -LiteralPath (Join-Path $target 'scripts/work.exe')) -or
-        -not (Test-Path -LiteralPath $parentState) -or
-        (Test-Path -LiteralPath (Join-Path $target 'install-state.json')) -or
-        (Test-Path -LiteralPath (Join-Path $toolingTarget 'install-state.json')) -or
-        -not (Test-Path -LiteralPath (Join-Path $toolingTarget 'scripts/tooling.exe')) -or
-        -not (Test-Path -LiteralPath (Join-Path $contractTarget 'SKILL.md')) -or
-        -not (Test-Path -LiteralPath (Join-Path $contractTarget 'references/instruction-loading/queries.md')) -or
-        -not (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/mcp/instructions.md')) -or
-        (Test-Path -LiteralPath (Join-Path $toolingTarget 'references/instructions/interfaces/repl'))) { throw 'installed files missing or removed REPL retained' }
-    $state = Get-Content -LiteralPath $parentState -Raw | ConvertFrom-Json
-    if ($state.host -cne 'codex' -or $state.version -ne $baseVersion -or $state.rust_workspace_version -ne $workspaceVersion -or
-        $state.skill_install_dir -ne (Split-Path -Parent $target) -or
-        $null -ne $state.global_instructions_dir -or $state.status -ne 'installed' -or
-        @($state.PSObject.Properties).Count -ne 6) {
-        throw 'installed state is wrong'
+    New-Item -ItemType Directory -Path (Join-Path $root 'bin'), (Join-Path $root 'instructions'), (Join-Path $scratch 'home') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills') -Destination (Join-Path $root 'skills') -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'instructions/global-instructions.md') -Destination (Join-Path $root 'instructions')
+    foreach ($name in 'work', 'skill') {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "rust/target/release/$name.exe") -Destination (Join-Path $root "bin/$name.exe")
     }
-    if (((Get-Item -LiteralPath $contractTarget -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-        (Resolve-Path -LiteralPath $contractTarget).Path -cne (Join-Path (Split-Path -Parent $target) 'contract')) {
-        throw 'installed Contract path is unsafe'
+    $info = '{"host":"codex","version":"2.5.0","rust_workspace_version":"3.0.0","target":"x86_64-pc-windows-msvc"}'
+    [IO.File]::WriteAllText((Join-Path $root 'release-info.json'), $info)
+    $env:USERPROFILE = Join-Path $scratch 'home'
+    $skills = Join-Path $scratch 't\skills'
+    $cliDir = Join-Path $scratch 't\agent-work-kit'
+    $globalDir = Join-Path $scratch 'g'
+    $codex = @('--host', 'codex')
+
+    $result = Run ($codex + @('--global-instructions', 'no', '--dry-run'))
+    if ($result.Code -ne 0) { Fail "dry run: $($result.Output)" }
+    if (Test-Path -LiteralPath (Join-Path $scratch 't')) { Fail 'dry run changed target' }
+    $result = Run ($codex + @('--instructions-dir', $globalDir))
+    if ($result.Code -ne 0) { Fail "first install: $($result.Output)" }
+    foreach ($path in @('t\skills\work\SKILL.md', 't\skills\tooling\SKILL.md', 't\skills\shared\bootstrap.md', 't\skills\install-state.json',
+            't\agent-work-kit\bin\work.exe', 't\agent-work-kit\bin\skill.exe', 'g\AGENTS.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $scratch $path) -PathType Leaf)) { Fail "missing $path" }
     }
-    $workContract = & (Join-Path $target 'scripts/work.exe') --project-root $scratch contract describe work-cli-result | ConvertFrom-Json
-    $toolingContract = & (Join-Path $toolingTarget 'scripts/tooling.exe') contract describe tooling-cli-result | ConvertFrom-Json
-    if ($workContract.status -cne 'success' -or $workContract.data.contract_id -cne 'work-cli-result' -or
-        $toolingContract.status -cne 'success' -or $toolingContract.data.contract_id -cne 'tooling-cli-result') {
-        throw 'installed Contract Skill cannot locate matching Work and Tooling queries'
+    foreach ($path in @('t\skills\contract', 't\skills\shared\SKILL.md', 't\skills\work\scripts', 't\skills\.agent-work-kit-txn')) {
+        if (Test-Path -LiteralPath (Join-Path $scratch $path)) { Fail "unexpected $path" }
     }
-    $claudeParent = Join-Path $scratch 'claude-skills'
-    $claudeGlobal = Join-Path $scratch 'claude-global'
-    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'claude'
-    $mismatchParent = Join-Path $scratch 'mismatched-package'
-    $ErrorActionPreference = 'Continue'
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive `
-        --global-instructions no --skills-dir $mismatchParent 2>$null | Out-Null
-    $ErrorActionPreference = 'Stop'
-    if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $mismatchParent)) {
-        throw 'mismatched package Host changed the target'
+    $result = Run ($codex + @('--instructions-dir', $globalDir))
+    if ($result.Code -ne 0 -or $result.Output -notmatch 'unchanged') { Fail "reinstall: $($result.Output)" }
+
+    $before = Get-Snapshot
+    foreach ($stage in 'prepare', 'apply-work-moved', 'apply-work', 'apply-shared', 'apply-bin', 'verify') {
+        $result = Run ($codex + @('--instructions-dir', $globalDir)) @{ INSTALLER_TEST_FAILURE = $stage }
+        if ($result.Code -eq 0) { Fail "failure at $stage was ignored" }
+        if ((Get-Snapshot) -ne $before -or (Test-Path -LiteralPath (Join-Path $skills '.agent-work-kit-txn'))) { Fail "failure at $stage did not restore" }
     }
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host claude --non-interactive `
-        --global-instructions yes --skills-dir $claudeParent --instructions-dir $claudeGlobal | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Claude core first install failed' }
-    $claudeState = Get-Content -LiteralPath (Join-Path $claudeParent 'install-state.json') -Raw | ConvertFrom-Json
-    if ($claudeState.host -cne 'claude' -or $claudeState.global_instructions_dir -cne $claudeGlobal -or
-        -not (Test-Path -LiteralPath (Join-Path $claudeParent 'work/scripts/work.exe')) -or
-        -not (Test-Path -LiteralPath (Join-Path $claudeGlobal 'CLAUDE.md')) -or
-        (Test-Path -LiteralPath (Join-Path $claudeGlobal 'AGENTS.md')) -or
-        (Get-Content -LiteralPath $parentState -Raw | ConvertFrom-Json).host -cne 'codex') {
-        throw 'Claude target or Host isolation is wrong'
+    # apply-global is only reached when Global Instructions change: our own previous copy is replaceable.
+    $globalSource = Join-Path $root 'instructions/global-instructions.md'
+    $originalGlobal = [IO.File]::ReadAllBytes($globalSource)
+    Add-Content -LiteralPath $globalSource -Value 'updated'
+    $beforeGlobal = Get-Snapshot
+    $result = Run ($codex + @('--instructions-dir', $globalDir)) @{ INSTALLER_TEST_FAILURE = 'apply-global' }
+    if ($result.Code -eq 0) { Fail 'failure at apply-global was ignored' }
+    if ((Get-Snapshot) -ne $beforeGlobal -or (Test-Path -LiteralPath (Join-Path $skills '.agent-work-kit-txn'))) { Fail 'failure at apply-global did not restore' }
+    $result = Run ($codex + @('--instructions-dir', $globalDir))
+    if ($result.Code -ne 0) { Fail "replace own Global Instructions: $($result.Output)" }
+    if ((Get-FileHash -LiteralPath $globalSource).Hash -ne (Get-FileHash -LiteralPath (Join-Path $globalDir 'AGENTS.md')).Hash) { Fail 'Global Instructions not replaced' }
+    [IO.File]::WriteAllBytes($globalSource, $originalGlobal)
+    $result = Run ($codex + @('--instructions-dir', $globalDir))
+    if ($result.Code -ne 0) { Fail "restore Global Instructions: $($result.Output)" }
+    foreach ($stage in 'apply-work', 'apply-bin', 'verify', 'commit', 'after-commit') {
+        $result = Run ($codex + @('--instructions-dir', $globalDir)) @{ INSTALLER_TEST_CRASH = $stage }
+        if ($result.Code -ne 97) { Fail "crash injection $stage ($($result.Code))" }
+        $result = Run ($codex + @('--instructions-dir', $globalDir))
+        if ($result.Code -ne 0) { Fail "recovery after ${stage}: $($result.Output)" }
+        if (Test-Path -LiteralPath (Join-Path $skills '.agent-work-kit-txn')) { Fail "transaction left after $stage" }
     }
-    $codexStateBefore = [IO.File]::ReadAllText($parentState)
-    $ErrorActionPreference = 'Continue'
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host claude --non-interactive `
-        --global-instructions no --skills-dir (Split-Path -Parent $target) 2>$null | Out-Null
-    $ErrorActionPreference = 'Stop'
-    if ($LASTEXITCODE -eq 0 -or [IO.File]::ReadAllText($parentState) -cne $codexStateBefore) {
-        throw 'Claude took over Codex state'
-    }
-    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
-    $legacyChildState = Join-Path $target 'install-state.json'
-    [IO.File]::WriteAllText($legacyChildState, 'legacy state')
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
-        [IO.File]::ReadAllText($legacyChildState) -cne 'legacy state') {
-        throw 'legacy Work child state was accepted or changed'
-    }
-    Remove-Item -LiteralPath $legacyChildState
-    $toolingMarker = Join-Path $toolingTarget 'unknown.txt'
-    [IO.File]::WriteAllText($toolingMarker, 'keep')
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
-        [IO.File]::ReadAllText($toolingMarker) -cne 'keep') { throw 'unknown Tooling content was accepted or changed' }
-    Remove-Item -LiteralPath $toolingMarker
-    $contractMarker = Join-Path $contractTarget 'unknown.txt'
-    [IO.File]::WriteAllText($contractMarker, 'keep')
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
-        [IO.File]::ReadAllText($contractMarker) -cne 'keep') { throw 'unknown Contract content was accepted or changed' }
-    Remove-Item -LiteralPath $contractMarker
-    $contractSourceEntry = Join-Path $root 'skills/contract/SKILL.md'
-    $heldContractSource = Join-Path $scratch 'held-contract-skill.md'
-    Move-Item -LiteralPath $contractSourceEntry -Destination $heldContractSource
-    try {
-        if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or
-            [IO.File]::ReadAllText($parentState) -cne $codexStateBefore) {
-            throw 'missing Contract source was accepted or changed install state'
-        }
-    } finally { Move-Item -LiteralPath $heldContractSource -Destination $contractSourceEntry }
-    $legacyToolingParent = Join-Path $scratch 'legacy-tooling'
-    New-Item -ItemType Directory -Path $legacyToolingParent | Out-Null
-    Copy-Item -LiteralPath $toolingTarget -Destination (Join-Path $legacyToolingParent 'tooling') -Recurse
-    $legacyToolingState = Join-Path $legacyToolingParent 'tooling/install-state.json'
-    [IO.File]::WriteAllText($legacyToolingState, 'legacy state')
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target (Join-Path $legacyToolingParent 'work'))) {
-        throw 'noninteractive Tooling takeover was accepted'
-    }
-    @('YES', 'y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --global-instructions no --skills-dir $legacyToolingParent | Out-Null
-    if ($LASTEXITCODE -eq 0 -or
-        (Test-Path -LiteralPath (Join-Path $legacyToolingParent 'install-state.json')) -or
-        (Test-Path -LiteralPath (Join-Path $legacyToolingParent 'work/scripts/work.exe')) -or
-        [IO.File]::ReadAllText($legacyToolingState) -cne 'legacy state') {
-        throw 'legacy Tooling directory was taken over'
-    }
-    if (Test-Path -LiteralPath (Join-Path $linkedCodex 'AGENTS.md')) {
-        throw '--global-instructions no modified linked Global AGENTS directory'
-    }
-    [IO.File]::WriteAllText((Join-Path $target 'unknown.txt'), 'keep')
-    foreach ($mode in @('interactive', 'non-interactive')) {
-        $ErrorActionPreference = 'Continue'
-        if ($mode -eq 'non-interactive') {
-            $message = & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) 2>&1 | Out-String
-        } else {
-            $message = @('y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --global-instructions no --skills-dir (Split-Path -Parent $target) 2>&1 | Out-String
-        }
-        $failureCode = $LASTEXITCODE
-        $ErrorActionPreference = 'Stop'
-        if ($failureCode -eq 0 -or $message -notmatch 'unknown entry: unknown.txt' -or
-            $message -notmatch '--skills-dir' -or [IO.File]::ReadAllText((Join-Path $target 'unknown.txt')) -cne 'keep') {
-            throw "$mode unsafe Work diagnostic or preservation failed (exit $failureCode): $message"
-        }
-    }
-    Remove-Item -LiteralPath (Join-Path $target 'unknown.txt')
-    $ErrorActionPreference = 'Continue'
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --skills-dir (Join-Path $scratch 'unsafe-global') 2>$null | Out-Null
-    $unsafeGlobalExit = $LASTEXITCODE
-    $ErrorActionPreference = 'Stop'
-    if ($unsafeGlobalExit -eq 0) { throw 'enabled Global AGENTS accepted linked directory' }
-    $interactiveTarget = Join-Path (Join-Path $scratch 'custom Work') 'work'
-    @('2', (Split-Path -Parent $interactiveTarget), 'y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --global-instructions no | Out-Null
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $interactiveTarget 'scripts/work.exe'))) {
-        throw 'interactive custom Work directory install failed'
-    }
-    $globalWorkTarget = Join-Path (Join-Path $scratch 'global Work') 'work'
-    $globalDirectory = Join-Path $scratch 'custom Global'
-    @('2', $globalDirectory, 'y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --skills-dir (Split-Path -Parent $globalWorkTarget) --global-instructions yes | Out-Null
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $globalWorkTarget 'scripts/work.exe')) -or
-        -not (Test-Path -LiteralPath (Join-Path $globalDirectory 'AGENTS.md'))) {
-        throw 'interactive custom Global AGENTS directory install failed'
-    }
-    & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions no --skills-dir (Split-Path -Parent $target) | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'same-version reinstall failed' }
-    Write-TestReleaseInfo -Root $root -Version $olderVersion -InstallerHost 'codex'
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target)) { throw 'downgrade was accepted' }
-    Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
-    [IO.File]::WriteAllText((Join-Path $target 'unknown.txt'), 'keep')
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or [IO.File]::ReadAllText((Join-Path $target 'unknown.txt')) -cne 'keep') { throw 'unknown content was changed' }
-    Remove-Item -LiteralPath (Join-Path $target 'unknown.txt')
-    $originalBinaryHash = (Get-FileHash -LiteralPath (Join-Path $target 'scripts/work.exe') -Algorithm SHA256).Hash
-    $savedParentState = [IO.File]::ReadAllBytes($parentState)
-    Remove-Item -LiteralPath $parentState
-    if (-not (Test-CoreRejected -Core $core -Root $root -Target $target) -or (Get-FileHash -LiteralPath (Join-Path $target 'scripts/work.exe') -Algorithm SHA256).Hash -ne $originalBinaryHash) {
-        throw 'installation without parent state changed Work'
-    }
-    @('YES', 'y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --global-instructions no --skills-dir (Split-Path -Parent $target) | Out-Null
-    if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $parentState)) {
-        throw 'installation without parent state was taken over'
-    }
-    [IO.File]::WriteAllBytes($parentState, $savedParentState)
-    $lockedBinary = [IO.File]::Open((Join-Path $target 'scripts/work.exe'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
-    try {
-        if (-not (Test-CoreRejected -Core $core -Root $root -Target $target)) { throw 'in-use Work binary was accepted' }
-    } finally { $lockedBinary.Dispose() }
-    $crashInstaller = Join-Path $scratch 'crash-installer'
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/windows/installer') -Destination $crashInstaller -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/options.tsv') -Destination (Join-Path $crashInstaller 'cli/options.tsv') -Force
-    $transactionSource = Join-Path $repoRoot 'os-scripts/windows/installer/transaction/work.ps1'
-    $crashCore = Join-Path $crashInstaller 'install/install-core.ps1'
-    $caseIndex = 0
-    foreach ($point in @('staging', 'first-rename', 'second-rename', 'before-verified', 'after-verified')) {
-        $caseIndex++
-        $caseRoot = Join-Path $scratch "c$caseIndex"
-        $crashTarget = Join-Path $caseRoot 'work'
-        $crashGlobal = Join-Path $caseRoot 'global'
-        Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
-        & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $crashGlobal --skills-dir (Split-Path -Parent $crashTarget) | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "initial $point Work installation failed" }
-        $globalBefore = (Get-FileHash -LiteralPath (Join-Path $crashGlobal 'AGENTS.md') -Algorithm SHA256).Hash
-        Write-TestReleaseInfo -Root $root -Version $nextVersion -InstallerHost 'codex'
-        $contents = [IO.File]::ReadAllText($transactionSource)
-        $kill = '[Diagnostics.Process]::GetCurrentProcess().Kill()'
-        switch ($point) {
-            'staging' { $needle = "        `$inspection = Inspect-InstallerTarget -Target `$targetPath -SourceWork `$SourceWork -StateValid `$StateValid" }
-            'first-rename' { $needle = '            Move-Item -LiteralPath $targetPath -Destination $previous -ErrorAction Stop' }
-            'second-rename' { $needle = '            Move-Item -LiteralPath $prepared -Destination $targetPath -ErrorAction Stop' }
-            'before-verified' { $needle = "        [IO.File]::WriteAllText((Join-Path `$transaction 'verified.txt'), 'verified')" }
-            'after-verified' { $needle = "        [IO.File]::WriteAllText((Join-Path `$transaction 'verified.txt'), 'verified')" }
-        }
-        if ($contents.Split([string[]]@($needle), [StringSplitOptions]::None).Count -ne 2) {
-            throw "ambiguous $point crash injection point"
-        }
-        if ($point -eq 'before-verified') { $contents = $contents.Replace($needle, "        $kill`n$needle") }
-        else { $contents = $contents.Replace($needle, "$needle`n        $kill") }
-        [IO.File]::WriteAllText((Join-Path $crashInstaller 'transaction/work.ps1'), $contents)
-        & powershell.exe -NoProfile -File $crashCore -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $crashGlobal --skills-dir (Split-Path -Parent $crashTarget) 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { throw "$point crash simulation completed successfully" }
-        $transaction = @(Get-ChildItem -LiteralPath (Split-Path -Path $crashTarget -Parent) -Directory -Force |
-            Where-Object { $_.Name -match '^\.work-install\.[0-9a-f]{32}$' })
-        if ($transaction.Count -ne 1) { throw "$point crash did not leave one recovery record" }
-        $oldPath = if (Test-Path -LiteralPath (Join-Path $transaction[0].FullName 'previous')) {
-            Join-Path $transaction[0].FullName 'previous'
-        } else { $crashTarget }
-        $pendingState = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $crashTarget) 'install-state.json') -Raw | ConvertFrom-Json
-        if (-not (Test-Path -LiteralPath (Join-Path $oldPath 'scripts/work.exe')) -or
-            $pendingState.status -ne 'installing' -or
-            (Get-FileHash -LiteralPath (Join-Path $oldPath 'scripts/work.exe') -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $root 'bin/work.exe') -Algorithm SHA256).Hash -or
-            (Get-FileHash -LiteralPath (Join-Path $crashGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $globalBefore) {
-            throw "$point crash lost previous Work or changed Global AGENTS"
-        }
-        & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $crashGlobal --skills-dir (Split-Path -Parent $crashTarget) | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "$point crash recovery failed" }
-        $crashState = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $crashTarget) 'install-state.json') -Raw | ConvertFrom-Json
-        if ($crashState.version -ne $nextVersion -or $crashState.status -ne 'installed' -or
-            -not (Test-Path -LiteralPath (Join-Path $crashTarget 'scripts/work.exe')) -or
-            (Test-Path -LiteralPath $transaction[0].FullName) -or
-            (Get-FileHash -LiteralPath (Join-Path $crashGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $globalBefore) {
-            throw "$point did not finish new Work installation or changed Global AGENTS"
-        }
-    }
-    $originalGlobalSource = [IO.File]::ReadAllBytes((Join-Path $root 'instructions/global-instructions.md'))
-    $caseIndex = 0
-    foreach ($point in @('after-global', 'during-work', 'after-work-verified')) {
-        $caseIndex++
-        $caseRoot = Join-Path $scratch "g$caseIndex"
-        $caseWork = Join-Path $caseRoot 'work'
-        $caseGlobal = Join-Path $caseRoot 'global'
-        [IO.File]::WriteAllBytes((Join-Path $root 'instructions/global-instructions.md'), $originalGlobalSource)
-        Write-TestReleaseInfo -Root $root -Version $baseVersion -InstallerHost 'codex'
-        & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --non-interactive --global-instructions yes --instructions-dir $caseGlobal --skills-dir (Split-Path -Parent $caseWork) | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "$point initial combined installation failed" }
-        $oldGlobalHash = (Get-FileHash -LiteralPath (Join-Path $caseGlobal 'AGENTS.md') -Algorithm SHA256).Hash
-        [IO.File]::WriteAllText((Join-Path $root 'instructions/global-instructions.md'), "new Global AGENTS for $point`n")
-        $newGlobalHash = (Get-FileHash -LiteralPath (Join-Path $root 'instructions/global-instructions.md') -Algorithm SHA256).Hash
-        Write-TestReleaseInfo -Root $root -Version $nextVersion -InstallerHost 'codex'
-        $contents = [IO.File]::ReadAllText($transactionSource)
-        $kill = '[Diagnostics.Process]::GetCurrentProcess().Kill()'
-        switch ($point) {
-            'after-global' { $needle = '        $applied = Invoke-InstallerGlobalAgentsStage -Plan $GlobalPlan -Source $GlobalSource -Target $GlobalTarget -Transaction $globalTransaction -FailurePoint $GlobalFailurePoint' }
-            'during-work' { $needle = "            (Get-InstallerWorkFileSha256 (Join-Path `$prepared 'scripts/work.exe')))" }
-            'after-work-verified' { $needle = "        [IO.File]::WriteAllText((Join-Path `$transaction 'verified.txt'), 'verified')" }
-        }
-        if ($contents.Split([string[]]@($needle), [StringSplitOptions]::None).Count -ne 2) {
-            throw "ambiguous $point combined crash injection point"
-        }
-        [IO.File]::WriteAllText((Join-Path $crashInstaller 'transaction/work.ps1'),
-            $contents.Replace($needle, "$needle`n        $kill"))
-        @('y', 'y') | & powershell.exe -NoProfile -File $crashCore -Mode package -Root $root --host codex --global-instructions yes --instructions-dir $caseGlobal --skills-dir (Split-Path -Parent $caseWork) 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0 -or
-            (Get-FileHash -LiteralPath (Join-Path $caseGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $newGlobalHash) {
-            throw "$point did not interrupt after Global AGENTS replacement"
-        }
-        $globalTransaction = @(Get-ChildItem -LiteralPath $caseRoot -Directory -Force |
-            Where-Object { $_.Name -match '^\.agents-install\.[0-9a-f]{32}$' })
-        if ($globalTransaction.Count -ne 1 -or
-            (Get-FileHash -LiteralPath (Join-Path $globalTransaction[0].FullName 'global-previous') -Algorithm SHA256).Hash -ne $oldGlobalHash) {
-            throw "$point lost previous Global AGENTS"
-        }
-        if ($point -eq 'after-global') {
-            $recordPath = Join-Path $globalTransaction[0].FullName 'record.json'
-            $originalRecord = [IO.File]::ReadAllBytes($recordPath)
-            [IO.File]::WriteAllText($recordPath, '{"source_sha256":"invalid"}')
-            $failureCode = Invoke-CombinedRecoveryExpectedFailure -Core $core -Root $root -Global $caseGlobal -Work $caseWork
-            if ($failureCode -eq 0 -or
-                (Get-FileHash -LiteralPath (Join-Path $caseGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $newGlobalHash -or
-                (Get-FileHash -LiteralPath (Join-Path $globalTransaction[0].FullName 'global-previous') -Algorithm SHA256).Hash -ne $oldGlobalHash) {
-                throw 'damaged Global transaction record changed installed or previous content'
-            }
-            [IO.File]::WriteAllBytes($recordPath, $originalRecord)
-            [IO.File]::WriteAllText((Join-Path $caseGlobal 'AGENTS.md'), 'external edit')
-            $failureCode = Invoke-CombinedRecoveryExpectedFailure -Core $core -Root $root -Global $caseGlobal -Work $caseWork
-            if ($failureCode -eq 0 -or
-                [IO.File]::ReadAllText((Join-Path $caseGlobal 'AGENTS.md')) -cne 'external edit' -or
-                (Get-FileHash -LiteralPath (Join-Path $globalTransaction[0].FullName 'global-previous') -Algorithm SHA256).Hash -ne $oldGlobalHash) {
-                throw 'external Global AGENTS edit was overwritten or previous content was lost'
-            }
-            Copy-Item -LiteralPath (Join-Path $root 'instructions/global-instructions.md') -Destination (Join-Path $caseGlobal 'AGENTS.md') -Force
-            $unknownPath = Join-Path $globalTransaction[0].FullName 'unknown.txt'
-            [IO.File]::WriteAllText($unknownPath, 'keep')
-            $failureCode = Invoke-CombinedRecoveryExpectedFailure -Core $core -Root $root -Global $caseGlobal -Work $caseWork
-            if ($failureCode -eq 0 -or [IO.File]::ReadAllText($unknownPath) -cne 'keep' -or
-                (Get-FileHash -LiteralPath (Join-Path $globalTransaction[0].FullName 'global-previous') -Algorithm SHA256).Hash -ne $oldGlobalHash) {
-                throw 'unknown Global transaction content was changed or accepted'
-            }
-            Remove-Item -LiteralPath $unknownPath
-        }
-        $restartOutput = @('y', 'y') | & powershell.exe -NoProfile -File $core -Mode package -Root $root --host codex --global-instructions yes --instructions-dir $caseGlobal --skills-dir (Split-Path -Parent $caseWork)
-        if ($LASTEXITCODE -ne 0) { throw "$point combined recovery failed" }
-        if ($point -ne 'after-work-verified' -and ($restartOutput -join "`n") -notmatch 'Global AGENTS.md differs') {
-            throw "$point did not restore previous Global AGENTS before reinstall"
-        }
-        $finalState = Get-Content -LiteralPath (Join-Path $caseRoot 'install-state.json') -Raw | ConvertFrom-Json
-        $remaining = @(Get-ChildItem -LiteralPath $caseRoot -Directory -Force |
-            Where-Object { $_.Name -match '^\.(agents|work)-install\.' })
-        if ($finalState.version -ne $nextVersion -or $finalState.status -ne 'installed' -or
-            (Get-FileHash -LiteralPath (Join-Path $caseGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $newGlobalHash -or
-            $remaining.Count -ne 0) { throw "$point left an incomplete combined transaction" }
-    }
-    $sourceProject = Join-Path $scratch 'source-project'
-    New-Item -ItemType Directory -Path (Join-Path $sourceProject 'os-scripts') -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $sourceProject 'skills') -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $sourceProject 'rust') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'rust/Cargo.toml') -Destination (Join-Path $sourceProject 'rust/Cargo.toml')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/windows') -Destination (Join-Path $sourceProject 'os-scripts/windows') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/work') -Destination (Join-Path $sourceProject 'skills/work') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/tooling') -Destination (Join-Path $sourceProject 'skills/tooling') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'skills/contract') -Destination (Join-Path $sourceProject 'skills/contract') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/options.tsv') -Destination (Join-Path $sourceProject 'os-scripts/windows/installer/cli/options.tsv')
-    New-Item -ItemType Directory -Path (Join-Path $sourceProject 'os-scripts/common/installer') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'os-scripts/common/installer/install-state.json') -Destination (Join-Path $sourceProject 'os-scripts/common/installer/install-state.json')
-    New-Item -ItemType Directory -Path (Join-Path $sourceProject 'instructions') -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'instructions/global-instructions.md') -Destination (Join-Path $sourceProject 'instructions/global-instructions.md')
-    [IO.File]::WriteAllText((Join-Path $sourceProject 'VERSION'), "$baseVersion`n")
-    $cargoShim = Join-Path $scratch 'cargo-shim'
-    New-Item -ItemType Directory -Path $cargoShim | Out-Null
-    [IO.File]::WriteAllText((Join-Path $cargoShim 'cargo.cmd'),
-        "@echo off`r`nif not exist `"%TEST_WORK_BINARY%`" (echo test Work binary is missing 1>&2 & exit /b 1)`r`nif not exist `"%TEST_TOOLING_BINARY%`" (echo test Tooling binary is missing 1>&2 & exit /b 1)`r`nif not exist target\release mkdir target\release`r`ncopy /Y `"%TEST_WORK_BINARY%`" target\release\work.exe >nul`r`ncopy /Y `"%TEST_TOOLING_BINARY%`" target\release\tooling.exe >nul`r`n")
-    $env:TEST_WORK_BINARY = $binary
-    $env:TEST_TOOLING_BINARY = Join-Path $repoRoot 'rust/target/release/tooling.exe'
-    $env:PATH = "$cargoShim;$originalPath"
-    $publicSourceEntry = Join-Path $sourceProject 'os-scripts/windows/install-agent-work-kit-from-source.bat'
-    $publicWork = Join-Path $scratch 'public-source/work'
-    $publicGlobal = Join-Path $scratch 'public-source/global'
-    & $publicSourceEntry --host codex --non-interactive --global-instructions yes --instructions-dir $publicGlobal --skills-dir (Split-Path -Parent $publicWork) | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'public Source initial installation failed' }
-    $claudeSourceParent = Join-Path $scratch 'claude-source'
-    & $publicSourceEntry --host claude --non-interactive --global-instructions no --skills-dir $claudeSourceParent | Out-Null
-    if ($LASTEXITCODE -ne 0 -or
-        (Get-Content -LiteralPath (Join-Path $claudeSourceParent 'install-state.json') -Raw | ConvertFrom-Json).host -cne 'claude' -or
-        -not (Test-Path -LiteralPath (Join-Path $claudeSourceParent 'tooling/scripts/tooling.exe'))) {
-        throw 'Claude Source installation failed'
-    }
-    $oldPublicGlobalHash = (Get-FileHash -LiteralPath (Join-Path $publicGlobal 'AGENTS.md') -Algorithm SHA256).Hash
-    [IO.File]::WriteAllText((Join-Path $sourceProject 'VERSION'), "$nextVersion`n")
-    [IO.File]::WriteAllText((Join-Path $sourceProject 'instructions/global-instructions.md'), "new public Source Global AGENTS`n")
-    $newPublicGlobalHash = (Get-FileHash -LiteralPath (Join-Path $sourceProject 'instructions/global-instructions.md') -Algorithm SHA256).Hash
-    $publicTransaction = Join-Path $sourceProject 'os-scripts/windows/installer/transaction/work.ps1'
-    $publicContents = [IO.File]::ReadAllText($publicTransaction)
-    $publicMarker = '        $applied = Invoke-InstallerGlobalAgentsStage -Plan $GlobalPlan -Source $GlobalSource -Target $GlobalTarget -Transaction $globalTransaction -FailurePoint $GlobalFailurePoint'
-    if ($publicContents.Split([string[]]@($publicMarker), [StringSplitOptions]::None).Count -ne 2) {
-        throw 'public Source crash injection point is ambiguous'
-    }
-    [IO.File]::WriteAllText($publicTransaction, $publicContents.Replace($publicMarker,
-        "$publicMarker`n        [Diagnostics.Process]::GetCurrentProcess().Kill()"))
-    $ErrorActionPreference = 'Continue'
-    @('y', 'y') | & $publicSourceEntry --host codex --global-instructions yes --instructions-dir $publicGlobal --skills-dir (Split-Path -Parent $publicWork) 2>$null | Out-Null
-    $publicCrashExit = $LASTEXITCODE
-    $ErrorActionPreference = 'Stop'
-    $publicTransactions = @(Get-ChildItem -LiteralPath (Split-Path -Path $publicWork -Parent) -Directory -Force |
-        Where-Object { $_.Name -match '^\.agents-install\.[0-9a-f]{32}$' })
-    $oldPublicState = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $publicWork) 'install-state.json') -Raw | ConvertFrom-Json
-    if ($publicCrashExit -eq 0 -or $publicTransactions.Count -ne 1 -or $oldPublicState.status -ne 'installing' -or
-        (Get-FileHash -LiteralPath (Join-Path $publicTransactions[0].FullName 'global-previous') -Algorithm SHA256).Hash -ne $oldPublicGlobalHash -or
-        (Get-FileHash -LiteralPath (Join-Path $publicGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $newPublicGlobalHash) {
-        throw 'public Source interruption lost the previous install'
-    }
-    [IO.File]::WriteAllText($publicTransaction, $publicContents)
-    @('y', 'y') | & $publicSourceEntry --host codex --global-instructions yes --instructions-dir $publicGlobal --skills-dir (Split-Path -Parent $publicWork) | Out-Null
-    $publicState = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $publicWork) 'install-state.json') -Raw | ConvertFrom-Json
-    $remainingPublic = @(Get-ChildItem -LiteralPath (Split-Path -Path $publicWork -Parent) -Directory -Force |
-        Where-Object { $_.Name -match '^\.(agents|work)-install\.' })
-    if ($LASTEXITCODE -ne 0 -or $publicState.version -ne $nextVersion -or $publicState.status -ne 'installed' -or
-        (Get-FileHash -LiteralPath (Join-Path $publicGlobal 'AGENTS.md') -Algorithm SHA256).Hash -ne $newPublicGlobalHash -or
-        $remainingPublic.Count -ne 0) { throw 'public Source restart did not finish the transaction' }
-    Write-Output 'Windows installer core fixture passed.'
+
+    # Unknown content is never taken over.
+    Remove-Item -LiteralPath (Join-Path $scratch 't'), $globalDir -Recurse -Force
+    New-Item -ItemType Directory -Path (Join-Path $skills 'work') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $skills 'work\notes.txt'), 'mine')
+    $before = Get-Snapshot
+    if ((Run ($codex + @('--global-instructions', 'no'))).Code -eq 0) { Fail 'accepted unknown Work content' }
+    if ((Get-Snapshot) -ne $before) { Fail 'unknown content changed' }
+    Remove-Item -LiteralPath (Join-Path $scratch 't') -Recurse -Force
+    New-Item -ItemType Directory -Path $globalDir | Out-Null
+    [IO.File]::WriteAllText((Join-Path $globalDir 'AGENTS.md'), "user`n")
+    if ((Run ($codex + @('--instructions-dir', $globalDir))).Code -eq 0) { Fail 'replaced differing Global Instructions' }
+    if ([IO.File]::ReadAllText((Join-Path $globalDir 'AGENTS.md')) -ne "user`n" -or (Test-Path -LiteralPath (Join-Path $skills 'work'))) { Fail 'Global Instructions run changed state' }
+    if ((Run ($codex + @('--global-instructions', 'no'))).Code -ne 0) { Fail 'install without Global Instructions' }
+    Add-Content -LiteralPath (Join-Path $skills 'work\SKILL.md') -Value 'x'
+    $before = Get-Snapshot
+    if ((Run ($codex + @('--global-instructions', 'no'))).Code -eq 0) { Fail 'accepted modified installation' }
+    if ((Get-Snapshot) -ne $before) { Fail 'modified installation changed' }
+    Remove-Item -LiteralPath (Join-Path $scratch 't') -Recurse -Force
+    if ((Run @('--host', 'claude')).Code -eq 0) { Fail 'Host mismatch accepted' }
+    if (Test-Path -LiteralPath (Join-Path $scratch 't')) { Fail 'Host mismatch changed target' }
+    Write-Output 'Windows installer cases passed.'
 } finally {
-    $env:USERPROFILE = $originalUserProfile
-    $env:HOME = $originalHome
-    $env:PATH = $originalPath
-    $env:TEST_WORK_BINARY = $originalTestWorkBinary
-    $env:TEST_TOOLING_BINARY = $originalTestToolingBinary
+    $env:USERPROFILE = $originalProfile
     if ((Resolve-Path -LiteralPath $scratch).Path -eq $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }

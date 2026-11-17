@@ -1,4 +1,4 @@
-"""Build Host-specific Work and Tooling release ZIP assets and outer checksums."""
+"""Build Host-specific Work, Tooling, Shared and Work/Skill CLI release ZIP assets and outer checksums."""
 
 import argparse
 import hashlib
@@ -22,49 +22,33 @@ PLATFORMS = {
     "macos-arm64": {
         "runner_label": "macos-latest",
         "target": "aarch64-apple-darwin",
-        "work-binary": "bin/work",
-        "tooling_binary": "bin/tooling",
+        "binaries": ("bin/work", "bin/skill"),
         "installer": "os-scripts/mac/install-agent-work-kit-from-package.command",
         "modules": (
             "os-scripts/mac/installer/cli/parse-options.sh",
             "os-scripts/mac/installer/install/install-core.sh",
-            "os-scripts/mac/installer/install/work-install.sh",
-            "os-scripts/mac/installer/install/tooling-install.sh",
-            "os-scripts/mac/installer/install/contract-install.sh",
-            "os-scripts/mac/installer/install/migration-cleanup.sh",
-            "os-scripts/mac/installer/state/state-core.js",
-            "os-scripts/mac/installer/state/work-state.js",
-            "os-scripts/mac/installer/state/tooling-state.js",
+            "os-scripts/mac/installer/install/resources.sh",
+            "os-scripts/mac/installer/state/state.sh",
             "os-scripts/mac/installer/target/preflight.sh",
-            "os-scripts/mac/installer/transaction/work.sh",
-            "os-scripts/mac/installer/transaction/tooling.sh",
+            "os-scripts/mac/installer/transaction/transaction.sh",
             "os-scripts/mac/installer/global-instructions/policy.sh",
-            "os-scripts/mac/installer/global-instructions/transaction.sh",
             "os-scripts/mac/installer/package/verify-integrity.sh",
         ),
     },
     "windows-x64-msvc": {
         "runner_label": "windows-latest",
         "target": "x86_64-pc-windows-msvc",
-        "work-binary": "bin/work.exe",
-        "tooling_binary": "bin/tooling.exe",
+        "binaries": ("bin/work.exe", "bin/skill.exe"),
         "installer": "os-scripts/windows/install-agent-work-kit-from-package.bat",
         "modules": (
             "os-scripts/windows/installer/cli/parse-options.ps1",
             "os-scripts/windows/installer/install/install-core.ps1",
-            "os-scripts/windows/installer/install/work-install.ps1",
-            "os-scripts/windows/installer/install/tooling-install.ps1",
-            "os-scripts/windows/installer/install/contract-install.ps1",
-            "os-scripts/windows/installer/install/migration-cleanup.ps1",
+            "os-scripts/windows/installer/install/resources.ps1",
             "os-scripts/windows/installer/lock/mutex.ps1",
-            "os-scripts/windows/installer/state/state-core.ps1",
-            "os-scripts/windows/installer/state/work-state.ps1",
-            "os-scripts/windows/installer/state/tooling-state.ps1",
+            "os-scripts/windows/installer/state/state.ps1",
             "os-scripts/windows/installer/target/preflight.ps1",
-            "os-scripts/windows/installer/transaction/work.ps1",
-            "os-scripts/windows/installer/transaction/tooling.ps1",
+            "os-scripts/windows/installer/transaction/transaction.ps1",
             "os-scripts/windows/installer/global-instructions/policy.ps1",
-            "os-scripts/windows/installer/global-instructions/transaction.ps1",
             "os-scripts/windows/installer/package/verify-integrity.ps1",
         ),
     },
@@ -86,29 +70,22 @@ def checked_workspace_version(repository):
         return tomllib.load(stream)["workspace"]["package"]["version"]
 
 
+SKILL_ROOTS = ("skills/work", "skills/tooling", "skills/shared")
+
+
 def tracked_skill_files(repository):
-    result = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "skills/work", "skills/tooling", "skills/contract"],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    )
-    deleted = subprocess.run(
-        ["git", "ls-files", "-z", "--deleted", "--", "skills/work", "skills/tooling", "skills/contract"],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-    )
-    deleted_paths = {Path(name.decode("utf-8")) for name in deleted.stdout.split(b"\0") if name}
-    paths = [Path(name.decode("utf-8")) for name in result.stdout.split(b"\0") if name]
-    paths = [path for path in paths if path not in deleted_paths]
-    paths = [path for path in paths if path.suffix in {".md", ".yaml", ".yml"}]
-    if not any(path == Path("skills/work/SKILL.md") for path in paths):
-        raise ValueError("Work skill entry is missing")
-    if not any(path == Path("skills/tooling/SKILL.md") for path in paths):
-        raise ValueError("Tooling skill entry is missing")
-    if not any(path == Path("skills/contract/SKILL.md") for path in paths):
-        raise ValueError("Contract skill entry is missing")
+    """Work, Tooling and the single Shared tree; Shared is not a Skill and has no SKILL.md."""
+    def listing(*flags):
+        result = subprocess.run(["git", "ls-files", "-z", *flags, "--", *SKILL_ROOTS],
+                                cwd=repository, check=True, capture_output=True)
+        return {Path(name.decode("utf-8")) for name in result.stdout.split(b"\0") if name}
+    paths = listing("--cached", "--others", "--exclude-standard") - listing("--deleted")
+    paths = sorted(path for path in paths if path.suffix == ".md")
+    for required in ("skills/work/SKILL.md", "skills/tooling/SKILL.md", "skills/shared/bootstrap.md"):
+        if Path(required) not in paths:
+            raise ValueError(f"required Skill resource is missing: {required}")
+    if Path("skills/shared/SKILL.md") in paths:
+        raise ValueError("Shared must not be a Skill")
     return paths
 
 
@@ -121,7 +98,7 @@ def copy_asset(repository, stage, source, destination):
     shutil.copyfile(source_path, target_path)
 
 
-def build_package(repository, output, platform, binary, tooling_binary, commit, tested_environment, host):
+def build_package(repository, output, platform, work_binary, skill_binary, commit, tested_environment, host):
     if host not in HOSTS:
         raise ValueError("invalid package Host")
     config = PLATFORMS[platform]
@@ -152,7 +129,6 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
             module_path = Path(path).relative_to(f"os-scripts/{platform_dir}/installer")
             copy_asset(repository, stage, Path(path), Path("installer") / module_path)
         copy_asset(repository, stage, Path("os-scripts/common/installer/options.tsv"), Path("installer/cli/options.tsv"))
-        copy_asset(repository, stage, Path("os-scripts/common/installer/install-state.json"), Path("installer/state/install-state.json"))
         if platform == "macos-arm64":
             lock_helper = stage / "bin/work-install-lock"
             lock_helper.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +137,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
                  str(repository / "os-scripts/mac/installer/lock/native-lock.c")],
                 check=True,
             )
-        for source, destination in ((binary, config["work-binary"]), (tooling_binary, config["tooling_binary"])):
+        for source, destination in zip((work_binary, skill_binary), config["binaries"]):
             if source.is_symlink() or not source.is_file():
                 raise ValueError(f"release binary is missing or is a symlink: {source}")
             binary_target = stage / destination
@@ -189,7 +165,7 @@ def build_package(repository, output, platform, binary, tooling_binary, commit, 
                 relative = path.relative_to(stage).as_posix()
                 zip_info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
                 zip_info.create_system = 3
-                executable = relative in (config["work-binary"], config["tooling_binary"], "bin/work-install-lock") or relative.endswith(".command") or relative.endswith(".sh")
+                executable = relative in (*config["binaries"], "bin/work-install-lock") or relative.endswith(".command") or relative.endswith(".sh")
                 zip_info.external_attr = (stat.S_IFREG | (0o755 if executable else 0o644)) << 16
                 zip_info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(zip_info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
@@ -251,8 +227,8 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--platform", choices=sorted(PLATFORMS))
     parser.add_argument("--host", choices=HOSTS)
-    parser.add_argument("--binary", type=Path)
-    parser.add_argument("--tooling-binary", type=Path)
+    parser.add_argument("--work-binary", type=Path)
+    parser.add_argument("--skill-binary", type=Path)
     parser.add_argument("--commit")
     parser.add_argument("--runner-os")
     parser.add_argument("--runner-label")
@@ -265,9 +241,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.action == "package":
-            if not all((args.platform, args.host, args.binary, args.tooling_binary, args.commit, args.runner_label, args.runner_os, args.runner_arch,
+            if not all((args.platform, args.host, args.work_binary, args.skill_binary, args.commit, args.runner_label, args.runner_os, args.runner_arch,
                         args.runner_image, args.runner_image_version, args.os_name, args.os_version, args.os_build)):
-                parser.error("package requires Host, platform, both binaries, commit and all tested environment fields")
+                parser.error("package requires Host, platform, Work and Skill binaries, commit and all tested environment fields")
             tested_environment = {
                 "runner_label": args.runner_label,
                 "runner_os": args.runner_os,
@@ -278,7 +254,7 @@ def main():
                 "os_version": args.os_version,
                 "os_build": args.os_build,
             }
-            result = build_package(args.repository, args.output, args.platform, args.binary, args.tooling_binary, args.commit, tested_environment, args.host)
+            result = build_package(args.repository, args.output, args.platform, args.work_binary, args.skill_binary, args.commit, tested_environment, args.host)
         elif args.action == "downloaders":
             result = build_downloaders(args.repository, args.output)
         else:

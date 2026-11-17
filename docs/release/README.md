@@ -1,6 +1,6 @@
 # Agent Work Kit Release 安裝
 
-每個 ZIP 對應一個 Host 與平台，包含預編譯 Work／Tooling binary、Work／Tooling／Contract Skill、共用規範及安裝器。Host 可選 Codex 或 Claude Code。
+每個 ZIP 對應一個 Host 與平台，包含預編譯 Work CLI 與 Skill CLI、Work 與 Tooling Skill、兩個 Skill 共用的 Shared 指令資源、選用的 Global Instructions 及安裝器。Host 可選 Codex 或 Claude Code。
 
 ## 1. 下載
 
@@ -79,7 +79,7 @@ echo "SHA-256 驗證通過：$zip"
 
 ### 3.2 預覽安裝動作
 
-以下範例只列出預計動作，不修改正式安裝目標。Work、Tooling 與 Contract 均完整安裝。
+以下範例只列出預計動作，不修改正式安裝目標。Work、Tooling、Shared 與 Work／Skill CLI 一律共同安裝。
 
 Windows PowerShell：
 
@@ -115,7 +115,7 @@ macOS Terminal：
 ./install-agent-work-kit-from-package.command
 ```
 
-安裝器每次安裝完整 Work、Tooling 與 Contract。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
+安裝器每次共同安裝 Work、Tooling、Shared 與 Work／Skill CLI；CLI 安裝在 Skills 目錄旁的 `agent-work-kit/bin`，與 Skill 目錄分離。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
 
 ### 3.4 可用參數
 
@@ -124,7 +124,7 @@ macOS Terminal：
 1. `--help` 或 `-h`：顯示用法，不安裝。
 2. `--host codex|claude`：選擇 Host；非互動模式必填。
 3. `--global-instructions yes|no`：啟用或停用 Global Instructions。
-4. `--skills-dir <path>`：指定 Work、Tooling 與 Contract 的共同父目錄；路徑含空白時須加引號。
+4. `--skills-dir <path>`：指定 Work、Tooling 與 Shared 的共同父目錄；CLI 目錄為其同層的 `agent-work-kit`。路徑含空白時須加引號。
 5. `--instructions-dir <path>`：指定 Global Instructions 所在目錄；路徑含空白時須加引號。
 6. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
 7. `--dry-run`：列出預計動作，不修改正式安裝目標。
@@ -134,13 +134,30 @@ macOS Terminal：
 
 安裝器會依目標目錄的狀態處理：
 
-1. Work、Tooling 與 Contract 目錄不存在或為空時，視為首次安裝；沒有父層 `install-state.json` 是正常情況。
-2. 任一 Skill 目錄已有內容，但共同父目錄的 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原目錄並拒絕安裝。
+1. 目標目錄不存在或為空時，視為首次安裝；沒有 `install-state.json` 是正常情況。
+2. 目標已有內容，但 `install-state.json` 缺少、損毀或不符合目前規格時，安裝器保留原內容並拒絕接管；本安裝器不解析舊版安裝，也不提供升級、遷移或專用清理。
 3. 已選擇安裝 Global Instructions，且目標檔案內容與 ZIP 中的版本不同時，安裝器會顯示差異並詢問是否取代。拒絕取代時保留原檔案。
 4. 使用 `--non-interactive` 時，安裝器不會詢問；遇到 Global Instructions 差異等必須確認的情況，會拒絕安裝並保留原目標。
 
-### 3.6 安全警告與錯誤處理
+### 3.6 安裝狀態與重新安裝
+
+安裝器會在 Work、Tooling 與 Shared 的共同父目錄管理唯一的 `install-state.json`，用來辨識安裝版本、位置、Host、Global Instructions 設定與安裝結果。不需要手動建立或修改。
+
+| Host | 預設狀態檔位置 |
+| --- | --- |
+| Codex | `~/.agents/skills/install-state.json` |
+| Claude Code | `~/.claude/skills/install-state.json` |
+
+使用 `--skills-dir <path>` 時，Skill、Shared 與狀態檔會移至指定的共同父目錄，CLI 目錄隨之位於其同層。重新安裝時會沿用同一 Host 的有效 Global Instructions 設定，仍可用 `--global-instructions yes|no` 指定此次選擇；首次安裝預設啟用。狀態檔存在不代表安裝有效，安裝器還會檢查實際內容。
+
+### 3.7 安全警告與錯誤處理
 
 這些 binary 未經 Apple 或 Microsoft 平台簽章，作業系統可能顯示安全警告。確認下載來源、Checksum 與 Attestation 後，再依平台提供的正常操作方式允許執行。
 
-若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效父層狀態或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效安裝狀態或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+
+### 3.8 安裝中斷
+
+1. 保留安裝目錄、狀態檔、安裝器指出的交易資料及錯誤訊息。
+2. 重新執行相同的安裝命令，使用原本的安裝位置與選項，不加上 `--dry-run`，因為預覽不會處理待復原的交易。
+3. 確認安裝器回報的結果；只有通過驗證的內容才視為安裝完成。若無法辨識檔案、發現外部修改或復原失敗，停止操作並保留現場與錯誤訊息，不要自行刪除安裝目錄或交易資料。

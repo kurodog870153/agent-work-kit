@@ -13,11 +13,16 @@ if errorlevel 1 (
     echo Error: release package target is not Windows x64 MSVC.
     exit /b 1
 )
-if not exist "%package_directory%\bin\work.exe" (
-    echo Error: packaged Work binary is missing.
-    exit /b 1
+for %%B in (work skill) do (
+    if not exist "%package_directory%\bin\%%B.exe" (
+        echo Error: packaged %%B binary is missing.
+        exit /b 1
+    )
+    "%package_directory%\bin\%%B.exe" --help >nul 2>nul
+    if errorlevel 1 (
+        echo Error: packaged %%B binary failed its startup check.
+        exit /b 1
+    )
 )
-"%package_directory%\bin\work.exe" --help >nul 2>nul
-if errorlevel 1 exit /b 1
 powershell.exe -NoProfile -File "%package_directory%\installer\install\install-core.ps1" -Mode package -Root "%package_directory%" %*
 exit /b %errorlevel%

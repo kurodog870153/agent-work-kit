@@ -7,6 +7,4 @@ rust-version.workspace = true
 [dependencies]
 skill-model = { path = "../skill-model" }
 skill-operations = { path = "../skill-operations" }
-serde.workspace = true
-serde_json.workspace = true
-serde_yaml_ng.workspace = true
+skill-feature = { path = "../skill-feature" }

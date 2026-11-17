@@ -1,45 +1,22 @@
 Set-StrictMode -Version Latest
 
-function Get-InstallerFileSha256 {
-    param([Parameter(Mandatory = $true)][string] $Path)
-    $stream = [IO.File]::OpenRead($Path)
-    try {
-        $hasher = [Security.Cryptography.SHA256]::Create()
-        try {
-            return [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
-        } finally {
-            $hasher.Dispose()
-        }
-    } finally {
-        $stream.Dispose()
+# Returns @{ Action = skip|install|unchanged|replace|confirm; SourceSha256; TargetSha256 }; throws on unsafe or unauthorized targets.
+# A target equal to the previously installed copy is still ours and may be replaced.
+function Get-InstallerGlobalPlan {
+    param([string] $Source, [string] $Target, [bool] $Enabled, [bool] $NonInteractive, [string] $PreviousSha)
+    if (-not $Enabled) { return @{ Action = 'skip'; SourceSha256 = ''; TargetSha256 = '' } }
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf) -or (Test-InstallerReparse (Get-Item -LiteralPath $Source -Force))) {
+        throw 'Global Instructions source is missing or a link'
     }
-}
-
-function Get-InstallerGlobalAgentsPlan {
-    param(
-        [Parameter(Mandatory = $true)][string] $Source,
-        [Parameter(Mandatory = $true)][string] $Target,
-        [bool] $Enabled,
-        [bool] $NonInteractive,
-        [bool] $Confirmed
-    )
-    if (-not $Enabled) { return [pscustomobject]@{ Action = 'skip'; SourceSha256 = ''; TargetSha256 = '' } }
-    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) { throw "Global AGENTS source does not exist: $Source" }
-    $sourceItem = Get-Item -LiteralPath $Source -Force
-    if (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Global AGENTS source is a link' }
     $sourceHash = Get-InstallerFileSha256 -Path $Source
-    if (-not (Test-Path -LiteralPath $Target)) {
-        return [pscustomobject]@{ Action = 'install'; SourceSha256 = $sourceHash; TargetSha256 = '' }
-    }
-    $targetItem = Get-Item -LiteralPath $Target -Force
-    if ($targetItem.PSIsContainer -or ($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw 'Global AGENTS target is not a regular file'
-    }
+    if (-not (Test-Path -LiteralPath $Target)) { return @{ Action = 'install'; SourceSha256 = $sourceHash; TargetSha256 = '' } }
+    $item = Get-Item -LiteralPath $Target -Force
+    if ($item.PSIsContainer -or (Test-InstallerReparse $item)) { throw 'Global Instructions target is not a regular file' }
     $targetHash = Get-InstallerFileSha256 -Path $Target
-    if ($sourceHash -ceq $targetHash) {
-        return [pscustomobject]@{ Action = 'unchanged'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
+    if ($sourceHash -ceq $targetHash) { return @{ Action = 'unchanged'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash } }
+    if (-not [string]::IsNullOrEmpty($PreviousSha) -and $targetHash -ceq $PreviousSha) {
+        return @{ Action = 'replace'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
     }
-    if ($NonInteractive) { throw 'Global AGENTS differs and requires interactive confirmation' }
-    $action = if ($Confirmed) { 'replace' } else { 'confirm' }
-    return [pscustomobject]@{ Action = $action; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
+    if ($NonInteractive) { throw 'Global Instructions differ and need interactive confirmation' }
+    return @{ Action = 'confirm'; SourceSha256 = $sourceHash; TargetSha256 = $targetHash }
 }

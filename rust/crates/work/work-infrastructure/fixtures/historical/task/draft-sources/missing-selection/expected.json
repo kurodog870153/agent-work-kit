@@ -1,9 +1,0 @@
-{
-  "exit_code": 6,
-  "result": {
-    "code": "draft_selection_required",
-    "details": {},
-    "message": "Confirm instruction paths and references for this Task draft before continuing.",
-    "schema": "work-error"
-  }
-}

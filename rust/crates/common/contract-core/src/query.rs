@@ -1,431 +1,257 @@
-//! On-demand public contract queries. Business validation remains in each domain.
+//! On-demand public contract queries. Business validation stays in each domain.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use serde_json::{Map, Value, json};
+use crate::error::{ContractError, ContractResult};
+use crate::model::{ArgumentAction, ContractKind, ContractRecord};
+use crate::payload::{
+    ArgumentDescription, ArgumentValueType, CommandDescriptionData, ContractDescriptionData,
+    ContractIndex, ExampleData, FieldDescriptionData, FieldSummary, ListData, ScaffoldData,
+};
+use crate::registry::Registry;
+use crate::scaffold;
 
-use crate::{command, contract, example, registry};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueryError {
-    pub reason: &'static str,
-    pub message: String,
+/// Query scope of a list request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListScope {
+    All,
+    Commands,
+    Contracts,
 }
 
-impl QueryError {
-    fn new(reason: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            reason,
-            message: message.into(),
-        }
-    }
-}
-
-pub type QueryResult = Result<Value, QueryError>;
-
-fn payload(kind: &str, value: Value) -> QueryResult {
-    crate::payload::validate(kind, value.clone())
-        .map_err(|error| QueryError::new("invalid_registry_payload", error.to_string()))?;
-    Ok(value)
-}
-
-fn record(id: &str) -> Result<&'static Value, QueryError> {
-    contract(id)
-        .ok_or_else(|| QueryError::new("unknown_contract_id", format!("Unknown contract ID: {id}")))
-}
-
-pub fn list(scope: Option<&str>, prefix: Option<&str>) -> QueryResult {
-    if !matches!(scope, None | Some("commands" | "contracts")) {
-        return Err(QueryError::new(
-            "invalid_scope",
-            "Scope must be commands or contracts.",
-        ));
-    }
+pub fn list(registry: &Registry, scope: ListScope, prefix: Option<&str>) -> ListData {
     let prefix = prefix.unwrap_or("");
-    let commands: Vec<Value> = if scope != Some("contracts") {
-        registry()["commands"]
-            .as_object()
-            .expect("command index")
-            .keys()
-            .filter(|path| path.starts_with(prefix))
-            .map(|path| json!(path))
-            .collect()
-    } else {
+    let commands = if scope == ListScope::Contracts {
         Vec::new()
+    } else {
+        registry
+            .commands()
+            .map(|entry| entry.path.as_str())
+            .filter(|path| path.starts_with(prefix))
+            .map(str::to_owned)
+            .collect()
     };
-    let contracts: Vec<Value> = if scope != Some("commands") {
-        registry()["contracts"]
-            .as_object()
-            .expect("contract index")
-            .iter()
-            .filter(|(id, _)| id.starts_with(prefix))
-            .map(|(id, record)| {
-                json!({"contract_id":id,"kind":record["description"]["kind"],
-                "caller_constructible":record["description"]["caller_constructible"]})
+    let contracts = if scope == ListScope::Commands {
+        Vec::new()
+    } else {
+        registry
+            .contracts()
+            .filter(|record| record.description.id.starts_with(prefix))
+            .map(|record| ContractIndex {
+                contract_id: record.description.id.clone(),
+                kind: record.description.kind,
+                caller_constructible: record.description.caller_constructible,
             })
             .collect()
-    } else {
-        Vec::new()
     };
-    payload("list", json!({"commands":commands,"contracts":contracts}))
-}
-
-pub fn describe_command(path: &str) -> QueryResult {
-    let node = command(path)
-        .ok_or_else(|| QueryError::new("unknown_command", format!("Unknown command: {path}")))?;
-    let arguments: Vec<Value> = node["arguments"].as_array().expect("command arguments").iter().map(|argument| {
-        let name = argument["name"].as_str().expect("argument name");
-        let exclusive_with: Vec<&str> = node["exclusive_groups"].as_array().expect("groups").iter()
-            .filter_map(|group| group["members"].as_array())
-            .filter(|members| members.iter().any(|member| member == name))
-            .flat_map(|members| members.iter().filter_map(Value::as_str).filter(|member| *member != name))
-            .collect();
-        json!({"name":name,"flags":argument["flags"],"required":argument["required"],
-            "type":if argument["boolean"] == true { "boolean" } else if argument["append"] == true || argument["nargs"] == "*" { "array" } else { "string" },
-            "choices":argument["choices"],"exclusive_with":exclusive_with,"help":argument["help"]})
-    }).collect();
-    let mut result = json!({"command":path,"arguments":arguments});
-    for link in ["request_contract", "response_contract"] {
-        if let Some(id) = node[link].as_str() {
-            result[link] = json!(id);
-        }
+    ListData {
+        commands,
+        contracts,
     }
-    payload("describe", result)
 }
 
-fn decode_pointer(pointer: &str) -> Result<Vec<String>, QueryError> {
-    if !pointer.starts_with('/') || pointer.len() == 1 {
-        return Err(QueryError::new(
-            "invalid_pointer",
-            "A field pointer must start with / and name a field.",
-        ));
-    }
-    pointer[1..]
-        .split('/')
-        .map(|segment| {
-            let mut decoded = String::new();
-            let mut chars = segment.chars();
-            while let Some(ch) = chars.next() {
-                if ch == '~' {
-                    match chars.next() {
-                        Some('0') => decoded.push('~'),
-                        Some('1') => decoded.push('/'),
-                        _ => {
-                            return Err(QueryError::new(
-                                "invalid_pointer",
-                                "Invalid RFC 6901 escape.",
-                            ));
-                        }
-                    }
-                } else {
-                    decoded.push(ch);
-                }
-            }
-            Ok(decoded)
-        })
-        .collect()
-}
-
-fn encode_segment(segment: &str) -> String {
-    segment.replace('~', "~0").replace('/', "~1")
-}
-
-fn nullable(kind: &str) -> bool {
-    kind.starts_with("nullable_") || kind.split('|').any(|part| part.trim() == "null")
-}
-
-fn resolve_schema<'a>(schema: &'a Value, root: &'a Value) -> Result<&'a Value, QueryError> {
-    let mut current = schema;
-    for _ in 0..32 {
-        let Some(reference) = current["$ref"].as_str() else {
-            return Ok(current);
-        };
-        let pointer = reference.strip_prefix('#').ok_or_else(|| {
-            QueryError::new(
-                "invalid_reference",
-                "External schema references are unavailable.",
-            )
-        })?;
-        current = root.pointer(pointer).ok_or_else(|| {
-            QueryError::new(
-                "invalid_reference",
-                format!("Unknown schema reference: {reference}"),
-            )
-        })?;
-    }
-    Err(QueryError::new(
-        "invalid_reference",
-        "Schema reference cycle.",
-    ))
-}
-
-fn discriminator(schema: &Value) -> Option<&Value> {
-    schema
-        .get("discriminator")
-        .filter(|value| value.is_object())
-}
-
-fn path_candidates<'a>(
-    schema: &'a Value,
-    root: &'a Value,
-    tokens: &[String],
-    depth: usize,
-) -> Result<Vec<&'a Value>, QueryError> {
-    if depth > 32 {
-        return Err(QueryError::new(
-            "invalid_reference",
-            "Schema nesting is too deep.",
-        ));
-    }
-    let schema = resolve_schema(schema, root)?;
-    if tokens.is_empty() {
-        return Ok(vec![schema]);
-    }
-    if let Some(property) = schema["properties"].get(&tokens[0]) {
-        return path_candidates(property, root, &tokens[1..], depth + 1);
-    }
-    let mut candidates = Vec::new();
-    if let Some(variants) = schema["oneOf"]
-        .as_array()
-        .or_else(|| schema["anyOf"].as_array())
-    {
-        for variant in variants {
-            candidates.extend(path_candidates(variant, root, tokens, depth + 1)?);
-        }
-    }
-    Ok(candidates)
-}
-
-fn field_details(id: &str, pointer: &str, variant: Option<&str>) -> QueryResult {
-    let tokens = decode_pointer(pointer)?;
-    let description = &record(id)?["description"];
-    let field = description["fields"]
-        .as_array()
-        .expect("fields")
+pub fn describe_command(registry: &Registry, path: &str) -> ContractResult<CommandDescriptionData> {
+    let entry = registry
+        .command(path)
+        .ok_or_else(|| ContractError::new("unknown_command", format!("Unknown command: {path}")))?;
+    let node = &entry.node;
+    let arguments = node
+        .arguments
         .iter()
-        .find(|field| field["name"] == tokens[0])
-        .ok_or_else(|| QueryError::new("unknown_field", format!("Unknown field: {pointer}")))?;
-    let root = field["constraints"].get("schema");
-    let schema = if tokens.len() == 1 {
-        root
-    } else {
-        let root = root
-            .ok_or_else(|| QueryError::new("unknown_field", format!("Unknown field: {pointer}")))?;
-        let mut distinct = Vec::new();
-        for candidate in path_candidates(root, root, &tokens[1..], 0)? {
-            if !distinct.contains(&candidate) {
-                distinct.push(candidate);
+        .map(|argument| {
+            let exclusive_with = node
+                .exclusive_groups
+                .iter()
+                .filter(|group| group.members.iter().any(|member| member == &argument.name))
+                .flat_map(|group| group.members.iter())
+                .filter(|member| **member != argument.name)
+                .cloned()
+                .collect();
+            ArgumentDescription {
+                name: argument.name.clone(),
+                flags: argument.flags.clone(),
+                required: argument.required,
+                value_type: match argument.action {
+                    ArgumentAction::SetTrue => ArgumentValueType::Boolean,
+                    ArgumentAction::Append => ArgumentValueType::Array,
+                    ArgumentAction::Set if argument.nargs_any => ArgumentValueType::Array,
+                    ArgumentAction::Set => ArgumentValueType::String,
+                },
+                choices: argument.choices.clone(),
+                exclusive_with,
+                help: argument.help.clone(),
             }
-        }
-        if distinct.len() > 1 {
-            return Err(QueryError::new(
-                "ambiguous_field",
-                format!("Field appears in incompatible branches: {pointer}"),
-            ));
-        }
-        distinct.into_iter().next()
+        })
+        .collect();
+    Ok(CommandDescriptionData {
+        command: path.to_owned(),
+        arguments,
+        request_contract: node.request_contract.clone(),
+        response_contract: node.response_contract.clone(),
+    })
+}
+
+pub fn describe_contract(registry: &Registry, id: &str) -> ContractResult<ContractDescriptionData> {
+    let record = registry.contract(id).ok_or_else(|| {
+        ContractError::new("unknown_contract_id", format!("Unknown contract ID: {id}"))
+    })?;
+    let fields = record
+        .description
+        .fields
+        .iter()
+        .map(|field| {
+            (
+                field.name.clone(),
+                FieldSummary {
+                    name: field.name.clone(),
+                    field_type: field.field_type,
+                    nullable: field.nullable,
+                    required: field.required,
+                    reference: field.reference.clone(),
+                    details_available: field.schema.is_some() || field.constant.is_some(),
+                },
+            )
+        })
+        .collect();
+    Ok(ContractDescriptionData {
+        contract_id: id.to_owned(),
+        kind: record.description.kind,
+        fields,
+        scenarios: registry
+            .scenarios(id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    })
+}
+
+pub fn describe_field(
+    registry: &Registry,
+    id: &str,
+    pointer: &str,
+    variant: Option<&str>,
+) -> ContractResult<FieldDescriptionData> {
+    let record = registry.contract(id).ok_or_else(|| {
+        ContractError::new("unknown_contract_id", format!("Unknown contract ID: {id}"))
+    })?;
+    let tokens = scaffold::decode_pointer(pointer)?;
+    let Some((first, rest)) = tokens.split_first() else {
+        return Err(ContractError::new(
+            "invalid_pointer",
+            "A field pointer must name a field.",
+        ));
     };
-    let mut details = json!({"path":pointer,"name":tokens.last().expect("field token")});
-    if tokens.len() == 1 {
-        details["type"] = field["type"].clone();
-        details["required"] = field["required"].clone();
-        details["nullable"] = json!(field["type"].as_str().is_some_and(nullable));
-        if !field["reference"].is_null() {
-            details["reference"] = field["reference"].clone();
-        }
+    let field = record
+        .description
+        .fields
+        .iter()
+        .find(|field| field.name == *first)
+        .ok_or_else(|| ContractError::new("unknown_field", format!("Unknown field: {pointer}")))?;
+    let mut data = FieldDescriptionData {
+        contract_id: id.to_owned(),
+        path: pointer.to_owned(),
+        name: tokens.last().cloned().unwrap_or_default(),
+        field_type: None,
+        required: None,
+        nullable: None,
+        reference: None,
+        discriminator: None,
+        variants: Vec::new(),
+        variant: None,
+        constant: None,
+    };
+    if rest.is_empty() {
+        data.field_type = Some(field.field_type);
+        data.required = Some(field.required);
+        data.nullable = Some(field.nullable);
+        data.reference = field.reference.clone();
+        data.constant = field.constant.clone();
     }
-    if let Some(schema) = schema {
-        let schema = resolve_schema(schema, root.expect("schema root"))?;
-        if let Some(discriminator) = discriminator(schema) {
-            let mapping = discriminator["mapping"].as_object().ok_or_else(|| {
-                QueryError::new("invalid_discriminator", "Missing discriminator mapping.")
+    match &field.schema {
+        Some(schema) => {
+            let node = scaffold::resolve(schema, rest).ok_or_else(|| {
+                ContractError::new("unknown_field", format!("Unknown field: {pointer}"))
             })?;
-            details["discriminator"] = discriminator["propertyName"].clone();
-            details["variants"] = json!(mapping.keys().collect::<Vec<_>>());
-            if let Some(variant) = variant {
-                let reference = mapping
-                    .get(variant)
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        QueryError::new("unknown_variant", format!("Unknown variant: {variant}"))
-                    })?;
-                let target = json!({"$ref":reference});
-                details["variant"] = json!(variant);
-                details["constraints"] =
-                    resolve_schema(&target, root.expect("schema root"))?.clone();
-            }
-        } else {
-            if variant.is_some() {
-                return Err(QueryError::new(
+            if let crate::model::SchemaNode::Object {
+                discriminator: Some(discriminator),
+                ..
+            } = node
+            {
+                data.discriminator = Some(discriminator.property.clone());
+                data.variants = discriminator.mapping.keys().cloned().collect();
+                let Some(selected) = variant else {
+                    return Ok(data);
+                };
+                if !discriminator.mapping.contains_key(selected) {
+                    return Err(ContractError::new(
+                        "unknown_variant",
+                        format!("Unknown variant: {selected}"),
+                    ));
+                }
+                data.variant = Some(selected.to_owned());
+            } else if variant.is_some() {
+                return Err(ContractError::new(
                     "variant_not_applicable",
                     "The selected field has no discriminator.",
                 ));
             }
-            details["constraints"] = schema.clone();
         }
-    } else {
-        if tokens.len() > 1 {
-            return Err(QueryError::new(
-                "unknown_field",
-                format!("Unknown field: {pointer}"),
-            ));
+        None => {
+            if !rest.is_empty() {
+                return Err(ContractError::new(
+                    "unknown_field",
+                    format!("Unknown field: {pointer}"),
+                ));
+            }
+            if variant.is_some() {
+                return Err(ContractError::new(
+                    "variant_not_applicable",
+                    "The selected field has no discriminator.",
+                ));
+            }
         }
-        if variant.is_some() {
-            return Err(QueryError::new(
-                "variant_not_applicable",
-                "The selected field has no discriminator.",
-            ));
-        }
-        details["constraints"] = field["constraints"].clone();
     }
-    payload("describe", json!({"contract_id":id,"field":details}))
+    Ok(data)
 }
 
-pub fn describe_contract(id: &str, field: Option<&str>, variant: Option<&str>) -> QueryResult {
-    if let Some(field) = field {
-        return field_details(id, field, variant);
-    }
-    if variant.is_some() {
-        return Err(QueryError::new(
-            "variant_requires_field",
-            "--variant requires --field.",
-        ));
-    }
-    let description = &record(id)?["description"];
-    let fields: Map<String, Value> = description["fields"]
-        .as_array()
-        .expect("fields")
-        .iter()
-        .map(|field| {
-            let name = field["name"].as_str().expect("field name").to_owned();
-            let mut summary = json!({"type":field["type"]});
-            if field["required"] == false {
-                summary["required"] = json!(false);
-            }
-            if field["type"].as_str().is_some_and(nullable) {
-                summary["nullable"] = json!(true);
-            }
-            if let Some(reference) = field["reference"].as_str() {
-                summary["reference"] = json!(reference);
-            }
-            if !field["constraints"].as_object().is_some_and(Map::is_empty) {
-                summary["details_available"] = json!(true);
-            }
-            (name, summary)
-        })
-        .collect();
-    let scenarios: Vec<&str> = registry()["examples"][id]
-        .as_object()
-        .map(|items| items.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    payload(
-        "describe",
-        json!({"contract_id":id,"kind":description["kind"],"fields":fields,"scenarios":scenarios}),
-    )
-}
-
-pub fn example_query(id: &str, scenario: &str) -> QueryResult {
-    record(id)?;
-    let value = example(id, scenario).ok_or_else(|| {
-        QueryError::new("unknown_scenario", format!("Unknown scenario: {scenario}"))
-    })?;
-    payload(
-        "example",
-        json!({"contract_id":id,"scenario":scenario,"valid":value["valid"],"example":value["example"]}),
-    )
-}
-
-fn skeleton_schema(
-    schema: &Value,
-    root: &Value,
-    pointer: &str,
-    branches: &BTreeMap<String, String>,
-    used: &mut BTreeSet<String>,
-    unresolved: &mut BTreeSet<String>,
-    depth: usize,
-) -> Result<Value, QueryError> {
-    if depth > 32 {
-        return Err(QueryError::new(
-            "invalid_reference",
-            "Schema nesting is too deep.",
-        ));
-    }
-    let schema = resolve_schema(schema, root)?;
-    if let Some(value) = schema.get("const") {
-        return Ok(value.clone());
-    }
-    if let Some(discriminator) = discriminator(schema) {
-        let Some(variant) = branches.get(pointer) else {
-            unresolved.insert(pointer.to_owned());
-            return Ok(Value::Null);
+pub fn example_query(registry: &Registry, id: &str, scenario: &str) -> ContractResult<ExampleData> {
+    let Some(example) = registry
+        .contract(id)
+        .and_then(|_| registry.example(id, scenario))
+    else {
+        return match registry.contract(id) {
+            None => Err(ContractError::new(
+                "unknown_contract_id",
+                format!("Unknown contract ID: {id}"),
+            )),
+            Some(_) => Err(ContractError::new(
+                "unknown_scenario",
+                format!("Unknown scenario: {scenario}"),
+            )),
         };
-        let reference = discriminator["mapping"][variant].as_str().ok_or_else(|| {
-            QueryError::new(
-                "unknown_variant",
-                format!("Unknown variant at {pointer}: {variant}"),
-            )
-        })?;
-        used.insert(pointer.to_owned());
-        return skeleton_schema(
-            &json!({"$ref":reference}),
-            root,
-            pointer,
-            branches,
-            used,
-            unresolved,
-            depth + 1,
-        );
-    }
-    if let Some(required) = schema["required"].as_array() {
-        let mut object = Map::new();
-        for name in required {
-            let name = name.as_str().expect("required field name");
-            let child = schema["properties"].get(name).ok_or_else(|| {
-                QueryError::new(
-                    "invalid_schema",
-                    format!("Missing required property: {name}"),
-                )
-            })?;
-            let path = format!("{pointer}/{}", encode_segment(name));
-            object.insert(
-                name.to_owned(),
-                skeleton_schema(child, root, &path, branches, used, unresolved, depth + 1)?,
-            );
-        }
-        return Ok(Value::Object(object));
-    }
-    if schema["type"] == "object" {
-        return Ok(json!({}));
-    }
-    if schema["type"] == "array" && schema["minItems"].as_u64().unwrap_or(0) == 0 {
-        return Ok(json!([]));
-    }
-    unresolved.insert(pointer.to_owned());
-    Ok(Value::Null)
+    };
+    Ok(ExampleData {
+        contract_id: id.to_owned(),
+        scenario: scenario.to_owned(),
+        valid: example.valid,
+        example: example.example.clone(),
+    })
 }
 
-pub fn scaffold(id: &str, branch_args: &[String]) -> QueryResult {
-    let description = &record(id)?["description"];
-    if description["kind"] == "generated_request" {
-        return Err(QueryError::new(
-            "generated_request_not_caller_constructible",
-            "Generated requests must come from their formal prepare flow.",
-        ));
-    }
-    if description["kind"] != "semantic_request" || description["caller_constructible"] != true {
-        return Err(QueryError::new(
-            "contract_scaffold_requires_request",
-            "Only caller-constructible requests can be scaffolded.",
-        ));
-    }
+pub fn scaffold_query(
+    registry: &Registry,
+    id: &str,
+    branch_args: &[String],
+) -> ContractResult<ScaffoldData> {
+    let record = request_record(registry, id)?;
     let mut branches = BTreeMap::new();
     for raw in branch_args {
         let (pointer, variant) = raw.split_once('=').ok_or_else(|| {
-            QueryError::new("invalid_branch", "Branch must be <pointer>=<variant>.")
+            ContractError::new("invalid_branch", "Branch must be <pointer>=<variant>.")
         })?;
-        decode_pointer(pointer)?;
+        scaffold::decode_pointer(pointer)?;
         if variant.is_empty() {
-            return Err(QueryError::new(
+            return Err(ContractError::new(
                 "invalid_branch",
                 "Branch variant is empty.",
             ));
@@ -434,145 +260,36 @@ pub fn scaffold(id: &str, branch_args: &[String]) -> QueryResult {
             .insert(pointer.to_owned(), variant.to_owned())
             .is_some()
         {
-            return Err(QueryError::new(
+            return Err(ContractError::new(
                 "duplicate_branch",
                 format!("Duplicate branch: {pointer}"),
             ));
         }
     }
-    let mut object = Map::new();
-    let mut unresolved = BTreeSet::new();
-    let mut used = BTreeSet::new();
-    for field in description["fields"].as_array().expect("fields") {
-        if field["required"] != true {
-            continue;
-        }
-        let name = field["name"].as_str().expect("field name");
-        let pointer = format!("/{}", encode_segment(name));
-        let value = if name == "schema" {
-            json!(id)
-        } else if let Some(value) = field["constraints"].get("const") {
-            value.clone()
-        } else if let Some(schema) = field["constraints"].get("schema") {
-            skeleton_schema(
-                schema,
-                schema,
-                &pointer,
-                &branches,
-                &mut used,
-                &mut unresolved,
-                0,
-            )?
-        } else if field["type"] == "array" {
-            json!([])
-        } else {
-            unresolved.insert(pointer.clone());
-            Value::Null
-        };
-        object.insert(name.to_owned(), value);
-    }
-    for pointer in branches.keys() {
-        if !used.contains(pointer) {
-            return Err(QueryError::new(
-                "invalid_branch",
-                format!("Branch is unknown or its parent was not selected: {pointer}"),
-            ));
-        }
-    }
-    payload(
-        "scaffold",
-        json!({"contract_id":id,"scaffold":object,"unresolved_paths":unresolved,"selected_branches":branches}),
-    )
+    let scaffold = scaffold::derive(record, branches)?;
+    Ok(ScaffoldData {
+        contract_id: id.to_owned(),
+        scaffold: scaffold.value,
+        unresolved_paths: scaffold.unresolved_paths,
+        selected_branches: scaffold.selected_branches,
+    })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn list_and_default_description_are_small_and_sorted() {
-        let value = list(None, None).unwrap();
-        assert!(value["commands"].as_array().unwrap().len() >= 120);
-        assert!(value["contracts"].as_array().unwrap().len() >= 98);
-        assert!(value.to_string().len() < 25000);
-        let description = describe_contract("work-discussion-request", None, None).unwrap();
-        assert!(description.to_string().len() < 3000);
-        assert!(description.get("example").is_none());
-        let nullable_field = describe_contract("work-command-result", None, None).unwrap();
-        assert_eq!(nullable_field["fields"]["exit_code"]["nullable"], true);
+fn request_record<'a>(registry: &'a Registry, id: &str) -> ContractResult<&'a ContractRecord> {
+    let record = registry.contract(id).ok_or_else(|| {
+        ContractError::new("unknown_contract_id", format!("Unknown contract ID: {id}"))
+    })?;
+    if record.description.kind == ContractKind::GeneratedRequest {
+        return Err(ContractError::new(
+            "generated_request_not_caller_constructible",
+            "Generated requests must come from their formal prepare flow.",
+        ));
     }
-
-    #[test]
-    fn branch_selection_is_order_independent_and_rejects_unknown() {
-        let id = "work-discussion-request";
-        let first = scaffold(id, &["/command=read".into()]).unwrap();
-        assert_eq!(first["scaffold"]["command"]["kind"], "read");
-        assert!(scaffold(id, &["/command=unknown".into()]).is_err());
-        assert!(scaffold(id, &["/command=read".into(), "/command=read".into()]).is_err());
-        let parent = "/command=update".to_owned();
-        let child = "/command/operation/change=update_context".to_owned();
-        assert_eq!(
-            scaffold(id, &[parent.clone(), child.clone()]).unwrap(),
-            scaffold(id, &[child.clone(), parent]).unwrap()
-        );
-        assert!(scaffold(id, &[child]).is_err());
+    if !record.description.caller_constructible {
+        return Err(ContractError::new(
+            "contract_scaffold_requires_request",
+            "Only caller-constructible requests can be scaffolded.",
+        ));
     }
-
-    #[test]
-    fn pointer_and_example_queries_reject_invalid_selections() {
-        assert!(
-            describe_contract("work-discussion-request", Some("/command"), None).unwrap()["field"]
-                ["variants"]
-                .is_array()
-        );
-        assert!(describe_contract("work-discussion-request", Some("/command"), Some("read")).unwrap()["field"]["constraints"].is_object());
-        assert!(
-            describe_contract("work-discussion-request", Some("/command"), Some("missing"))
-                .is_err()
-        );
-        assert!(
-            describe_contract(
-                "work-discussion-request",
-                Some("/command/operation/change"),
-                None
-            )
-            .unwrap()["field"]["variants"]
-                .is_array()
-        );
-        assert!(describe_contract("work-discussion-request", Some("/bad~2name"), None).is_err());
-        assert_eq!(
-            example_query("tooling-policy-load-request", "invalid-missing-previous").unwrap()["valid"],
-            false
-        );
-        assert!(example_query("tooling-policy-load-request", "missing").is_err());
-    }
-
-    #[test]
-    fn nested_branches_use_data_pointers_and_require_parent_selection() {
-        let schema = json!({
-            "type":"object","required":["child/one"],
-            "properties":{"child/one":{"discriminator":{"propertyName":"kind","mapping":{"a":"#/$defs/A"}},"oneOf":[{"$ref":"#/$defs/A"}]}},
-            "$defs":{"A":{"type":"object","required":["kind","nested"],"properties":{"kind":{"const":"a"},"nested":{"discriminator":{"propertyName":"mode","mapping":{"x":"#/$defs/X"}},"oneOf":[{"$ref":"#/$defs/X"}]}}},
-                "X":{"type":"object","required":["mode","value"],"properties":{"mode":{"const":"x"},"value":{"type":"string"}}}}
-        });
-        let branches = BTreeMap::from([
-            ("/root/child~1one".into(), "a".into()),
-            ("/root/child~1one/nested".into(), "x".into()),
-        ]);
-        let mut used = BTreeSet::new();
-        let mut unresolved = BTreeSet::new();
-        let value = skeleton_schema(
-            &schema,
-            &schema,
-            "/root",
-            &branches,
-            &mut used,
-            &mut unresolved,
-            0,
-        )
-        .unwrap();
-        assert_eq!(value["child/one"]["nested"]["mode"], "x");
-        assert!(unresolved.contains("/root/child~1one/nested/value"));
-        assert_eq!(used.len(), 2);
-    }
+    Ok(record)
 }

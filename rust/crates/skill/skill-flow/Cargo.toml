@@ -1,0 +1,13 @@
+[package]
+name = "skill-flow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+skill-model = { path = "../skill-model" }
+skill-feature = { path = "../skill-feature" }
+
+
+[dev-dependencies]
+serde_json.workspace = true

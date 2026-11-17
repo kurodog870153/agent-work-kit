@@ -1,15 +1,13 @@
-//! Work command flows composed from feature entries.
+//! Work domain use-case orchestration.
+//!
+//! Flow composes Feature use cases behind typed requests and responses. The
+//! public contracts belong to `work-model`, the command tree to `work-cli`.
 
-pub mod discussion;
-pub mod error;
-pub mod execution;
-pub mod fingerprint;
-pub mod hierarchy;
-pub mod instruction;
-pub mod paths;
-pub mod skill;
-pub mod source_snapshot;
-pub mod specification;
-pub mod task;
-pub mod workflow;
-pub mod workspace;
+mod run;
+pub use run::{
+    correction_apply, correction_list, correction_preview, discussion_create, discussion_history,
+    discussion_progress, discussion_round, discussion_show, execution_record, execution_show,
+    recover, requirement_acceptance_record, requirement_acceptance_show, source_create,
+    source_show, status, task_acceptance_record, task_acceptance_show, task_apply, task_complete,
+    task_preview, task_show, trace,
+};

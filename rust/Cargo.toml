@@ -2,28 +2,21 @@
 members = [
     "crates/common/*",
     "crates/skill/*",
-    "crates/tooling/*",
     "crates/work/*",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "2.4.0"
+version = "3.0.0"
 edition = "2024"
-rust-version = "1.99.1"
+rust-version = "1.100.0"
 
 [workspace.dependencies]
-base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.11"
-unicode-normalization = "=0.1.26"
-caseless = "=0.2.2"
 serde_yaml_ng = "0.10"
-fs4 = { version = "1.1", default-features = false, features = ["sync"] }
-clap = { version = "=4.6.7", default-features = false, features = ["std", "help", "usage", "error-context", "string"] }
-chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
-getrandom = "=0.4.3"
+sha2 = "0.10"
+clap = { version = "4.6.8", default-features = false, features = ["std", "help", "usage", "error-context", "string"] }
 
 [profile.test]
 opt-level = 1

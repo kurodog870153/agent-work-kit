@@ -35,37 +35,45 @@ class InstallerEntryTests(unittest.TestCase):
         source = (mac / "install-agent-work-kit-from-source.command").read_text(encoding="utf-8")
         package = (mac / "install-agent-work-kit-from-package.command").read_text(encoding="utf-8")
         core = (mac / "installer" / "install" / "install-core.sh").read_text(encoding="utf-8")
-        transaction = (mac / "installer" / "transaction" / "work.sh").read_text(encoding="utf-8")
+        transaction = (mac / "installer" / "transaction" / "transaction.sh").read_text(encoding="utf-8")
         self.assertIn("installer_run source", source)
         self.assertIn("verify_release_package", package)
         self.assertIn("installer_run package", package)
         self.assertIn("work-install-lock", core)
         self.assertIn("installer_run()", core)
-        self.assertIn("prepared", transaction)
-        self.assertIn("previous", transaction)
+        self.assertIn("staged", transaction)
+        self.assertIn("backup", transaction)
 
         windows = ROOT / "os-scripts" / "windows"
         source = (windows / "install-agent-work-kit-from-source.bat").read_text(encoding="utf-8")
         package = (windows / "install-agent-work-kit-from-package.bat").read_text(encoding="utf-8")
         core = (windows / "installer" / "install" / "install-core.ps1").read_text(encoding="utf-8")
-        transaction = (windows / "installer" / "transaction" / "work.ps1").read_text(encoding="utf-8")
+        transaction = (windows / "installer" / "transaction" / "transaction.ps1").read_text(encoding="utf-8")
         self.assertIn("install-core.ps1", source)
         self.assertIn("verify-integrity.ps1", package)
         self.assertIn("install-core.ps1", package)
         self.assertIn("Invoke-InstallerLocked", core)
         self.assertIn("cargo build --release --locked", core)
-        self.assertIn("prepared", transaction)
-        self.assertIn("previous", transaction)
+        self.assertIn("staged", transaction)
+        self.assertIn("backup", transaction)
 
-    def test_global_instructions_modules_loaded_by_both_cores_exist(self):
+    def test_modules_loaded_by_both_cores_exist(self):
         for platform, suffix in (("mac", "sh"), ("windows", "ps1")):
             installer = ROOT / "os-scripts" / platform / "installer"
             core = (installer / "install" / f"install-core.{suffix}").read_text(encoding="utf-8")
-            for module in ("policy", "transaction"):
-                relative = f"global-instructions/{module}.{suffix}"
-                with self.subTest(platform=platform, module=module):
+            for relative in (f"state/state.{suffix}", f"target/preflight.{suffix}",
+                             f"install/resources.{suffix}", f"global-instructions/policy.{suffix}",
+                             f"transaction/transaction.{suffix}"):
+                with self.subTest(platform=platform, module=relative):
                     self.assertIn(relative, core)
                     self.assertTrue((installer / relative).is_file())
+
+    def test_retired_installer_resources_are_absent(self):
+        for platform in ("mac", "windows"):
+            installer = ROOT / "os-scripts" / platform / "installer"
+            for name in ("contract-install", "tooling-install", "migration-cleanup", "work-install"):
+                with self.subTest(platform=platform, name=name):
+                    self.assertEqual([], list(installer.rglob(f"{name}.*")))
 
 if __name__ == "__main__":
     unittest.main()
