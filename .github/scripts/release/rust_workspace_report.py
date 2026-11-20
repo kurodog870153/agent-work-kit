@@ -30,6 +30,11 @@ def load_workspace_result(directory, commit):
     return result, suites
 
 
+SECTION = "## Host simulation\n\n```json\n"
+REQUIRED_EVIDENCE = ("work_contracts", "skill_contracts", "on_demand_sources", "discussion_versions",
+                     "trace_anchors", "independent_skills")
+
+
 def load_cli_smoke(directory, platform):
     root = Path(directory)
     expected = {f"{host}-{platform}.md" for host in HOSTS}
@@ -39,22 +44,19 @@ def load_cli_smoke(directory, platform):
     outcomes = {}
     for host in HOSTS:
         content = (root / f"{host}-{platform}.md").read_text(encoding="utf-8")
-        if ("# Installed Rust CLI smoke evidence" not in content or
-                "$ work --project-root <root> task validate" not in content or
-                "## Tooling CLI smoke\n\n```json\n" not in content):
-            raise ValueError(f"Work or Tooling smoke evidence is missing for {host} {platform}")
-        raw = content.split("## Tooling CLI smoke\n\n```json\n", 1)[1].split("\n```", 1)[0]
-        tooling = json.loads(raw)
-        if tooling.get("target_boundary") != "target_valid" or tooling.get("incompatible_policy_blocked") is not True:
-            raise ValueError(f"Tooling smoke evidence is invalid for {host} {platform}")
-        outcomes[host] = tooling
+        if "# Installed Rust CLI smoke evidence" not in content or SECTION not in content:
+            raise ValueError(f"Host simulation evidence is missing for {host} {platform}")
+        evidence = json.loads(content.split(SECTION, 1)[1].split("\n```", 1)[0])
+        if any(not evidence.get(key) for key in REQUIRED_EVIDENCE):
+            raise ValueError(f"Host simulation evidence is invalid for {host} {platform}")
+        outcomes[host] = evidence
     return outcomes
 
 
 def compose_report(rust_directories, smoke_directories, commit):
     lines = ["# Rust workspace validation", "", f"Commit: `{commit}`", "",
              "The Rust validation jobs run the complete workspace test and doc-test scopes. "
-             "The package jobs separately exercise installed Work and Tooling CLIs from Release ZIPs.", "",
+             "The package jobs separately exercise Host simulation against the installed Work and Skill CLIs from Release ZIPs.", "",
              "| Platform | Rust tests | Doc tests | Installed CLI hosts |", "| --- | ---: | ---: | --- |"]
     details = []
     for platform in PLATFORMS:
@@ -68,10 +70,10 @@ def compose_report(rust_directories, smoke_directories, commit):
         details.extend(["", "### Installed CLI smoke", ""])
         for host in HOSTS:
             outcome = smoke[host]
-            details.append(f"1. `{host}`: Work Source, Discussion and TASK smoke passed; "
-                           f"Tooling first load returned {outcome['first_sources']} sources, "
-                           f"changed load returned {outcome['changed_sources']} sources, "
-                           "target boundary passed and incompatible policy remained blocked. "
+            details.append(f"1. `{host}`: Host simulation passed with {outcome['work_contracts']} Work and "
+                           f"{outcome['skill_contracts']} Skill contracts, {outcome['discussion_versions']} Discussion "
+                           f"versions, {outcome['trace_anchors']} trace anchors and on-demand loading of "
+                           f"{outcome['on_demand_sources']} sources. "
                            f"Full evidence: `cli-smoke/{host}-{platform}.md`.")
     return "\n".join(lines + details) + "\n"
 

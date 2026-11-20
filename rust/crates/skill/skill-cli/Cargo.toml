@@ -1,0 +1,19 @@
+[package]
+name = "skill-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "skill"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+contract-core = { path = "../../common/contract-core" }
+serde.workspace = true
+serde_json.workspace = true
+skill-flow = { path = "../skill-flow" }
+skill-infrastructure = { path = "../skill-infrastructure" }
+skill-model = { path = "../skill-model" }
+

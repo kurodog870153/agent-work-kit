@@ -10,7 +10,7 @@ LF_PATHS = (
     "README.md",
     "skills/work/SKILL.md",
     "skills/tooling/SKILL.md",
-    "rust/crates/work/work-infrastructure/fixtures/cases/discussion/assembly/valid/project/outputs/work/sources/example/SRC-001/source.txt",
+    "skills/shared/bootstrap.md",
 )
 CRLF_PATHS = (
     "os-scripts/windows/clean-codex-data.bat",

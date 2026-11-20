@@ -1,6 +1,6 @@
 ---
 name: Release 安裝器架構規範
-description: 維護安裝入口、狀態、交易或封裝邊界時適用；單純撰寫 Release 摘要不適用。
+description: 維護安裝入口、封裝邊界、核心職責、交易或安裝狀態時適用；單純撰寫 Release 摘要或使用者操作說明時不適用。
 metadata:
   tags:
     - installer
@@ -9,64 +9,79 @@ metadata:
 
 # Release 安裝器架構規範
 
-## Purpose
+## 1. 架構定位
 
-說明 Windows 與 macOS 安裝入口、模組責任及交易資料流，供維護安裝器時遵循。
+本文件定義安裝器的目標架構、職責、邊界、資料流及必要約束，供維護安裝器時遵循，不描述目前實作的完成程度，不限制實體模組結構、程式語言或儲存方式。使用者操作見 [Release 安裝指引](../../docs/release/README.md)。
 
-## Requirements
+## 2. 安裝入口與封裝
 
-本文件說明 Windows 與 macOS 的 Work、Tooling 與 Contract 安裝入口、模組責任和資料流。使用者操作見 [Release 安裝說明](../../docs/release/README.md)；安裝狀態與中斷處理分別見[安裝狀態](../../docs/release/install-state.md)和[安裝復原](../../docs/release/recovery.md)。
+1. 各支援平台遵循相同的安裝選項、狀態及行為契約；Host 專屬的安裝位置、指令及設定由 Host 差異處理，不混用不同 Host 的安裝內容與狀態。
+2. Release 負責發布版本管理、binary 建置、套件封裝、資產驗證及發布；每個發布套件獨立對應單一版本、Host 與平台。Installer 負責取得、驗證及安裝資源，不負責發布或封裝 Release 資產。
+3. Release 與 Installer 透過共用套件契約銜接；套件提供完整安裝資源、版本、Host、平台及必要完整性資訊，雙方不依賴彼此內部實作。
+4. 安裝資源分為 Runtime Skill（Work、Tooling 的領域 Markdown 指令）、Shared 共用指令資源（`skills/shared/bootstrap.md` 及實際存在的 `bootstrap/` Modules）、共用 Runtime CLI（Work CLI、Skill CLI）及選用 Global Instructions。Shared 不屬於獨立 Skill，不含 `SKILL.md`；兩個 Skill 使用同一組安裝的 Shared，不各自封裝或安裝副本。CLI 與 Skill 分離，不在各 Skill 內安裝專屬 binary，不再封裝或安裝 Tooling Binary、Contract Skill。各 Host 依啟用 Skill 的入口與有效安裝資訊解析同組 Shared 及正確 CLI 入口，不要求固定實體目錄或 PATH 配置，也不得任意混用其他安裝的版本、資源或 Host。
 
-### 安裝入口與封裝邊界
+| 入口 | 職責 |
+| --- | --- |
+| Source | 從同一原始碼樹取得版本、Skill、Shared、Global Instructions 並建置所需 binary，不依賴已發布套件。 |
+| Package | 使用套件中的預編譯 binary 和其他資源，驗證套件完整性、版本、Host、平台及 binary 後交給安裝核心。 |
+| Downloader | 從入口所屬的固定 Release tag 取得所選 Host 與平台的套件，驗證外部 SHA-256 及下載內容後委派 Package；原樣保留安裝選項的引數順序與邊界，不重複實作安裝邏輯。 |
 
-| 入口 | 取得 Work binary | 交給安裝核心前的責任 |
-| --- | --- | --- |
-| Source | 從 repository 建置 | 使用原始碼樹中的版本、Skill 與 `instructions/global-instructions.md` |
-| Package | 使用 ZIP 內的預編譯 binary | 驗證套件 manifest、平台與 binary |
-| Downloader | 從腳本所屬的固定 GitHub Release tag 下載 Host 與平台對應 ZIP | 驗證外部 SHA-256 與 ZIP 內容，再交給 Package |
-
-每個平台各有這三個公開入口。單一版本封裝為 Codex／Claude Code 各自的 Windows x64 與 macOS ARM64 ZIP，共四個獨立套件。Downloader 負責網路資產的邊界；Package 負責封裝內容的邊界；Source 和 Package 最終進入該平台的安裝核心。Downloader 對安裝選項維持原始引數順序與邊界，由 Package 解析並執行。
+Source 與 Package 共用該平台的安裝核心，遵循相同的安裝交易與狀態契約。
 
 ```mermaid
-flowchart LR
-    Source[Source] --> Build[建置 binary]
-    Downloader[Downloader] --> Assets[下載與驗證 Release 資產]
+flowchart TD
+    Release[Release] --> Assets[發布套件與完整性資訊]
+    Assets --> Downloader[Downloader]
     Assets --> Package[Package]
-    Package --> Verify[驗證套件與 binary]
-    Build --> Core[平台安裝核心]
-    Verify --> Core
-    Core --> Work[Work 目錄]
-    Core --> Tooling[Tooling 目錄]
-    Core --> Contract[Contract 目錄]
-    Core --> Global[Host 對應的 Global Instructions]
+    Downloader --> Package
+    Source[Source] --> Core[Installer Core]
+    Package --> Core
+    Core --> Transaction[整體安裝交易]
+    Transaction --> State[正式安裝狀態]
 ```
 
-## Procedure
+## 3. 安裝核心
 
-### 安裝核心的責任
+安裝核心統籌安裝交易與邏輯職責的協作，不重複各職責的內部邏輯。
 
-`os-scripts/common/installer/options.tsv` 是正式選項的共用目錄，兩平台各自解析引數。`os-scripts/common/installer/install-state.json` 是 Source 與 Package 共用的安裝狀態模板。安裝核心依 Host 決定 Skill 父目錄與 Global Instructions 目標：Codex 使用 `~/.agents/skills` 和 `~/.codex/AGENTS.md`；Claude Code 使用 `~/.claude/skills` 和 `~/.claude/CLAUDE.md`。核心讀取相同 Host 的有效狀態，完成互動選擇，再執行預檢。設定來源與狀態有效性由[安裝狀態](../../docs/release/install-state.md)說明。
+| 邏輯職責 | 責任 |
+| --- | --- |
+| CLI 與設定 | 依共用選項契約解析引數、決定 Host 與安裝位置，取得必要的安裝選擇及確認。 |
+| 目標預檢 | 驗證環境、版本、既有狀態與實際內容、目標安全性及正在使用的 binary；保留未知或不安全內容並拒絕接管。 |
+| 安裝資源 | 準備並驗證完整的 Work／Tooling Skill、Shared、Work／Skill CLI 及已啟用的 Global Instructions 資源，處理 Host 差異、Shared 與 CLI 入口及各元件自身的安裝操作與結果驗證。 |
+| 交易管理 | 統籌全域互斥、交易生命週期、整體提交及失敗處理。 |
+| 狀態管理 | 統一驗證、管理正式安裝狀態及必要的交易暫存資訊。 |
 
-`state-core` 驗證共同父層狀態；`work-state` 與 `tooling-state` 驗證各自交易期間的暫存狀態。
+Global Instructions 未啟用時，不參與其目標檢查或安裝交易；啟用時，取代既有內容須符合使用者授權。預覽安裝不得修改正式安裝目標。不得刪除或覆蓋無法確認歸屬或與本次安裝無關的資料。Shared 為本套件管理的共用資源，不得因同名目錄即認定其所有權；來源或目標含未知內容、來源邊界不明或與其他 Skill／套件衝突時，依安全預檢拒絕不安全的接管。
 
-目標預檢分別辨識空目錄、由有效父層狀態管理的 Skill，以及未知或不安全內容。沒有有效父層狀態的既有安裝會被保留並拒絕接管。正式寫入前，核心也檢查版本、正在使用的 Work binary 和 Global Instructions 的取代決策。Global Instructions 未啟用時，不參與其目標檢查或交易。
+## 4. 安裝交易
 
-Source 在安裝前建置 binary；Package 使用已驗證的預編譯 binary。兩者將完整 Work 指令、binary 與新 Work 狀態放入暫存 Work，並準備完整 Tooling、Contract 與其狀態，再透過平台交易模組發布。Contract 與 Tooling 使用同一交易及共同父層狀態，不另設獨立交易。安裝鎖、正式路徑切換、完成判定和中斷復原由[安裝復原](../../docs/release/recovery.md)說明。
+1. 每次安裝是一個整體交易，Work／Tooling Skill、Shared 與 Work／Skill CLI 必須共同安裝；Global Instructions 啟用時納入同一交易。各元件只是交易參與者，不得獨立安裝或提交。
+2. 採用全域安裝鎖，同一台電腦同一時間僅允許一個安裝交易，不區分 Host 或安裝目標。互斥保護涵蓋整體交易，包括依賴可變安裝狀態的預檢。
+3. 採用邏輯原子性，允許分階段寫入，但未提交的中間狀態不得視為有效安裝或供相依工作使用。所有必要資源及正式安裝結果通過驗證後，才能統一提交。
 
-### 模組位置
+| 邏輯階段 | 職責 |
+| --- | --- |
+| Preflight | 確認環境、既有狀態、安裝目標及必要授權，不修改正式安裝內容。 |
+| Prepare | 準備並驗證所有參與者的安裝資源及必要的交易資訊，不修改正式安裝內容。 |
+| Apply | 將已驗證的資源寫入正式安裝目標。 |
+| Verify | 驗證所有參與者的實際安裝結果及整體一致性。 |
+| Commit | 統一提交正式安裝狀態，確認提交成功後才視為安裝完成。 |
 
-| 責任 | macOS | Windows |
-| --- | --- | --- |
-| CLI 解析 | `installer/cli/parse-options.sh` | `installer/cli/parse-options.ps1` |
-| 父層、Work、Tooling 狀態與目標預檢 | `installer/state/state-core.js`、`installer/state/work-state.js`、`installer/state/tooling-state.js`、`installer/target/preflight.sh` | `installer/state/state-core.ps1`、`installer/state/work-state.ps1`、`installer/state/tooling-state.ps1`、`installer/target/preflight.ps1` |
-| 安裝鎖與核心 | `installer/lock/native-lock.c`、`installer/install/install-core.sh` | `installer/lock/mutex.ps1`、`installer/install/install-core.ps1` |
-| Work 安裝準備與驗證 | `installer/install/work-install.sh` | `installer/install/work-install.ps1` |
-| Work 與 Global Instructions 交易 | `installer/transaction/work.sh`、`installer/global-instructions/transaction.sh` | `installer/transaction/work.ps1`、`installer/global-instructions/transaction.ps1` |
-| Tooling 安裝準備與驗證 | `installer/install/tooling-install.sh` | `installer/install/tooling-install.ps1` |
-| Contract 安裝準備與驗證 | `installer/install/contract-install.sh` | `installer/install/contract-install.ps1` |
-| Tooling 與 Contract 交易 | `installer/transaction/tooling.sh` | `installer/transaction/tooling.ps1` |
-| 路徑遷移清理 | `installer/install/migration-cleanup.sh` | `installer/install/migration-cleanup.ps1` |
+以上為邏輯階段，可依實作需要組織，但不得破壞其職責、必要相依順序及約束。
 
-表內路徑分別相對於 `os-scripts/mac/` 與 `os-scripts/windows/`。`.github/scripts/release/` 負責產生與驗證 Release 資產，不參與使用者電腦上的安裝交易。
+正式寫入前失敗須保留原有安裝；正式寫入後失敗或中斷，由整體交易統一處理並保留必要的復原資訊。未完成的交易不得宣告成功；無法安全處理時保留現況並回報原因。須具備安全復原能力，不強制 Rollback、Resume 或獨立復原機制。
 
-`global-instructions` 處理 Codex 的 `AGENTS.md` 與 Claude Code 的 `CLAUDE.md`；兩個 Host 使用相同來源及交易機制。
+## 5. 安裝狀態
+
+1. 每組安裝的正式狀態僅有一個權威來源，對應 Runtime CLI、Shared、Skill 的同一組有效安裝及 Host。所有正式狀態及必要暫存資訊由整體交易集中管理，各元件不得獨立管理或提交安裝狀態。
+2. Source、Package 與各平台遵循共用狀態契約。狀態須能辨識 Host、整體發布版本、Rust workspace 版本、Skill 安裝位置、Shared 與共用 Runtime CLI 的位置或可驗證的解析資訊、Global Instructions 設定及安裝完成狀態。
+3. 發布版本以根目錄 VERSION 為準；Rust workspace 版本以 Cargo workspace 的版本為準，兩者不得混用。安裝狀態、發布套件與 Work／Skill CLI 的 Rust host 中繼資料須使用一致的 Rust workspace 版本語意。
+4. 暫存資訊僅供交易判斷及必要復原使用，不是正式安裝狀態；完成後清理不再需要的交易資訊。狀態檔存在不代表安裝有效，須同時驗證實際安裝內容。
+5. 重新安裝時僅沿用同一 Host 的有效既有設定，明確的使用者選擇優先。目標目錄不存在或為空且無既有安裝時視為首次安裝，預設啟用 Global Instructions；目標已有內容但無有效狀態時，保留原內容並拒絕接管，但已確認屬於未完成交易的內容可依交易失敗處理原則安全處理。
+
+## 6. 安裝驗證
+
+1. Source 與 Package 須依相同資源契約安裝；驗證各支援平台及 Host 的 Work／Tooling Skill、Shared、Work／Skill CLI、契約查詢入口、安裝狀態及實際 Shared／CLI 解析的一致性。Shared 必須有唯一共用 Bootstrap，僅安裝實際存在的 Modules，且不被當成獨立 Skill；驗證兩個 Skill 均可從同一組有效安裝獨立解析、使用 Shared 及所需 CLI，拒絕混用其他安裝或無效資源，不依賴另一 Skill 或 Global Instructions 啟用。
+2. 安裝器只支援現行安裝契約的首次安裝、重新安裝與失敗復原，不解析舊版安裝狀態，不提供升級、遷移或專用清理；沒有有效現行狀態的既有內容依第 5 節保留並拒絕接管。
+3. 保留套件及下載資源的完整性驗證（含既有外部 SHA-256）、安裝全域互斥、邏輯原子性、狀態提交及安全復原。Skill／Work 不強制 Fingerprint 的設計不適用於此套件完整性契約。

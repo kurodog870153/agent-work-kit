@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure isolated fixture, Git, and native process baselines."""
+"""Measure isolated Git, Skill tree copy and native process baselines."""
 
 import argparse
 import json
@@ -30,10 +30,13 @@ def run(args):
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     suffix = ".exe" if os.name == "nt" else ""
-    binary = rust / "target" / args.target / "debug" / f"work{suffix}" if args.target else rust / "target" / "debug" / f"work{suffix}"
-    source = workspace / "rust/crates/work/work-infrastructure/fixtures/shared/task-diagnostics-project"
-    references = workspace / "skills/work/references"
-    for path in (binary, source, references):
+    def native(name):
+        base = rust / "target" / args.target / "debug" if args.target else rust / "target" / "debug"
+        return base / f"{name}{suffix}"
+
+    work_binary, skill_binary = native("work"), native("skill")
+    skills = workspace / "skills"
+    for path in (work_binary, skill_binary, skills):
         if not path.exists():
             raise FileNotFoundError(path)
     results = {
@@ -55,35 +58,21 @@ def run(args):
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
         results["operations"]["git_init"] = probe_operation("git_init", args.repetitions, git_init)
-        for label, fixture in (("project_fixture_copy", source), ("references_copy", references)):
-            results["operations"][label] = probe_operation(
-                label, args.repetitions,
-                lambda index, fixture=fixture, label=label: shutil.copytree(fixture, scratch / f"{label}-{index}"),
-            )
-        cached = [(path.relative_to(source), path.read_bytes()) for path in source.rglob("*") if path.is_file()]
-
-        def write_cached_fixture(index):
-            destination = scratch / f"cached_fixture-{index}"
-            for relative, content in cached:
-                target = destination / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-
-        results["operations"]["project_fixture_cached_write"] = probe_operation(
-            "project_fixture_cached_write", args.repetitions, write_cached_fixture
+        results["operations"]["skills_copy"] = probe_operation(
+            "skills_copy", args.repetitions, lambda index: shutil.copytree(skills, scratch / f"skills-{index}"))
+    for name, binary in (("native_work_help", work_binary), ("native_skill_help", skill_binary)):
+        results["operations"][name] = probe_operation(
+            name, args.repetitions,
+            lambda _index, binary=binary: subprocess.run([str(binary), "--help"], cwd=rust, check=True,
+                                                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE),
         )
-    results["operations"]["native_work_help"] = probe_operation(
-        "native_work_help", args.repetitions,
-        lambda _index: subprocess.run([str(binary), "--help"], cwd=rust, check=True,
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE),
-    )
     (output / "probes.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     lines = [f"## Rust operation probes: {results['platform']}", "",
              f"Commit: `{results['commit']}`; target: `{results['target']}`.", "",
              "| Operation | Median seconds | Samples |", "| --- | ---: | ---: |"]
     lines.extend(f"| {name} | {item['median_seconds']} | {args.repetitions} |"
                  for name, item in results["operations"].items())
-    lines.extend(["", "These are standalone baselines, not timings inside the Rust tests. The cached fixture probe shares immutable input bytes but writes a separate directory for every sample; Recovery state remains isolated."])
+    lines.extend(["", "These are standalone baselines, not timings inside the Rust tests. Every sample writes its own directory."])
     markdown = "\n".join(lines) + "\n"
     (output / "summary.md").write_text(markdown, encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):

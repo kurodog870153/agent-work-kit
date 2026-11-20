@@ -10,7 +10,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / ".github/scripts/ci"))
-from rust_validation_steps import build_release_binaries, set_up_toolchain, smoke_test_binaries, verify_host_activation
+from rust_validation_steps import build_release_binaries, set_up_toolchain, simulate_host, smoke_test_binaries
 
 
 class RustValidationTests(unittest.TestCase):
@@ -27,23 +27,24 @@ class RustValidationTests(unittest.TestCase):
         )
 
     @patch("rust_validation_steps.run_checked")
-    def test_build_and_smoke_cover_both_binaries(self, run_checked):
+    def test_build_smoke_and_simulation_cover_work_and_skill_binaries(self, run_checked):
         build_release_binaries()
-        self.assertEqual([call.args[-1] for call in run_checked.call_args_list], ["work-cli", "tooling-cli"])
+        self.assertEqual([call.args[-1] for call in run_checked.call_args_list], ["work-cli", "skill-cli"])
         for platform, suffix in (("darwin", ""), ("win32", ".exe")):
             with self.subTest(platform=platform), patch("rust_validation_steps.sys.platform", platform):
                 run_checked.reset_mock()
                 smoke_test_binaries()
                 self.assertEqual(
                     [Path(call.args[0]).name for call in run_checked.call_args_list],
-                    [f"work{suffix}", f"tooling{suffix}"],
+                    [f"work{suffix}", f"skill{suffix}"],
                 )
                 run_checked.reset_mock()
-                verify_host_activation()
+                simulate_host()
                 command = run_checked.call_args.args
                 self.assertIn(f"target/release/work{suffix}", command)
-                self.assertIn(f"target/release/tooling{suffix}", command)
-                self.assertIn(".ci-perf/host-activation.json", command)
+                self.assertIn(f"target/release/skill{suffix}", command)
+                self.assertIn("../skills", command)
+                self.assertIn(".ci-perf/host-simulation.json", command)
 
     def test_platform_jobs_have_the_same_steps_and_doc_test_gate(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/rust-validation.yml").read_text(encoding="utf-8"))

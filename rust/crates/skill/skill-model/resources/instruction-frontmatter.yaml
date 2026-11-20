@@ -1,5 +1,0 @@
-name: Example instruction
-description: Use when this instruction applies; not applicable otherwise.
-metadata:
-  tags:
-    - example-tag

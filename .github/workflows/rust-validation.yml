@@ -65,7 +65,7 @@ jobs:
         if: steps.mac_test_compile.outcome == 'success'
         continue-on-error: true
         run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
-      - name: Probe Rust fixture and process costs
+      - name: Probe Rust process costs
         if: steps.mac_test_compile.outcome == 'success'
         run: python3 -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10
       - name: Report Rust performance
@@ -91,18 +91,18 @@ jobs:
       - name: Enforce Rust test results
         if: always()
         run: python3 ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
-      - name: Build Work and Tooling release binaries
+      - name: Build Work and Skill release binaries
         run: python3 -B ../.github/scripts/ci/rust_validation_steps.py build
       - name: Smoke test Rust binaries
         run: python3 -B ../.github/scripts/ci/rust_validation_steps.py smoke
-      - name: Verify three Host activation modes
-        run: python3 -B ../.github/scripts/ci/rust_validation_steps.py activation
-      - name: Upload Host activation evidence
+      - name: Simulate Host behaviour with the release binaries
+        run: python3 -B ../.github/scripts/ci/rust_validation_steps.py simulation
+      - name: Upload Host simulation evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: host-activation-macos
-          path: rust/.ci-perf/host-activation.json
+          name: host-simulation-macos
+          path: rust/.ci-perf/host-simulation.json
           if-no-files-found: warn
 
   validate-and-build-rust-windows:
@@ -160,7 +160,7 @@ jobs:
         if: steps.windows_test_compile.outcome == 'success'
         continue-on-error: true
         run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
-      - name: Probe Rust fixture and process costs
+      - name: Probe Rust process costs
         if: steps.windows_test_compile.outcome == 'success'
         run: python -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10 --target $env:WORK_RUST_TARGET
       - name: Report Rust performance
@@ -186,16 +186,16 @@ jobs:
       - name: Enforce Rust test results
         if: always()
         run: python ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
-      - name: Build Work and Tooling release binaries
+      - name: Build Work and Skill release binaries
         run: python -B ../.github/scripts/ci/rust_validation_steps.py build
       - name: Smoke test Rust binaries
         run: python -B ../.github/scripts/ci/rust_validation_steps.py smoke
-      - name: Verify three Host activation modes
-        run: python -B ../.github/scripts/ci/rust_validation_steps.py activation
-      - name: Upload Host activation evidence
+      - name: Simulate Host behaviour with the release binaries
+        run: python -B ../.github/scripts/ci/rust_validation_steps.py simulation
+      - name: Upload Host simulation evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: host-activation-windows
-          path: rust/.ci-perf/host-activation.json
+          name: host-simulation-windows
+          path: rust/.ci-perf/host-simulation.json
           if-no-files-found: warn

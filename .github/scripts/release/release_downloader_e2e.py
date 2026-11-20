@@ -7,7 +7,6 @@ import http.server
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -15,9 +14,9 @@ import threading
 import zipfile
 from pathlib import Path
 
-from release_install_e2e import extract_checked, verify_readme_download
-from downloader_fixture import build_test_downloaders
-from release_package_integrity import create_manifest, verify_zip
+from release_install_e2e import verify_readme_download
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests/release/common"))
+from downloader_server import build_test_downloaders
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -25,66 +24,32 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def make_crash_package(archive_path, root, platform):
-    package = root / "crash-package"
-    extract_checked(archive_path, package)
-    relative = "installer/transaction/work.ps1" if platform == "windows-x64-msvc" else "installer/transaction/work.sh"
-    script = package / relative
-    content = script.read_text(encoding="utf-8")
-    if platform == "windows-x64-msvc":
-        needle = "            Move-Item -LiteralPath $targetPath -Destination $previous -ErrorAction Stop\n"
-        injection = "            if ($env:AGENT_WORK_KIT_RELEASE_CRASH_ONCE -eq '1') { [Diagnostics.Process]::GetCurrentProcess().Kill() }\n"
-    else:
-        needle = '        mv -- "$final" "$previous" || return 1\n'
-        injection = '        if [[ "${AGENT_WORK_KIT_RELEASE_CRASH_ONCE:-}" == 1 ]]; then kill -9 $$; fi\n'
-    if content.count(needle) != 1:
-        raise AssertionError("public Package crash injection point is ambiguous")
-    script.write_text(content.replace(needle, needle + injection), encoding="utf-8")
-    (package / "SHA256SUMS").unlink()
-    create_manifest(package)
-    crash_zip = root / "crash-package.zip"
-    with zipfile.ZipFile(crash_zip, "x", compression=zipfile.ZIP_DEFLATED) as output:
-        for path in sorted(package.rglob("*")):
-            if not path.is_file():
-                continue
-            info = zipfile.ZipInfo(path.relative_to(package).as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = (stat.S_IFREG | (path.stat().st_mode & 0o777)) << 16
-            output.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
-    verify_zip(crash_zip)
-    return package, crash_zip
-
-
-def exercise_public_crash(entry, target, home, environment, platform, version, host):
-    options = ["--host", host, "--non-interactive", "--global-instructions", "no", "--skills-dir", str(target.parent)]
+def exercise_public_crash(entry, home, environment, platform, info, skills_dir, global_dir=None):
+    """An interrupted public install leaves a recoverable transaction; the next run restores service."""
+    options = ["--host", info["host"], "--non-interactive", "--global-instructions", "no", "--skills-dir", str(skills_dir)]
     command = (["cmd.exe", "/D", "/C", str(entry)] if platform == "windows-x64-msvc"
                else ["/bin/bash", str(entry)]) + options
-    def invoke(crash=False):
-        env = {**environment, "AGENT_WORK_KIT_RELEASE_CRASH_ONCE": "1" if crash else "0"}
-        return subprocess.run(command, cwd=home, env=env, stdin=subprocess.DEVNULL,
+
+    def invoke(**extra):
+        return subprocess.run(command, cwd=home, env={**environment, **extra}, stdin=subprocess.DEVNULL,
                               capture_output=True, timeout=180)
 
     initial = invoke()
     if initial.returncode:
         raise AssertionError(f"public entry initial install failed: {initial.stdout!r}, {initial.stderr!r}")
-    binary = target / "scripts" / ("work.exe" if platform == "windows-x64-msvc" else "work")
-    prior_binary = binary.read_bytes()
-    interrupted = invoke(crash=True)
-    transactions = list(target.parent.glob(".work-install.*"))
-    if interrupted.returncode == 0 or len(transactions) != 1 or not (transactions[0] / "previous").is_dir():
-        raise AssertionError(f"public entry did not interrupt during Work switch: {interrupted.returncode}, {transactions!r}")
-    previous = transactions[0] / "previous"
-    pending_state = json.loads((target.parent / "install-state.json").read_text(encoding="utf-8"))
-    if (pending_state["version"] != version or pending_state["status"] != "installing" or
-            (previous / "scripts" / binary.name).read_bytes() != prior_binary):
-        raise AssertionError("public entry interruption lost the previous Work installation")
+    suffix = ".exe" if platform == "windows-x64-msvc" else ""
+    binary = skills_dir.parent / "agent-work-kit" / "bin" / f"work{suffix}"
+    before = {str(path.relative_to(skills_dir)): path.read_bytes() for path in skills_dir.rglob("*") if path.is_file()}
+    interrupted = invoke(INSTALLER_TEST_CRASH="verify")
+    if interrupted.returncode == 0:
+        raise AssertionError("public entry did not stop at the injected interruption")
     restarted = invoke()
     if restarted.returncode:
         raise AssertionError(f"public entry recovery failed: {restarted.stdout!r}, {restarted.stderr!r}")
-    state = json.loads((target.parent / "install-state.json").read_text(encoding="utf-8"))
-    if (state["version"] != version or state["status"] != "installed" or
-            list(target.parent.glob(".work-install.*"))):
-        raise AssertionError("public entry recovery retained an incomplete transaction")
+    after = {str(path.relative_to(skills_dir)): path.read_bytes() for path in skills_dir.rglob("*") if path.is_file()}
+    state = json.loads((skills_dir / "install-state.json").read_text(encoding="utf-8"))
+    if after != before or state["status"] != "installed" or state["version"] != info["version"] or any(skills_dir.glob(".agent-work-kit-txn*")):
+        raise AssertionError("public entry recovery did not restore the installed resources")
     subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
 
 
@@ -111,7 +76,7 @@ def main():
         scratch = root / "scratch"
         home.mkdir()
         scratch.mkdir()
-        target = root / "中文 path & symbols" / "work"
+        target = root / "中文 path & symbols" / "skills"
         global_dir = root / "全域 path & symbols"
         handler = functools.partial(QuietHandler, directory=str(root))
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -149,29 +114,34 @@ def main():
                                     capture_output=True, timeout=180)
             if result.returncode:
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
-            state_path = target.parent / "install-state.json"
+            skills_dir = target.parent
+            state_path = skills_dir / "install-state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            if (state != {"host": info["host"], "version": info["version"],
-                          "rust_workspace_version": info["rust_workspace_version"], "skill_install_dir": str(target.parent),
-                          "global_instructions_dir": str(global_dir), "status": "installed"} or
-                    (target / "install-state.json").exists()):
+            if (state["host"] != info["host"] or state["version"] != info["version"] or
+                    state["rust_workspace_version"] != info["rust_workspace_version"] or
+                    Path(state["skill_install_dir"]) != skills_dir or state["status"] != "installed" or
+                    state["global_instructions_dir"] != str(global_dir)):
                 raise AssertionError(f"Downloader installed the wrong state: {state!r}")
-            tooling = target.parent / "tooling"
-            if ((tooling / "install-state.json").exists() or
-                    not (tooling / "scripts" / ("tooling.exe" if sys.platform == "win32" else "tooling")).is_file()):
-                raise AssertionError("Downloader installed the wrong Tooling entry")
-            if (tooling / "references/instructions/interfaces/repl").exists():
-                raise AssertionError("Downloader installed the removed REPL interface")
+            for required in ("work/SKILL.md", "tooling/SKILL.md", "shared/bootstrap.md"):
+                if not (skills_dir / required).is_file():
+                    raise AssertionError(f"Downloader omitted {required}")
+            if any((skills_dir / name).exists() for name in ("contract", "shared/SKILL.md")):
+                raise AssertionError("Downloader installed an obsolete resource")
+            suffix = ".exe" if sys.platform == "win32" else ""
+            cli_bin = Path(state["cli_install_dir"]) / "bin"
+            if {path.name for path in cli_bin.iterdir()} != {f"work{suffix}", f"skill{suffix}"}:
+                raise AssertionError("Downloader installed the wrong CLI set")
             instruction_name = "AGENTS.md" if info["host"] == "codex" else "CLAUDE.md"
-            if (global_dir / instruction_name).read_bytes() != (Path(__file__).resolve().parents[3] / "instructions/global-instructions.md").read_bytes():
-                raise AssertionError("Downloader did not install Global AGENTS at the requested path")
+            repository = Path(__file__).resolve().parents[3]
+            if (global_dir / instruction_name).read_bytes() != (repository / "instructions/global-instructions.md").read_bytes():
+                raise AssertionError("Downloader did not install Global Instructions at the requested path")
             before_state = state_path.read_bytes()
             before_agents = (global_dir / instruction_name).read_bytes()
             for options, expected in ((["--host", info["host"], "--non-interactive", "--dry-run",
-                                      "--skills-dir", str(target.parent), "--instructions-dir", str(global_dir)], 0),
+                                      "--skills-dir", str(skills_dir), "--instructions-dir", str(global_dir)], 0),
                                       (["--host", info["host"], "--unknown"], 2),
                                       (["--host", info["host"], "--skills"], 2),
-                                      (["--host", info["host"], "--list-skills"], 2),
+                                      (["--host", info["host"], "--migrate"], 2),
                                       (["--host", info["host"], "--install-dir", "old/work"], 2),
                                       (["--host", info["host"], "--global-instructions", "no", "--instructions-dir", str(global_dir)], 2),
                                       (["--host", info["host"], "--verbose", "--verbose"], 2)):
@@ -181,29 +151,14 @@ def main():
                     raise AssertionError(f"Downloader CLI status for {options!r}: {check.returncode}")
                 if "--dry-run" in options and b"Dry run:" not in check.stdout:
                     raise AssertionError("Downloader omitted Package dry-run summary")
-                if (state_path.read_bytes() != before_state or
-                        (global_dir / instruction_name).read_bytes() != before_agents):
+                if state_path.read_bytes() != before_state or (global_dir / instruction_name).read_bytes() != before_agents:
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
-            binary = target / "scripts" / ("work.exe" if sys.platform == "win32" else "work")
-            subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
             if list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("Downloader retained temporary files")
-            if (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
-                raise AssertionError("disabled Global AGENTS created a target")
-            crash_package, crash_zip = make_crash_package(args.zip, root, args.platform)
-            package_entry = crash_package / ("install-agent-work-kit-from-package.bat" if args.platform == "windows-x64-msvc"
-                                              else "install-agent-work-kit-from-package.command")
-            exercise_public_crash(package_entry, root / "package-crash/work", home,
-                                  environment, args.platform, info["version"], info["host"])
-            print(f"Public Package interruption recovery passed: {args.platform}", flush=True)
-            shutil.copyfile(crash_zip, assets / args.zip.name)
-            digest = hashlib.sha256(crash_zip.read_bytes()).hexdigest()
-            (assets / "SHA256SUMS.txt").write_text(f"{digest}  {args.zip.name}\n", encoding="ascii")
-            exercise_public_crash(entry, root / "downloader-crash/work", home,
-                                  environment, args.platform, info["version"], info["host"])
+            exercise_public_crash(entry, home, environment, args.platform, info, root / "downloader-crash/skills")
             print(f"Public Downloader interruption recovery passed: {args.platform}", flush=True)
-            if list(scratch.glob("agent-work-kit-release*")) or (home / (".codex" if info["host"] == "codex" else ".claude")).exists():
-                raise AssertionError("public crash recovery retained downloader scratch or Global AGENTS")
+            if list(scratch.glob("agent-work-kit-release*")):
+                raise AssertionError("public crash recovery retained downloader scratch files")
         finally:
             server.shutdown()
             thread.join()

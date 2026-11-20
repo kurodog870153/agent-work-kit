@@ -1,8 +1,0 @@
-{
-  "details": {
-    "cause": "unknown variant `plan`, expected one of `task_index`, `task_item`, `execution_index`"
-  },
-  "message": "Migration accepts only current TASK and Execution candidates with exact source fingerprints.",
-  "reason_code": "invalid_contract_value",
-  "status": "rejected"
-}

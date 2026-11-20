@@ -1,287 +1,308 @@
-//! Structural checks shared by the build script and negative tests.
+//! Structural validation of a domain registry.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
-use serde_json::Value;
+use crate::error::{ContractError, ContractResult};
+use crate::model::{ArgumentAction, ContractKind, ContractRecord, FieldType, SchemaNode};
+use crate::registry::Registry;
 
-pub fn read_json_file(path: &Path) -> Result<Value, String> {
-    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{}: invalid JSON: {error}", path.display()))
+fn fail(reason: &'static str, message: impl Into<String>) -> ContractError {
+    ContractError::new(reason, message)
 }
 
-pub fn validate_example_catalog(entries: &Value) -> Result<(), String> {
-    let mut keys = BTreeSet::new();
-    for entry in array(entries, "example catalog")? {
-        let id = entry["contract_id"]
-            .as_str()
-            .ok_or("missing example contract ID")?;
-        let scenario = entry["scenario"].as_str().ok_or("missing scenario")?;
-        let file = entry["file"].as_str().ok_or("missing example filename")?;
-        if scenario.is_empty()
-            || !file.ends_with(".json")
-            || file.contains('/')
-            || file.contains('\\')
-        {
-            return Err(format!("invalid example source: {id}/{scenario}"));
-        }
-        if !keys.insert((id, scenario)) {
-            return Err(format!("duplicate scenario: {id}/{scenario}"));
-        }
+/// Validate one contract record in isolation from its siblings.
+///
+/// Cross-record checks (references, command links) live in [`validate`].
+pub fn validate_contract(record: &ContractRecord) -> ContractResult<()> {
+    let description = &record.description;
+    let id = &description.id;
+    if id.is_empty() {
+        return Err(fail("empty_contract_id", "Contract ID must not be empty."));
     }
-    Ok(())
-}
-
-fn object<'a>(value: &'a Value, name: &str) -> Result<&'a serde_json::Map<String, Value>, String> {
-    value
-        .as_object()
-        .ok_or_else(|| format!("{name} must be an object"))
-}
-
-fn array<'a>(value: &'a Value, name: &str) -> Result<&'a Vec<Value>, String> {
-    value
-        .as_array()
-        .ok_or_else(|| format!("{name} must be an array"))
-}
-
-pub fn validate_registry(registry: &Value) -> Result<(), String> {
-    if registry["schema"] != "public-contract-registry" {
-        return Err("invalid registry schema".into());
-    }
-    let commands = object(&registry["commands"], "commands")?;
-    let contracts = object(&registry["contracts"], "contracts")?;
-    let examples = object(&registry["examples"], "examples")?;
-    let query_schemas = object(&registry["query_data_schemas"], "query data schemas")?;
-
-    for id in [
-        "contract-list-data",
-        "contract-describe-data",
-        "contract-scaffold-data",
-        "contract-example-data",
-    ] {
-        object(
-            query_schemas
-                .get(id)
-                .ok_or_else(|| format!("missing query data schema: {id}"))?,
-            id,
-        )?;
-    }
-    for (id, record) in contracts {
-        let description = object(&record["description"], id)?;
-        if description.get("id").and_then(Value::as_str) != Some(id) {
-            return Err(format!("contract ID mismatch: {id}"));
-        }
-        if !matches!(
-            description.get("kind").and_then(Value::as_str),
-            Some("semantic_request" | "generated_request" | "response" | "artifact" | "envelope")
-        ) {
-            return Err(format!("invalid contract kind: {id}"));
-        }
-        if !description
-            .get("caller_constructible")
-            .is_some_and(Value::is_boolean)
-        {
-            return Err(format!("missing caller_constructible: {id}"));
-        }
-        let mut names = BTreeSet::new();
-        let required: BTreeSet<_> = array(&description["required"], "required fields")?
-            .iter()
-            .map(|name| {
-                name.as_str()
-                    .ok_or_else(|| format!("invalid required field: {id}"))
-            })
-            .collect::<Result<_, _>>()?;
-        let optional: BTreeSet<_> = array(&description["optional"], "optional fields")?
-            .iter()
-            .map(|name| {
-                name.as_str()
-                    .ok_or_else(|| format!("invalid optional field: {id}"))
-            })
-            .collect::<Result<_, _>>()?;
-        if !required.is_disjoint(&optional) {
-            return Err(format!("required and optional fields overlap: {id}"));
-        }
-        for field in array(&description["fields"], "contract fields")? {
-            let name = field["name"]
-                .as_str()
-                .ok_or_else(|| format!("missing field name: {id}"))?;
-            if !names.insert(name) {
-                return Err(format!("duplicate field: {id}/{name}"));
-            }
-            if field["required"] != required.contains(name)
-                || required.contains(name) == optional.contains(name)
-            {
-                return Err(format!("field presence metadata mismatch: {id}/{name}"));
-            }
-            if let Some(reference) = field["reference"].as_str()
-                && !contracts.contains_key(reference)
-            {
-                return Err(format!("missing contract reference: {id}/{reference}"));
-            }
-        }
-        if names != required.union(&optional).copied().collect() {
-            return Err(format!("field presence list mismatch: {id}"));
-        }
-        let order: Vec<_> = array(&description["canonical_order"], "canonical order")?
-            .iter()
-            .map(|name| {
-                name.as_str()
-                    .ok_or_else(|| format!("invalid canonical field: {id}"))
-            })
-            .collect::<Result<_, _>>()?;
-        if order.len() != names.len() || order.iter().copied().collect::<BTreeSet<_>>() != names {
-            return Err(format!("canonical order mismatch: {id}"));
-        }
-    }
-    for (path, command) in commands {
-        let name = command["name"]
-            .as_str()
-            .ok_or_else(|| format!("missing command name: {path}"))?;
-        if path.split(' ').next_back() != Some(name) {
-            return Err(format!("command path mismatch: {path}"));
-        }
-        let mut names = BTreeSet::new();
-        let mut flags = BTreeSet::new();
-        for argument in array(&command["arguments"], "command arguments")? {
-            let name = argument["name"]
-                .as_str()
-                .ok_or_else(|| format!("missing argument name: {path}"))?;
-            if !names.insert(name) {
-                return Err(format!("duplicate argument: {path}/{name}"));
-            }
-            for flag in array(&argument["flags"], "argument flags")? {
-                let flag = flag
-                    .as_str()
-                    .ok_or_else(|| format!("invalid flag: {path}/{name}"))?;
-                if !flags.insert(flag) {
-                    return Err(format!("duplicate flag: {path}/{flag}"));
-                }
-            }
-        }
-        for group in array(&command["exclusive_groups"], "exclusive groups")? {
-            for member in array(&group["members"], "group members")? {
-                let member = member
-                    .as_str()
-                    .ok_or_else(|| format!("invalid group member: {path}"))?;
-                if !names.contains(member) {
-                    return Err(format!("unknown group member: {path}/{member}"));
-                }
-            }
-        }
-        for link in ["request_contract", "response_contract"] {
-            if let Some(id) = command[link].as_str()
-                && !contracts.contains_key(id)
-            {
-                return Err(format!("missing command contract: {path}/{id}"));
-            }
-        }
-    }
-    for (id, scenarios) in examples {
-        if !contracts.contains_key(id) {
-            return Err(format!("example has unknown contract: {id}"));
-        }
-        for (scenario, value) in object(scenarios, "scenarios")? {
-            if scenario.is_empty() {
-                return Err(format!("empty scenario: {id}"));
-            }
-            if !value["valid"].is_boolean() || value.get("example").is_none() {
-                return Err(format!("invalid example: {id}/{scenario}"));
-            }
-        }
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_validation_rejects_missing_links_and_malformed_resources() {
-        let original = crate::registry().clone();
-        assert!(validate_registry(&original).is_ok());
-        let mut value = original.clone();
-        value["commands"]["tooling policy load"]["request_contract"] = "missing".into();
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("missing command contract")
-        );
-        let mut value = original.clone();
-        value["contracts"]["tooling-cli-result"]["description"]["fields"][0]["reference"] =
-            "missing".into();
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("missing contract reference")
-        );
-        let mut value = original.clone();
-        value["examples"]["tooling-cli-result"]["success"]["valid"] = Value::Null;
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("invalid example")
-        );
-        let mut value = original.clone();
-        value["contracts"]["tooling-policy-load-request"]["description"]["fields"][2]["required"] =
-            Value::Bool(false);
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("field presence metadata mismatch")
-        );
-        let mut value = original.clone();
-        value["contracts"]["tooling-policy-load-request"]["description"]["optional"] =
-            serde_json::json!(["previous", "semantic_review"]);
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("required and optional fields overlap")
-        );
-        let mut value = original;
-        value["query_data_schemas"]
-            .as_object_mut()
-            .unwrap()
-            .remove("contract-example-data");
-        assert!(
-            validate_registry(&value)
-                .unwrap_err()
-                .contains("missing query data schema")
-        );
-    }
-
-    #[test]
-    fn source_reader_rejects_missing_and_invalid_json_files() {
-        let missing =
-            std::env::temp_dir().join(format!("contract-registry-missing-{}", std::process::id()));
-        assert!(read_json_file(&missing).is_err());
-        let invalid = std::env::temp_dir().join(format!(
-            "contract-registry-invalid-{}.json",
-            std::process::id()
+    if description.caller_constructible && description.kind != ContractKind::SemanticRequest {
+        return Err(fail(
+            "caller_constructible_requires_request",
+            format!("Only semantic requests are caller constructible: {id}"),
         ));
-        std::fs::write(&invalid, b"{").unwrap();
-        assert!(
-            read_json_file(&invalid)
-                .unwrap_err()
-                .contains("invalid JSON")
-        );
-        std::fs::remove_file(invalid).unwrap();
+    }
+    if description.kind == ContractKind::GeneratedRequest && description.caller_constructible {
+        return Err(fail(
+            "generated_request_not_caller_constructible",
+            format!("Generated request must not be caller constructible: {id}"),
+        ));
     }
 
-    #[test]
-    fn duplicate_scenarios_and_escaped_example_files_are_rejected() {
-        let entry = serde_json::json!({"contract_id":"x","scenario":"s","file":"a.json"});
-        assert!(
-            validate_example_catalog(&serde_json::json!([entry.clone(), entry]))
-                .unwrap_err()
-                .contains("duplicate scenario")
-        );
-        assert!(
-            validate_example_catalog(
-                &serde_json::json!([{"contract_id":"x","scenario":"s","file":"../a.json"}])
-            )
-            .is_err()
-        );
+    let required: BTreeSet<&str> = description.required.iter().map(String::as_str).collect();
+    let optional: BTreeSet<&str> = description.optional.iter().map(String::as_str).collect();
+    if !required.is_disjoint(&optional) {
+        return Err(fail(
+            "field_presence_conflict",
+            format!("Required and optional fields overlap: {id}"),
+        ));
     }
+
+    let mut names = BTreeSet::new();
+    for field in &description.fields {
+        if field.name.is_empty() {
+            return Err(fail("empty_field_name", format!("Empty field name: {id}")));
+        }
+        if !names.insert(field.name.as_str()) {
+            return Err(fail(
+                "duplicate_field",
+                format!("Duplicate field: {id}/{}", field.name),
+            ));
+        }
+        if required.contains(field.name.as_str()) == optional.contains(field.name.as_str()) {
+            return Err(fail(
+                "field_presence_mismatch",
+                format!(
+                    "Field must be exactly required or optional: {id}/{}",
+                    field.name
+                ),
+            ));
+        }
+        if field.required != required.contains(field.name.as_str()) {
+            return Err(fail(
+                "field_presence_mismatch",
+                format!(
+                    "Field presence flag disagrees with list: {id}/{}",
+                    field.name
+                ),
+            ));
+        }
+        if field.constant.is_some() && field.schema.is_some() {
+            return Err(fail(
+                "ambiguous_field_constraint",
+                format!(
+                    "Field declares both constant and schema: {id}/{}",
+                    field.name
+                ),
+            ));
+        }
+        if let Some(schema) = &field.schema {
+            validate_schema(schema, record, &field.name)?;
+        }
+    }
+
+    let declared: BTreeSet<&str> = required.union(&optional).copied().collect();
+    if names != declared {
+        return Err(fail(
+            "field_presence_mismatch",
+            format!("Field list disagrees with required/optional: {id}"),
+        ));
+    }
+
+    let order: BTreeSet<&str> = description
+        .canonical_order
+        .iter()
+        .map(String::as_str)
+        .collect();
+    if description.canonical_order.len() != names.len() || order != names {
+        return Err(fail(
+            "canonical_order_mismatch",
+            format!("Canonical order must list every field exactly once: {id}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_schema(
+    schema: &SchemaNode,
+    record: &ContractRecord,
+    field: &str,
+) -> ContractResult<()> {
+    match schema {
+        SchemaNode::Reference { reference } => {
+            if !record.definitions.contains_key(reference) {
+                return Err(fail(
+                    "missing_schema_definition",
+                    format!(
+                        "Unknown definition {reference} for {}/{}",
+                        record.description.id, field
+                    ),
+                ));
+            }
+        }
+        SchemaNode::Constant { .. } | SchemaNode::Open => {}
+        SchemaNode::Object {
+            required,
+            properties,
+            discriminator,
+        } => {
+            for name in required {
+                if !properties.contains_key(name) {
+                    return Err(fail(
+                        "missing_schema_property",
+                        format!(
+                            "Required property {name} is not declared for {}/{}",
+                            record.description.id, field
+                        ),
+                    ));
+                }
+            }
+            for property in properties.values() {
+                validate_schema(property, record, field)?;
+            }
+            if let Some(discriminator) = discriminator {
+                for reference in discriminator.mapping.values() {
+                    if !record
+                        .definitions
+                        .contains_key(reference.trim_start_matches("#/"))
+                    {
+                        return Err(fail(
+                            "missing_schema_definition",
+                            format!(
+                                "Unknown discriminator target {reference} for {}/{}",
+                                record.description.id, field
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+        SchemaNode::Array { items, .. } => validate_schema(items, record, field)?,
+        SchemaNode::Branch { alternatives } => {
+            if alternatives.is_empty() {
+                return Err(fail(
+                    "empty_branch",
+                    format!(
+                        "Branch has no alternatives for {}/{}",
+                        record.description.id, field
+                    ),
+                ));
+            }
+            for alternative in alternatives {
+                validate_schema(alternative, record, field)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_command(registry: &Registry, path: &str) -> ContractResult<()> {
+    let entry = registry
+        .command(path)
+        .ok_or_else(|| fail("unknown_command", format!("Unknown command: {path}")))?;
+    let node = &entry.node;
+    if node.name.is_empty() || node.name.contains(char::is_whitespace) {
+        return Err(fail(
+            "invalid_command_name",
+            format!("Invalid command name at {path}"),
+        ));
+    }
+    let mut names = BTreeSet::new();
+    let mut flags = BTreeSet::new();
+    for argument in &node.arguments {
+        if !names.insert(argument.name.as_str()) {
+            return Err(fail(
+                "duplicate_argument",
+                format!("Duplicate argument {path}: {}", argument.name),
+            ));
+        }
+        if argument.action == ArgumentAction::Set && argument.flags.is_empty() {
+            return Err(fail(
+                "missing_argument_flag",
+                format!("Value argument has no flag {path}: {}", argument.name),
+            ));
+        }
+        for flag in &argument.flags {
+            if !flags.insert(flag.as_str()) {
+                return Err(fail(
+                    "duplicate_flag",
+                    format!("Duplicate flag {path}: {flag}"),
+                ));
+            }
+        }
+        if argument.action == ArgumentAction::SetTrue && argument.nargs_any {
+            return Err(fail(
+                "invalid_argument_action",
+                format!("Boolean flag cannot accept any number of values: {path}"),
+            ));
+        }
+        if argument.nargs_any && argument.action != ArgumentAction::Append {
+            return Err(fail(
+                "invalid_argument_action",
+                format!("Only append arguments accept any number of values: {path}"),
+            ));
+        }
+    }
+    for group in &node.exclusive_groups {
+        if group.members.len() < 2 {
+            return Err(fail(
+                "invalid_exclusive_group",
+                format!("Exclusive group needs at least two members: {path}"),
+            ));
+        }
+        for member in &group.members {
+            if !names.contains(member.as_str()) {
+                return Err(fail(
+                    "unknown_group_member",
+                    format!("Unknown exclusive group member {path}: {member}"),
+                ));
+            }
+        }
+    }
+    for link in [&node.request_contract, &node.response_contract] {
+        if let Some(id) = link
+            && registry.contract(id).is_none()
+        {
+            return Err(fail(
+                "missing_command_contract",
+                format!("Command links unknown contract {path}: {id}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Validate the whole registry: every contract, every command and every link.
+pub fn validate(registry: &Registry) -> ContractResult<()> {
+    let mut ids = BTreeSet::new();
+    for contract in registry.contracts() {
+        validate_contract(contract)?;
+        ids.insert(contract.description.id.as_str());
+    }
+    for contract in registry.contracts() {
+        let description = &contract.description;
+        for field in &description.fields {
+            if let Some(reference) = &field.reference
+                && !ids.contains(reference.as_str())
+            {
+                return Err(fail(
+                    "missing_contract_reference",
+                    format!("Unknown contract reference {}: {reference}", description.id),
+                ));
+            }
+            if field.reference.is_some() && field.field_type != FieldType::Object {
+                return Err(fail(
+                    "invalid_contract_reference",
+                    format!(
+                        "Only object fields may reference another contract: {}/{}",
+                        description.id, field.name
+                    ),
+                ));
+            }
+        }
+    }
+    let paths: Vec<String> = registry
+        .commands()
+        .map(|entry| entry.path.clone())
+        .collect();
+    for path in paths {
+        validate_command(registry, &path)?;
+    }
+    for (id, scenarios) in registry.examples_index() {
+        if !ids.contains(id.as_str()) {
+            return Err(fail(
+                "example_unknown_contract",
+                format!("Example references unknown contract: {id}"),
+            ));
+        }
+        for scenario in scenarios.keys() {
+            if scenario.is_empty() {
+                return Err(fail("empty_scenario", format!("Empty scenario: {id}")));
+            }
+        }
+    }
+    Ok(())
 }

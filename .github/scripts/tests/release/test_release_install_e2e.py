@@ -14,31 +14,34 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "release"))
-from release_install_e2e import assert_state_for_host, exercise_package, run_installer_for_host, snapshot_host, terminate_process_tree, verify_readme_download
+from release_install_e2e import HostLayout, assert_installation, exercise_package, register_windows_e2e_clis, run_installer_for_host, terminate_process_tree, verify_readme_download
 
 
 class ReleaseInstallE2ETests(unittest.TestCase):
-    def test_host_snapshot_includes_parent_state_and_instructions(self):
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
+    def test_host_layout_snapshot_covers_skills_cli_and_instructions(self):
+        for platform in ("macos-arm64", "windows-x64-msvc"):
             for host, skills_path, instructions_path in (
                 ("codex", ".agents/skills", ".codex/AGENTS.md"),
                 ("claude", ".claude/skills", ".claude/CLAUDE.md"),
             ):
-                skills = home / skills_path
-                instructions = home / instructions_path
-                skills.mkdir(parents=True, exist_ok=True)
-                instructions.parent.mkdir(parents=True, exist_ok=True)
-                (skills / "install-state.json").write_text(host, encoding="utf-8")
-                (skills / "work").mkdir()
-                (skills / "work/SKILL.md").write_text(host, encoding="utf-8")
-                instructions.write_text(host, encoding="utf-8")
-                original = snapshot_host(home, host)
-                instructions.write_text(host + " updated", encoding="utf-8")
-                self.assertNotEqual(snapshot_host(home, host), original)
-                instructions.unlink()
-                with self.assertRaisesRegex(AssertionError, "no global instructions"):
-                    snapshot_host(home, host)
+                with self.subTest(platform=platform, host=host), tempfile.TemporaryDirectory() as directory:
+                    home = Path(directory)
+                    layout = HostLayout(home, host, platform)
+                    self.assertEqual(layout.skills, home / skills_path)
+                    self.assertEqual(layout.global_file, home / instructions_path)
+                    self.assertEqual(layout.cli, layout.skills.parent / "agent-work-kit")
+                    self.assertEqual(layout.work.suffix, ".exe" if platform == "windows-x64-msvc" else "")
+                    self.assertEqual(layout.snapshot(), {})
+                    (layout.skills / "work").mkdir(parents=True)
+                    (layout.skills / "work/SKILL.md").write_text(host, encoding="utf-8")
+                    (layout.cli / "bin").mkdir(parents=True)
+                    layout.work.write_text(host, encoding="utf-8")
+                    layout.global_dir.mkdir(parents=True, exist_ok=True)
+                    layout.global_file.write_text(host, encoding="utf-8")
+                    original = layout.snapshot()
+                    self.assertEqual(len(original), 3)
+                    layout.global_file.write_text(host + " updated", encoding="utf-8")
+                    self.assertNotEqual(layout.snapshot(), original)
 
     def test_both_platforms_pass_zip_host_into_native_installer(self):
         for platform, suffix in (("macos-arm64", ".command"), ("windows-x64-msvc", ".bat")):
@@ -55,6 +58,32 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                             exercise_package(package, root, platform)
                     self.assertEqual(installer.call_args.kwargs["host"], host)
 
+    def test_windows_cli_registration_uses_concrete_binary_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "work.exe"
+            program.write_bytes(b"binary")
+            recorded = []
+
+            def register(command, **kwargs):
+                self.assertIn("register_programs.ps1", " ".join(command))
+                self.assertEqual(command[-4], "-Rule")
+                self.assertEqual(command[-3], "unit-test")
+                self.assertEqual(command[-2], "-PathsFile")
+                recorded.extend(json.loads(Path(command[-1]).read_text(encoding="utf-8")))
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch.dict("os.environ", {"AGENT_WORK_KIT_E2E_RULE_PREFIX": "unit-test"}):
+                with patch("release_install_e2e.sys.platform", "win32"):
+                    with patch("release_install_e2e.subprocess.run", side_effect=register):
+                        register_windows_e2e_clis(program, program, Path(directory) / "missing.exe")
+            self.assertEqual(recorded, [str(program.resolve())])
+
+    def test_windows_cli_registration_is_inert_without_isolation(self):
+        with patch.dict("os.environ", {"AGENT_WORK_KIT_E2E_RULE_PREFIX": ""}):
+            with patch("release_install_e2e.subprocess.run") as run:
+                register_windows_e2e_clis(Path("work.exe"))
+                run.assert_not_called()
+
     def test_installer_output_is_retained_for_assertions(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -69,16 +98,21 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             self.assertIn(b"Version: test", stdout)
             self.assertIn(b"diagnostic", stderr)
 
-    def test_claude_state_is_accepted_only_for_claude(self):
+    def test_installation_state_is_accepted_only_for_its_own_host_and_resources(self):
         with tempfile.TemporaryDirectory() as directory:
-            work = Path(directory) / "skills/work"
-            work.mkdir(parents=True)
+            layout = HostLayout(Path(directory), "claude", "macos-arm64")
+            layout.skills.mkdir(parents=True)
             state = {"host": "claude", "version": "1.2.3", "rust_workspace_version": "1.2.3",
-                     "skill_install_dir": str(work.parent),
-                     "global_instructions_dir": None, "status": "installed"}
-            (work.parent / "install-state.json").write_text(json.dumps(state), encoding="utf-8")
-            with self.assertRaisesRegex(AssertionError, "unexpected Skills state"):
-                assert_state_for_host(work, "1.2.3", "1.2.3", False, host="codex")
+                     "skill_install_dir": str(layout.skills), "cli_install_dir": str(layout.cli),
+                     "global_instructions_dir": None, "status": "installed", "files": []}
+            layout.state.write_text(json.dumps(state), encoding="utf-8")
+            info = {"version": "1.2.3", "rust_workspace_version": "1.2.3"}
+            layout.state.write_text(json.dumps({**state, "host": "codex"}), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "unexpected installation state"):
+                assert_installation(layout, info, False)
+            layout.state.write_text(json.dumps(state), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "omitted work/SKILL.md"):
+                assert_installation(layout, info, False)
 
     def test_claude_host_is_passed_to_installer(self):
         with tempfile.TemporaryDirectory() as directory:

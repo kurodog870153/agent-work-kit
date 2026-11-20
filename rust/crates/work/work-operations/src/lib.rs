@@ -1,17 +1,17 @@
-//! Pure Work rules and contracts.
+//! Work domain operations: pure rules and derived computations.
+//!
+//! Nothing here touches storage, clocks, the file system or the environment.
 
-pub mod canonical;
-pub mod derivation;
-pub mod discussion;
-pub mod execution;
-pub mod hierarchy;
-pub mod identifiers;
-pub mod instruction;
-pub mod protocol;
-#[cfg(test)]
-pub mod routing;
-pub mod skill;
-pub mod source_snapshot;
-pub mod specification;
-pub mod task;
-pub mod workflow;
+mod codec;
+mod discussion;
+mod source;
+mod task;
+
+pub use codec::{decode, encode};
+pub use discussion::{apply_round, new_discussion, outstanding_question, summarise};
+pub use source::{new_correction, new_source};
+pub use task::{
+    add_attempt, append_requirement_acceptance, append_task_acceptance, complete_task,
+    completion_blockers, criterion_states, new_execution, new_requirement_acceptance, new_task,
+    new_task_acceptance, requirement_state, revise_task,
+};

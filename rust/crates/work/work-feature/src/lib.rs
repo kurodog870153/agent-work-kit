@@ -1,16 +1,24 @@
-//! Work use cases and their ports.
+//! Work domain use cases, decisions and the ports they need.
+//!
+//! Business rules live here; external capability is reached only through a
+//! port declared in this crate.
 
-pub mod artifact_paths;
-pub mod discussion;
-pub mod error;
-pub mod execution;
-pub mod fingerprint;
-pub mod hierarchy;
-pub mod instruction;
-pub mod ports;
-pub mod skill;
-pub mod source;
-pub mod specification;
-pub mod task;
-pub mod workflow;
-pub mod workspace;
+mod port;
+mod task;
+mod usecase;
+
+pub use port::{Precondition, RecordStore, StoredRecord, WritePlan};
+pub use usecase::{
+    correction_apply, correction_preview, corrections_for, create_discussion, create_source,
+    discussion_history, discussion_round, recover, show_discussion, show_progress, show_source,
+    status,
+};
+
+pub use task::{
+    TraceView, complete_task, record_execution, record_requirement_acceptance,
+    record_task_acceptance, show_execution, show_requirement_acceptance, show_task,
+    show_task_acceptance, task_apply, task_preview, trace,
+};
+
+#[cfg(test)]
+mod memory;

@@ -52,11 +52,7 @@ jobs:
           if [[ "$RELEASE_MODE" == false ]]; then
             bash .github/scripts/tests/release/mac/lock/test_native_lock.sh
             bash .github/scripts/tests/release/mac/cli/test_parse_options.sh
-            node .github/scripts/tests/release/mac/state/test_install_state.js
-            bash .github/scripts/tests/release/mac/transaction/test_work.sh
-            bash .github/scripts/tests/release/mac/transaction/test_tooling.sh
             bash .github/scripts/tests/release/mac/global-instructions/test_policy.sh
-            bash .github/scripts/tests/release/mac/global-instructions/test_transaction.sh
           fi
           python3 -B .github/scripts/tests/release/test_downloader_entry.py
       - name: Install Rust toolchain
@@ -65,11 +61,10 @@ jobs:
         working-directory: rust
         run: |
           cargo build --release --locked -p work-cli
-          cargo build --release --locked -p tooling-cli
+          cargo build --release --locked -p skill-cli
       - name: Package and verify macOS ZIP
         run: |
           if [[ "$RELEASE_MODE" == false ]]; then
-            bash .github/scripts/tests/release/mac/target/test_preflight.sh
             bash .github/scripts/tests/release/mac/install/test_install.sh
             version="$(cat VERSION)"
           else
@@ -77,7 +72,7 @@ jobs:
           fi
           for host in codex claude; do
             zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
-            python3 .github/scripts/release/release_package.py package --output dist --host "$host" --platform macos-arm64 --binary rust/target/release/work --tooling-binary rust/target/release/tooling --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+            python3 .github/scripts/release/release_package.py package --output dist --host "$host" --platform macos-arm64 --work-binary rust/target/release/work --skill-binary rust/target/release/skill --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
             python3 .github/scripts/release/release_package_integrity.py verify-zip "$zip"
             (cd dist && shasum -a 256 "${zip##*/}") >> dist/SHA256SUMS.txt
           done
@@ -87,7 +82,7 @@ jobs:
           done
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
-      - name: Upload macOS CLI smoke evidence
+      - name: Upload macOS Host simulation evidence
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('cli-smoke-macos-arm64-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-macos-arm64' }}
@@ -147,13 +142,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             pwsh -NoProfile -File .github/scripts/tests/release/windows/test_firewall_isolation.ps1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/test_firewall_isolation.ps1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           if ($env:RELEASE_MODE -eq 'false') {
-            foreach ($test in @(
-              'cli/test_parse_options.ps1', 'state/test_install_state.ps1',
-              'transaction/test_work.ps1', 'transaction/test_tooling.ps1',
-              'global-instructions/test_policy.ps1', 'global-instructions/test_transaction.ps1'
-            )) {
+            foreach ($test in @('cli/test_parse_options.ps1', 'global-instructions/test_policy.ps1')) {
               powershell.exe -NoProfile -File ".github/scripts/tests/release/windows/$test"
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             }
@@ -167,16 +160,14 @@ jobs:
         run: |
           cargo build --release --locked -p work-cli
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo build --release --locked -p tooling-cli
+          cargo build --release --locked -p skill-cli
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Package and verify Windows ZIP
         run: |
           if ($env:RELEASE_MODE -eq 'false') {
-            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/target/test_preflight.ps1 -Binary rust/target/release/work.exe
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/install/test_install.ps1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/install/test_install.ps1 -Binary rust/target/release/work.exe
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe -ToolingBinary rust/target/release/tooling.exe
+            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/package/test_entry.ps1 -Binary rust/target/release/work.exe -SkillBinary rust/target/release/skill.exe
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $version = (Get-Content VERSION -Raw).Trim()
           } else {
@@ -185,7 +176,7 @@ jobs:
           $os = Get-CimInstance Win32_OperatingSystem
           $checksumLines = @()
           foreach ($installerHost in @('codex', 'claude')) {
-            python -B .github/scripts/release/release_package.py package --output dist --host $installerHost --platform windows-x64-msvc --binary rust/target/release/work.exe --tooling-binary rust/target/release/tooling.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+            python -B .github/scripts/release/release_package.py package --output dist --host $installerHost --platform windows-x64-msvc --work-binary rust/target/release/work.exe --skill-binary rust/target/release/skill.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
             python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
@@ -201,7 +192,7 @@ jobs:
           }
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
-      - name: Upload Windows CLI smoke evidence
+      - name: Upload Windows Host simulation evidence
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.release && format('cli-smoke-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-windows-x64-msvc' }}

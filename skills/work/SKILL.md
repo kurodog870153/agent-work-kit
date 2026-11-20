@@ -1,9 +1,9 @@
 ---
 name: work
-description: Manage formal Work Source, TASK, Specification, Discussion and Execution data through validated CLI contracts. The Host coordinates task, execute, revise and migration work.
+description: Manage formal Work records (Source, Discussion, TASK, Execution, Acceptance) through the Work CLI, covering requirement clarification, task planning, execution and acceptance. Use for requirement discussion, TASK planning, execution records, acceptance and revision.
 ---
 
 # Work
 
-1. When the Host activates Work for task, revise, migration or execute, read this Skill's `references/instruction-loading.md` first.
-2. Follow that Bootstrap's conditional `## Modules` routes. Validate formal data with Work CLI; the Host chooses tools, native Subagents and conversational flow. Skill activation grants no execution or write approval.
+1. Read the same installation's `shared/bootstrap.md`, then this Skill's `instructions/instructions.md`.
+2. Discover `task` and `execute` branches under `instructions/` on demand. The Host chooses tools, native Subagents and conversation flow; activation grants no write or execution approval.

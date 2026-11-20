@@ -10,8 +10,8 @@ $Root = [string] $args[3]
 $CliArgs = @()
 if ($args.Count -gt 4) { $CliArgs = [string[]] $args[4..($args.Count - 1)] }
 $installerRoot = Split-Path -Parent $PSScriptRoot
-foreach ($module in @('cli/parse-options.ps1', 'state/state-core.ps1', 'target/preflight.ps1', 'lock/mutex.ps1',
-    'transaction/work.ps1', 'install/work-install.ps1', 'install/tooling-install.ps1', 'install/contract-install.ps1', 'transaction/tooling.ps1', 'install/migration-cleanup.ps1', 'global-instructions/policy.ps1', 'global-instructions/transaction.ps1')) {
+foreach ($module in @('cli/parse-options.ps1', 'state/state.ps1', 'target/preflight.ps1', 'lock/mutex.ps1', 'install/resources.ps1',
+    'global-instructions/policy.ps1', 'transaction/transaction.ps1')) {
     . (Join-Path $installerRoot $module)
 }
 
@@ -22,459 +22,203 @@ function Read-InstallerChoice {
     return $answer.Trim()
 }
 
-function Test-InstallerDirectoryPathSafe {
-    param([string] $Path)
-    $probe = $Path
-    while (-not [string]::IsNullOrEmpty($probe)) {
-        if (Test-Path -LiteralPath $probe) {
-            $item = Get-Item -LiteralPath $probe -Force
-            if (-not $item.PSIsContainer -or
-                ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
-        }
-        $parent = Split-Path -Path $probe -Parent
-        if ($parent -eq $probe) { break }
-        $probe = $parent
-    }
-    return $true
-}
-
-function New-InstallerWorkParents {
-    param([string] $Target)
-    $missing = @()
-    $probe = Split-Path -Path $Target -Parent
-    while (-not (Test-Path -LiteralPath $probe)) {
-        $missing += $probe
-        $next = Split-Path -Path $probe -Parent
-        if ($next -eq $probe -or [string]::IsNullOrEmpty($next)) { throw 'cannot resolve Work parent' }
-        $probe = $next
-    }
-    if (-not (Test-Path -LiteralPath $probe -PathType Container)) { throw 'Work parent is not a directory' }
-    $created = @()
-    for ($index = $missing.Count - 1; $index -ge 0; $index--) {
-        $path = $missing[$index]
-        New-Item -ItemType Directory -Path $path -ErrorAction Stop | Out-Null
-        $created += $path
-    }
-    return $created
-}
-
-function Test-InstallerBinaryInUse {
-    param([string] $Binary)
-    if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { return $false }
-    $full = [IO.Path]::GetFullPath($Binary)
-    foreach ($process in @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Binary)) -ErrorAction SilentlyContinue)) {
-        try {
-            if ([string]::Equals($process.Path, $full, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-        } catch { }
-    }
-    try {
-        $stream = [IO.File]::Open($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
-        $stream.Dispose()
-        return $false
-    } catch [IO.IOException] {
-        return $true
-    }
-}
-
-function Remove-InstallerChildStates {
-    param([object] $Combined, [string] $WorkTarget, [string] $ToolingTarget)
-    foreach ($entry in @(
-        [pscustomobject]@{ Path = (Join-Path $WorkTarget 'install-state.json'); Domain = 'work' },
-        [pscustomobject]@{ Path = (Join-Path $ToolingTarget 'install-state.json'); Domain = 'tooling' }
-    )) {
-        if (-not (Test-Path -LiteralPath $entry.Path)) { continue }
-        $item = Get-Item -LiteralPath $entry.Path -Force
-        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw "unsafe child install-state.json: $($entry.Path)"
-        }
-        $raw = [IO.File]::ReadAllText($entry.Path)
-        if ($entry.Domain -eq 'work') {
-        $actual = Read-InstallerState -Raw $raw -InstallDir $WorkTarget -InstallerHost $Combined.host
-            if ($null -eq $actual -or $actual.version -cne $Combined.rust_workspace_version -or
-                $actual.global_agents_dir -cne $Combined.global_instructions_dir) {
-                throw "child Work state differs from parent: $($entry.Path)"
-            }
-        } elseif ((Get-InstallerToolingStateVersion -Raw $raw -Target $ToolingTarget) -cne $Combined.rust_workspace_version) {
-            throw "child Tooling state differs from parent: $($entry.Path)"
-        }
-        Remove-Item -LiteralPath $entry.Path -ErrorAction Stop
-    }
-}
-
 function Invoke-InstallerCore {
-    $sourceWork = Join-Path $Root 'skills/work'
-    $sourceTooling = Join-Path $Root 'skills/tooling'
-    $sourceContract = Join-Path $Root 'skills/contract'
-    $stateTemplatePath = if ($Mode -eq 'source') {
-        Join-Path $Root 'os-scripts/common/installer/install-state.json'
-    } else {
-        Join-Path $Root 'installer/state/install-state.json'
-    }
     $cli = Parse-InstallerCli -Tokens $CliArgs
     if ($cli.Action -eq 'help') { Get-InstallerCliUsage; return }
-    if ($cli.Verbose) { Write-Output 'Installer options parsed.' }
-    if (-not (Test-InstallerToolingSource -Source $sourceTooling)) { throw 'Tooling source is missing or unsafe' }
-    if (-not (Test-InstallerContractSource -Source $sourceContract)) { throw 'Contract source is missing or unsafe' }
-    if ($null -eq $cli.InstallerHost) {
-        $choice = Read-InstallerChoice -Prompt 'Select Host: 1) Codex, 2) Claude Code' -Default ''
-        switch ($choice) {
-            '1' { $cli.InstallerHost = 'codex' }
-            '2' { $cli.InstallerHost = 'claude' }
+    function Write-InstallerLog([string] $Message) { if ($cli.Verbose) { Write-Output "Installer: $Message" } }
+    $selectedHost = $cli.InstallerHost
+    if ($null -eq $selectedHost) {
+        switch (Read-InstallerChoice -Prompt 'Select Host: 1) Codex, 2) Claude Code' -Default '') {
+            '1' { $selectedHost = 'codex' }
+            '2' { $selectedHost = 'claude' }
             default { throw 'Host selection is required' }
         }
     }
-    $install = {
-    param($sourceWork, $sourceTooling, $sourceContract, $cli, $Root, $Mode, $stateTemplatePath)
-    $selectedHost = $cli.InstallerHost
-    $releaseInfo = if ($Mode -eq 'package') {
-        Get-Content -LiteralPath (Join-Path $Root 'release-info.json') -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    } else { $null }
-    if ($Mode -eq 'package' -and ($releaseInfo.host -cne $selectedHost -or
-        $releaseInfo.target -cne 'x86_64-pc-windows-msvc')) {
-        throw 'release package Host or platform does not match the selected installation'
+
+    # --- Release identity ---
+    if ($Mode -eq 'package') {
+        $info = Join-Path $Root 'release-info.json'
+        $packageHost = Get-InstallerReleaseField -Path $info -Name 'host'
+        $packageTarget = Get-InstallerReleaseField -Path $info -Name 'target'
+        $version = Get-InstallerReleaseField -Path $info -Name 'version'
+        $rustVersion = Get-InstallerReleaseField -Path $info -Name 'rust_workspace_version'
+        if ($packageHost -cne $selectedHost -or $packageTarget -cne 'x86_64-pc-windows-msvc') {
+            throw 'release package Host or platform does not match the selected installation'
+        }
+        $workBinary = Join-Path $Root 'bin/work.exe'
+        $skillBinary = Join-Path $Root 'bin/skill.exe'
+    } else {
+        $version = ([IO.File]::ReadAllText((Join-Path $Root 'VERSION'))).Trim()
+        $match = [regex]::Match([IO.File]::ReadAllText((Join-Path $Root 'rust/Cargo.toml')), '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$')
+        if (-not $match.Success) { throw 'Rust workspace version is missing or invalid' }
+        $rustVersion = $match.Groups[1].Value
+        $workBinary = Join-Path $Root 'rust/target/release/work.exe'
+        $skillBinary = Join-Path $Root 'rust/target/release/skill.exe'
     }
-    $defaultParent = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.agents/skills' } else { Join-Path $env:USERPROFILE '.claude/skills' }
-    $defaultTarget = Join-Path $defaultParent 'work'
-    $parentInput = if ($null -ne $cli.SkillsDir) { $cli.SkillsDir } else { $defaultParent }
+    if (-not (Test-InstallerVersion $version) -or -not (Test-InstallerVersion $rustVersion)) { throw 'release or Rust workspace version is missing or invalid' }
+    Assert-InstallerSources -Root $Root
+    $globalSource = Join-Path $Root 'instructions/global-instructions.md'
+
+    # --- Locations ---
+    $defaultSkills = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.agents/skills' } else { Join-Path $env:USERPROFILE '.claude/skills' }
+    $defaultGlobalDir = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.codex' } else { Join-Path $env:USERPROFILE '.claude' }
+    $globalFilename = if ($selectedHost -eq 'codex') { 'AGENTS.md' } else { 'CLAUDE.md' }
+    $skillsInput = if ($null -ne $cli.SkillsDir) { $cli.SkillsDir } else { $defaultSkills }
     if ($null -eq $cli.SkillsDir -and -not $cli.NonInteractive) {
-        $choice = Read-InstallerChoice -Prompt "Skills directory: 1) default ($defaultParent), 2) custom" -Default '1'
-        switch ($choice) {
-            '1' { $parentInput = $defaultParent }
+        switch (Read-InstallerChoice -Prompt "Skills directory: 1) default ($defaultSkills), 2) custom" -Default '1') {
+            '1' { }
             '2' {
-                $parentInput = Read-InstallerChoice -Prompt 'Custom Skills directory' -Default ''
-                if ([string]::IsNullOrWhiteSpace($parentInput)) { throw 'Skills directory cannot be empty' }
+                $skillsInput = Read-InstallerChoice -Prompt 'Custom Skills directory' -Default ''
+                if ([string]::IsNullOrWhiteSpace($skillsInput)) { throw 'Skills directory cannot be empty' }
             }
             default { throw 'invalid Skills directory choice' }
         }
     }
-    $targetInput = Join-Path $parentInput 'work'
-    $defaultGlobalDirectory = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.codex' } else { Join-Path $env:USERPROFILE '.claude' }
-    $interactiveGlobalDirectory = $null
-    if (-not $cli.NonInteractive) {
-        if ($null -eq $cli.GlobalInstructions) {
-            $initialTarget = [IO.Path]::GetFullPath($targetInput)
-            $initialStatePath = Join-Path (Split-Path -Parent $initialTarget) 'install-state.json'
-            $initialRaw = if ((Test-InstallerDirectoryPathSafe -Path $initialTarget) -and
-                (Test-Path -LiteralPath $initialStatePath -PathType Leaf) -and
-                (((Get-Item -LiteralPath $initialStatePath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)) {
-                [IO.File]::ReadAllText($initialStatePath)
-            } else { '' }
-            $initialCombined = if ($initialRaw) { Read-InstallerCombinedState -Raw $initialRaw `
-                -WorkTarget $initialTarget -ToolingTarget (Join-Path (Split-Path -Parent $initialTarget) 'tooling') -InstallerHost $selectedHost } else { $null }
-            $choice = Read-InstallerChoice -Prompt 'Install Global Instructions? (y/n)' -Default $(if (
-                $null -eq $initialCombined -or $null -ne $initialCombined.global_instructions_dir) { 'y' } else { 'n' })
-            if ($choice -notin @('y', 'n')) { throw 'invalid Global Instructions selection' }
-            $cli.GlobalInstructions = $choice -eq 'y'
-        }
-        if ($cli.GlobalInstructions -and $null -eq $cli.InstructionsDir) {
-            $choice = Read-InstallerChoice -Prompt "Global Instructions directory: 1) default ($defaultGlobalDirectory), 2) custom" -Default '1'
-            switch ($choice) {
-                '1' { $interactiveGlobalDirectory = $defaultGlobalDirectory }
+    try { $skillsDir = [IO.Path]::GetFullPath($skillsInput).TrimEnd('\', '/') } catch { throw "invalid --skills-dir path <$skillsInput>: $_" }
+    if (-not (Test-InstallerDirectoryPathSafe -Path $skillsDir)) { throw 'unsafe Skills directory' }
+    $cliDir = [IO.Path]::GetFullPath((Join-Path $skillsDir '../agent-work-kit')).TrimEnd('\', '/')
+    if (-not (Test-InstallerDirectoryPathSafe -Path $cliDir)) { throw 'unsafe CLI directory' }
+    if (Test-InstallerPathOverlap $skillsDir $cliDir) { throw 'the CLI directory must be separate from the Skills directory' }
+    $script:InstallerSkillsDir = $skillsDir
+    $script:InstallerCliDir = $cliDir
+    $script:InstallerTx = Join-Path $skillsDir '.agent-work-kit-txn'
+    $script:InstallerCreatedDirs = @()
+    $script:InstallerGlobalTarget = ''
+
+    # --- Recovery and target inspection ---
+    if (Test-InstallerExists $script:InstallerTx) {
+        if ($cli.DryRun) { throw 'dry run cannot resolve a pending installation transaction' }
+        Restore-InstallerInterrupted
+    }
+    $inspection = Get-InstallerTargetInspection -SkillsDir $skillsDir -CliDir $cliDir
+    if ($inspection.Kind -eq 'unsafe') {
+        throw "targets cannot be installed: $($inspection.Reason). Existing content is preserved and not taken over; inspect it yourself or choose other directories."
+    }
+    $previousGlobalDir = ''
+    $previousGlobalSha = ''
+    if ($inspection.Kind -eq 'managed' -and $null -ne $inspection.State.global_instructions_dir) {
+        $previousGlobalDir = [string] $inspection.State.global_instructions_dir
+        foreach ($entry in @($inspection.State.files)) { if ($entry -cmatch '^([0-9a-f]{64})  global/') { $previousGlobalSha = $Matches[1] } }
+    }
+
+    # --- Global Instructions ---
+    $globalEnabled = ($inspection.Kind -eq 'new') -or ($previousGlobalDir -ne '')
+    if ($null -ne $cli.GlobalInstructions) { $globalEnabled = [bool] $cli.GlobalInstructions }
+    elseif (-not $cli.NonInteractive) {
+        $choice = Read-InstallerChoice -Prompt 'Install Global Instructions? (y/n)' -Default $(if ($globalEnabled) { 'y' } else { 'n' })
+        if ($choice -notin @('y', 'n')) { throw 'invalid Global Instructions choice' }
+        $globalEnabled = $choice -eq 'y'
+    }
+    $globalDir = ''
+    if ($globalEnabled) {
+        $globalInput = if ($previousGlobalDir -ne '') { $previousGlobalDir } else { $defaultGlobalDir }
+        if ($null -ne $cli.InstructionsDir) { $globalInput = $cli.InstructionsDir }
+        elseif (-not $cli.NonInteractive) {
+            switch (Read-InstallerChoice -Prompt "Global Instructions directory: 1) default ($globalInput), 2) custom" -Default '1') {
+                '1' { }
                 '2' {
-                    $interactiveGlobalDirectory = Read-InstallerChoice -Prompt 'Custom Global Instructions directory' -Default ''
-                    if ([string]::IsNullOrWhiteSpace($interactiveGlobalDirectory)) { throw 'Global Instructions directory cannot be empty' }
+                    $globalInput = Read-InstallerChoice -Prompt 'Custom Global Instructions directory' -Default ''
+                    if ([string]::IsNullOrWhiteSpace($globalInput)) { throw 'Global Instructions directory cannot be empty' }
                 }
                 default { throw 'invalid Global Instructions directory choice' }
             }
         }
-    }
-    try { $skillsParent = [IO.Path]::GetFullPath($parentInput) }
-    catch { throw "invalid --skills-dir path <$parentInput>: $_" }
-    if (-not (Test-InstallerDirectoryPathSafe -Path $skillsParent)) { throw 'unsafe Skills directory' }
-    $target = Join-Path $skillsParent 'work'
-    $toolingTarget = Join-Path $skillsParent 'tooling'
-    $contractTarget = Join-Path $skillsParent 'contract'
-    $combinedPath = Join-Path $skillsParent 'install-state.json'
-    $pendingStatePath = Join-Path $skillsParent '.install-state.json.tmp'
-    $previousStatePath = Join-Path $skillsParent '.install-state.json.previous'
-    if (Test-Path -LiteralPath $previousStatePath) {
-        if (-not (Test-Path -LiteralPath $combinedPath -PathType Leaf) -or
-            $null -eq (Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($combinedPath)) `
-                -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost) -or
-            $null -eq (Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($previousStatePath)) `
-                -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost)) {
-            throw 'previous parent state needs manual review'
+        try { $globalDir = [IO.Path]::GetFullPath($globalInput).TrimEnd('\', '/') } catch { throw "invalid --instructions-dir path <$globalInput>: $_" }
+        if (-not (Test-InstallerDirectoryPathSafe -Path $globalDir)) { throw 'unsafe Global Instructions directory' }
+        $script:InstallerGlobalTarget = Join-Path $globalDir $globalFilename
+        if ((Test-InstallerPathOverlap $script:InstallerGlobalTarget $skillsDir) -or (Test-InstallerPathOverlap $script:InstallerGlobalTarget $cliDir)) {
+            throw 'Global Instructions must be outside the Skills and CLI directories'
         }
-        Remove-Item -LiteralPath $previousStatePath -ErrorAction Stop
-    }
-    if (Test-Path -LiteralPath $pendingStatePath) {
-        $pendingItem = Get-Item -LiteralPath $pendingStatePath -Force
-        if ($pendingItem.PSIsContainer -or ($pendingItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-            $null -eq (Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($pendingStatePath)) `
-                -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost)) {
-            throw "unsafe pending parent state; preserve $pendingStatePath"
-        }
-        if (Test-Path -LiteralPath $combinedPath) {
-            if ($null -eq (Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($combinedPath)) `
-                    -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost)) {
-                throw 'existing parent state is invalid; preserve both state files'
-            }
-            [IO.File]::Replace($pendingStatePath, $combinedPath, $previousStatePath)
-            Remove-Item -LiteralPath $previousStatePath -ErrorAction Stop
-        } else {
-            Move-Item -LiteralPath $pendingStatePath -Destination $combinedPath -ErrorAction Stop
-        }
-    }
-    $combinedRaw = if (Test-Path -LiteralPath $combinedPath -PathType Leaf) { [IO.File]::ReadAllText($combinedPath) } else { '' }
-    $combinedState = if ($combinedRaw) { Read-InstallerCombinedState -Raw $combinedRaw -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost } else { $null }
-    if ($combinedRaw -and $null -eq $combinedState) { throw 'parent install-state.json is invalid; preserve the existing installation' }
-    if ($null -eq $combinedState) {
-        foreach ($oldTarget in @($target, $toolingTarget)) {
-            if ((Test-Path -LiteralPath $oldTarget -PathType Container) -and
-                @(Get-ChildItem -LiteralPath $oldTarget -Force).Count -gt 0) {
-                throw "existing Skill has no parent install-state.json; preserve and inspect $oldTarget"
-            }
-        }
-    }
-    if (-not $cli.DryRun -and (Test-Path -LiteralPath (Split-Path -Path $target -Parent) -PathType Container)) {
-        Invoke-InstallerMigrationCleanup -Target $target -SourceWork $sourceWork
-    }
-    if ($cli.DryRun) {
-        if ((Test-InstallerWorkTransactionPending -Target $target) -or
-            (@(Get-InstallerToolingTransactions -Target $toolingTarget).Count -gt 0) -or
-            (Test-InstallerGlobalTransactionPending -WorkTarget $target)) {
-            throw 'dry run cannot resolve a pending installation transaction'
-        }
-    } elseif (Test-Path -LiteralPath (Split-Path -Path $target -Parent) -PathType Container) {
-        Restore-InstallerInterruptedGlobal -WorkTarget $target -SourceWork $sourceWork
-        Restore-InstallerInterruptedWork -Target $target -SourceWork $sourceWork
-    }
-    $version = if ($Mode -eq 'source') { ([IO.File]::ReadAllText((Join-Path $Root 'VERSION'))).Trim() } else { $releaseInfo.version }
-    $workVersion = if ($Mode -eq 'source') {
-        $manifest = [IO.File]::ReadAllText((Join-Path $Root 'rust/Cargo.toml'))
-        $match = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$')
-        if (-not $match.Success) { throw 'Rust workspace version is missing or invalid' }
-        $match.Groups[1].Value
-    } else { $releaseInfo.rust_workspace_version }
-    if ($workVersion -isnot [string] -or $workVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-        throw 'Work version is missing or invalid'
-    }
-    $toolingVersion = $workVersion
-    if ($toolingVersion -isnot [string] -or $toolingVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
-        throw 'Tooling version is missing or invalid'
-    }
-    if ($null -ne $combinedState -and $combinedState.status -eq 'installing' -and
-        ($combinedState.version -cne $version -or $combinedState.rust_workspace_version -cne $workVersion)) {
-        throw 'pending installation belongs to a different release; preserve its recovery data'
-    }
-    $rustRoot = Join-Path $Root 'rust'
-    $binary = if ($Mode -eq 'package') { Join-Path $Root 'bin/work.exe' } else { Join-Path $rustRoot 'target/release/work.exe' }
-    $toolingBinary = if ($Mode -eq 'package') { Join-Path $Root 'bin/tooling.exe' } else { Join-Path $rustRoot 'target/release/tooling.exe' }
-    if (-not $cli.DryRun -and $Mode -eq 'source') {
-        Push-Location $rustRoot
-        try {
-            & cargo build --release --locked -p work-cli
-            if ($LASTEXITCODE -ne 0) { throw 'Work Rust build failed' }
-            & cargo build --release --locked -p tooling-cli
-            if ($LASTEXITCODE -ne 0) { throw 'Tooling Rust build failed' }
-        }
-        finally { Pop-Location }
-    }
-    if (-not $cli.DryRun) {
-        foreach ($candidate in @($binary, $toolingBinary)) {
-            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw "release binary is missing: $candidate" }
-            & $candidate --help | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "release binary smoke test failed: $candidate" }
-        }
-    }
-    if (-not $cli.DryRun -and (Test-Path -LiteralPath $skillsParent -PathType Container)) {
-        Restore-InstallerInterruptedTooling -Target $toolingTarget -Source $sourceTooling -Version $toolingVersion -Binary $toolingBinary `
-            -ContractTarget $contractTarget -ContractSource $sourceContract
-        if ($null -ne $combinedState -and $combinedState.status -eq 'installed' -and
-            -not (Test-InstallerWorkTransactionPending -Target $target) -and
-            @(Get-InstallerToolingTransactions -Target $toolingTarget).Count -eq 0) {
-            foreach ($childState in @((Join-Path $target 'install-state.json'), (Join-Path $toolingTarget 'install-state.json'))) {
-                if (Test-Path -LiteralPath $childState) {
-                    throw "existing child install-state.json is unsupported; preserve and inspect $childState"
-                }
-            }
-        }
-    }
-    if ($cli.Verbose) { Write-Output "Installer: candidate version $version; Work target selected" }
-    $rawState = if ($null -ne $combinedState) {
-        ([ordered]@{
-            host = $combinedState.host
-            version = $combinedState.rust_workspace_version
-            skills = @(Get-InstallerExpandedSkills -Selection 'all')
-            work_dir = $target
-            global_agents_dir = $combinedState.global_instructions_dir
-        } | ConvertTo-Json -Depth 5 -Compress)
-    } else { '' }
-    $settingArgs = @{ Raw = $rawState; InstallDir = $target }
-    $settingArgs.SkillsOverride = 'all'
-    $settingArgs.InstallerHost = $selectedHost
-    if ($null -ne $cli.GlobalInstructions) { $settingArgs.GlobalAgentsOverride = $cli.GlobalInstructions }
-    $settings = Resolve-InstallerSettings @settingArgs
-    $targetStateValid = $settings.HasValidState
-    $migration = $null
-    $skills = @($settings.Skills)
-    $globalEnabled = [bool] $settings.GlobalAgents
-    if ($cli.Verbose) {
-        $loggedState = Read-InstallerState -Raw $rawState -InstallDir $target -InstallerHost $selectedHost
-        $loggedVersion = if ($null -ne $loggedState) { $loggedState.version } else { 'none' }
-        Write-Output "Installer: installed version $loggedVersion; selected Skills $($skills -join ',')"
-    }
-    $globalDirectoryInput = if ($null -ne $cli.InstructionsDir) {
-        $cli.InstructionsDir
-    } elseif ($globalEnabled -and $null -ne $settings.GlobalAgentsDir) {
-        $settings.GlobalAgentsDir
-    } else { $defaultGlobalDirectory }
-    if ($null -ne $interactiveGlobalDirectory) { $globalDirectoryInput = $interactiveGlobalDirectory }
-    $globalDirectory = $globalDirectoryInput
-    if ($globalEnabled) {
-        try { $globalDirectory = [IO.Path]::GetFullPath($globalDirectoryInput) }
-        catch { throw "invalid --instructions-dir path <$globalDirectoryInput>: $_" }
-        if (-not (Test-InstallerDirectoryPathSafe -Path $globalDirectory)) { throw 'unsafe Global AGENTS directory' }
-        if ($cli.Verbose) { Write-Output 'Installer: Global AGENTS directory checked' }
-    }
-    $inspection = Inspect-InstallerTarget -Target $target -SourceWork $sourceWork -StateValid $targetStateValid
-    $toolingInspection = Inspect-InstallerToolingTarget -Target $toolingTarget -Source $sourceTooling -InstallerHost $selectedHost
-    $contractInspection = Inspect-InstallerContractTarget -Target $contractTarget -Source $sourceContract -InstallerHost $selectedHost
-    if ($contractInspection.Kind -notin @('new', 'managed')) {
-        throw "Contract target cannot be installed: $($contractInspection.Reason)"
-    }
-    $toolingConfirmed = $false
-    if ($toolingInspection.Kind -eq 'first-update' -and -not $cli.NonInteractive) {
-        Write-Output "Existing Tooling without valid install-state.json: $toolingTarget"
-        $toolingConfirmed = (Read-InstallerChoice -Prompt 'Type YES to take over this Tooling directory' -Default 'no') -ceq 'YES'
-    }
-    if ($toolingInspection.Kind -notin @('new', 'managed') -and
-        -not ($toolingInspection.Kind -eq 'first-update' -and $toolingConfirmed)) {
-        throw "Tooling target cannot be installed: $($toolingInspection.Reason)"
-    }
-    $confirmed = $false
-    if ($inspection.Kind -eq 'first-update' -and -not $cli.NonInteractive) {
-        Write-Output "Existing Work without valid install-state.json: $target"
-        Write-Output 'Required structure and managed content passed safety inspection.'
-        $confirmed = (Read-InstallerChoice -Prompt 'Type YES to take over this Work directory' -Default 'no') -ceq 'YES'
-    }
-    if (-not (Test-InstallerTargetAuthorization -Inspection $inspection -NonInteractive $cli.NonInteractive -Confirmed $confirmed)) {
-        if ($inspection.Kind -eq 'unsafe') {
-            throw "Work target cannot be installed: $($inspection.Reason). Keep the existing files. Inspect and organize this directory yourself, or choose another --skills-dir."
-        }
-        throw "Work target cannot be installed: $($inspection.Reason)"
-    }
-    $existingState = if ($null -ne $migration) { $migration.State } else { Read-InstallerState -Raw $rawState -InstallDir $target -InstallerHost $selectedHost }
-    if ($null -ne $combinedState -and $combinedState.status -eq 'installed' -and
-        [version]$version -lt [version]$combinedState.version) {
-        throw "release downgrade from $($combinedState.version) to $version is not allowed"
-    }
-    if ($null -ne $existingState -and [version]$workVersion -lt [version]$existingState.version) {
-        throw "downgrade from $($existingState.version) to $workVersion is not allowed"
-    }
-    if ($null -ne $toolingInspection.Version -and
-        (Test-Path -LiteralPath (Join-Path $toolingTarget 'scripts/tooling.exe') -PathType Leaf) -and
-        [version]$toolingVersion -lt [version]$toolingInspection.Version) {
-        throw "Tooling downgrade from $($toolingInspection.Version) to $toolingVersion is not allowed"
-    }
-    if ($cli.Verbose) { Write-Output 'Installer: version comparison passed' }
-    while (Test-InstallerBinaryInUse -Binary (Join-Path $target 'scripts/work.exe')) {
-        if ($cli.NonInteractive) { throw 'installed Work binary is in use; close that Work process and retry' }
-        $choice = Read-InstallerChoice -Prompt 'Installed Work is in use. Close it, then choose r) recheck or c) cancel' -Default 'c'
-        switch ($choice) {
-            'r' { }
-            'c' { throw 'installation cancelled' }
-            default { throw 'invalid in-use Work choice' }
-        }
-    }
-    if (Test-InstallerBinaryInUse -Binary (Join-Path $toolingTarget 'scripts/tooling.exe')) {
-        throw 'installed Tooling binary is in use; close that Tooling process and retry'
-    }
-    $globalSource = Join-Path $Root 'instructions/global-instructions.md'
-    $globalTarget = Join-Path $globalDirectory $(if ($selectedHost -eq 'codex') { 'AGENTS.md' } else { 'CLAUDE.md' })
-    $plan = Get-InstallerGlobalAgentsPlan -Source $globalSource -Target $globalTarget -Enabled $globalEnabled -NonInteractive $cli.NonInteractive -Confirmed $false
-    if ($plan.Action -eq 'confirm') {
-        Write-Output "Global $([IO.Path]::GetFileName($globalTarget)) differs (current SHA-256 $($plan.TargetSha256), new $($plan.SourceSha256))."
-        $replace = (Read-InstallerChoice -Prompt "Replace Global $([IO.Path]::GetFileName($globalTarget))? (y/n)" -Default 'n') -eq 'y'
-        $plan = Get-InstallerGlobalAgentsPlan -Source $globalSource -Target $globalTarget -Enabled $globalEnabled -NonInteractive $false -Confirmed $replace
-        if ($plan.Action -eq 'confirm') { $plan.Action = 'skip' }
-    }
-    Write-Output "Work target: $target"
-    Write-Output "Tooling target: $toolingTarget"
-    Write-Output "Version: $version; Global AGENTS: $globalEnabled; Work action: $($inspection.Kind); Tooling action: $($toolingInspection.Kind); Contract action: $($contractInspection.Kind)"
-    if ($cli.DryRun) { Write-Output 'Dry run: no installation target changed.'; return }
-    if (-not $cli.NonInteractive) {
-        if ((Read-InstallerChoice -Prompt 'Proceed with installation? (y/n)' -Default 'n') -ne 'y') { throw 'installation cancelled' }
-    }
-    if ($cli.Verbose) { Write-Output 'Installer: candidate Work binary smoke test passed' }
-    $stateArgs = @{
-        TemplateRaw = [IO.File]::ReadAllText($stateTemplatePath)
-        Version = $workVersion
-        Skills = ($skills -join ',')
-        GlobalAgents = $globalEnabled
-        WorkDir = $target
-        GlobalAgentsDir = $(if ($globalEnabled) { $globalDirectory } else { $null })
-        InstallerHost = $selectedHost
-    }
-    $workState = New-InstallerState @stateArgs
-    $stateJson = ($workState | ConvertTo-Json -Depth 4) + "`n"
-    $toolingState = [ordered]@{ version = $toolingVersion; skill = 'tooling'; tooling_dir = $toolingTarget }
-    $toolingStateJson = ($toolingState | ConvertTo-Json -Compress) + "`n"
-    $prepare = {
-        param($prepared)
-        Copy-InstallerWorkPayload -SourceWork $sourceWork -Destination $prepared -Binary $binary -StateJson $stateJson
-    }
-    $validate = {
-        param($path)
-        Test-InstallerWorkPayload -Path $path -Target $target -InstallerHost $selectedHost
-    }
-    $globalParent = Split-Path -Path $globalTarget -Parent
-    $createdGlobalParent = $false
-    $createdWorkParents = @(New-InstallerWorkParents -Target $target)
-    if ($null -ne $migration) {
-        Write-InstallerMigrationRecord -Target $target -Old $migration.Path -SourceWork $sourceWork -StateJson $stateJson
-    }
-    if ($plan.Action -eq 'install' -and -not (Test-Path -LiteralPath $globalParent)) {
-        New-Item -ItemType Directory -Path $globalParent -ErrorAction Stop | Out-Null
-        $createdGlobalParent = $true
+        if (-not (Test-InstallerPathEqual $globalDir $previousGlobalDir)) { $previousGlobalSha = '' }
     }
     try {
-        Write-InstallerCombinedState -Parent $skillsParent -Version $version -RustWorkspaceVersion $workVersion `
-            -GlobalInstructionsDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
-            -Status 'installing' -InstallerHost $selectedHost
-        $result = Invoke-InstallerCombinedTransaction -Target $target -SourceWork $sourceWork -Prepare $prepare -Validate $validate -StateValid $targetStateValid -Confirmed $confirmed -NonInteractive $cli.NonInteractive -GlobalPlan $plan -GlobalSource $globalSource -GlobalTarget $globalTarget
-        if ($cli.Verbose) { Write-Output 'Installer: Work transaction published and verified' }
-        Write-Output "Work installed at $result"
-        try {
-            $toolingResult = Invoke-InstallerToolingTransaction -Target $toolingTarget -Source $sourceTooling -ContractTarget $contractTarget -ContractSource $sourceContract -Version $toolingVersion -Binary $toolingBinary -StateJson $toolingStateJson -NonInteractive $cli.NonInteractive -Confirmed $toolingConfirmed -InstallerHost $selectedHost
-        } catch {
-            throw "Tooling installation failed after Work was published; inspect $toolingTarget and retry for recovery. $_"
-        }
-        Write-Output "Tooling installed at $toolingResult"
-        Write-Output "Contract installed at $contractTarget"
-        if ((Test-InstallerWorkTransactionPending -Target $target) -or
-            @(Get-InstallerToolingTransactions -Target $toolingTarget).Count -gt 0) {
-            throw 'installation transaction cleanup is pending; preserve its recovery data'
-        }
-        Write-InstallerCombinedState -Parent $skillsParent -Version $version -RustWorkspaceVersion $workVersion `
-            -GlobalInstructionsDir $(if ($globalEnabled) { $globalDirectory } else { $null }) `
-            -Status 'installed' -InstallerHost $selectedHost
-        $finalState = Read-InstallerCombinedState -Raw ([IO.File]::ReadAllText($combinedPath)) `
-            -WorkTarget $target -ToolingTarget $toolingTarget -InstallerHost $selectedHost
-        if ($null -eq $finalState) { throw 'published parent install-state.json is invalid' }
-        Remove-InstallerChildStates -Combined $finalState -WorkTarget $target -ToolingTarget $toolingTarget
-        if ($null -ne $migration) {
-            Invoke-InstallerMigrationCleanup -Target $target -SourceWork $sourceWork
-        }
+        $plan = Get-InstallerGlobalPlan -Source $globalSource -Target $script:InstallerGlobalTarget -Enabled $globalEnabled `
+            -NonInteractive $cli.NonInteractive -PreviousSha $previousGlobalSha
     } catch {
-        for ($index = $createdWorkParents.Count - 1; $index -ge 0; $index--) {
-            $created = $createdWorkParents[$index]
-            if ((Test-Path -LiteralPath $created -PathType Container) -and
-                @(Get-ChildItem -LiteralPath $created -Force).Count -eq 0) {
-                Remove-Item -LiteralPath $created -ErrorAction Stop
-            }
-        }
-        if ($createdGlobalParent -and @(Get-ChildItem -LiteralPath $globalParent -Force).Count -eq 0) {
-            Remove-Item -LiteralPath $globalParent -ErrorAction Stop
-        }
-        throw
+        throw "Global Instructions target differs, is unsafe, or needs interactive confirmation (use --global-instructions no to skip it): $($_.Exception.Message)"
     }
+    $globalAction = $plan.Action
+    if ($globalAction -eq 'confirm') {
+        Write-Output "Global $globalFilename differs (current SHA-256 $($plan.TargetSha256), new $($plan.SourceSha256))."
+        if ((Read-InstallerChoice -Prompt "Replace Global $globalFilename? (y/n)" -Default 'n') -eq 'y') { $globalAction = 'replace' }
+        else { $globalAction = 'skip'; $globalDir = ''; $script:InstallerGlobalTarget = '' }
     }
-    Invoke-InstallerLocked -Transaction $install -Arguments @($sourceWork, $sourceTooling, $sourceContract, $cli, $Root, $Mode, $stateTemplatePath) -InstallerHost $cli.InstallerHost
+
+    Write-InstallerLog 'locations selected'
+
+    # --- Binaries ---
+    if (-not $cli.DryRun) {
+        if ($Mode -eq 'source') {
+            Push-Location (Join-Path $Root 'rust')
+            try {
+                & cargo build --release --locked -p work-cli -p skill-cli
+                if ($LASTEXITCODE -ne 0) { throw 'Rust build failed' }
+            } finally { Pop-Location }
+        }
+        foreach ($binary in @($workBinary, $skillBinary)) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf) -or (Test-InstallerReparse (Get-Item -LiteralPath $binary -Force))) { throw "release binary is missing: $binary" }
+            & $binary --help *> $null
+            if ($LASTEXITCODE -ne 0) { throw "release binary failed its startup check: $binary" }
+        }
+    }
+    foreach ($binary in 'work', 'skill') {
+        while (Test-InstallerBinaryInUse -Binary (Join-Path $cliDir "bin/$binary.exe")) {
+            if ($cli.NonInteractive) { throw "installed $binary binary is in use; close it and retry" }
+            if ((Read-InstallerChoice -Prompt "Installed $binary is in use. Close it, then choose r) recheck or c) cancel" -Default 'c') -ne 'r') { throw 'installation cancelled' }
+        }
+    }
+
+    # --- Plan and confirmation ---
+    Write-Output "Host: $selectedHost; version: $version; Rust workspace: $rustVersion; action: $($inspection.Kind)"
+    Write-Output "Skills: $skillsDir\{work,tooling,shared}"
+    Write-Output "CLI: $cliDir\bin\{work,skill}"
+    Write-Output "Global Instructions: $(if ($script:InstallerGlobalTarget) { $script:InstallerGlobalTarget } else { 'disabled' }) ($globalAction)"
+    if ($cli.DryRun) { Write-Output 'Dry run: no installation target changed.'; return }
+    if (-not $cli.NonInteractive -and (Read-InstallerChoice -Prompt 'Proceed with installation? (y/n)' -Default 'n') -ne 'y') { throw 'installation cancelled' }
+
+    # --- Transaction: Prepare, Apply, Verify, Commit ---
+    $script:InstallerCreatedDirs = @()
+    $started = $false
+    try {
+        New-InstallerDirectories -Path $skillsDir
+        Start-InstallerTx
+        $started = $true
+        New-InstallerDirectories -Path $cliDir
+        if ($globalDir -ne '') { New-InstallerDirectories -Path $globalDir }
+        Add-InstallerTxCreated -Directories $script:InstallerCreatedDirs -Reset
+        Invoke-InstallerInject 'prepare'
+        Copy-InstallerPayload -Root $Root -WorkBinary $workBinary -SkillBinary $skillBinary -GlobalSource $globalSource -GlobalAction $globalAction
+        $entries = Get-InstallerNewManifest -GlobalDir $globalDir -GlobalTarget $script:InstallerGlobalTarget -GlobalSourceSha $plan.SourceSha256
+        $statePath = Join-Path $script:InstallerTx 'staged/state'
+        Write-InstallerState -Path $statePath -InstallerHost $selectedHost -Version $version -RustVersion $rustVersion `
+            -SkillsDir $skillsDir -CliDir $cliDir -GlobalDir $globalDir -Files $entries
+        if ($null -eq (Read-InstallerState -Path $statePath)) { throw 'prepared install state is invalid' }
+        $components = @('work', 'tooling', 'shared', 'bin')
+        if ($globalAction -in @('install', 'replace')) { $components += 'global' }
+        Write-InstallerTxPlan -Names ($components + 'state')
+        foreach ($component in $components) { Invoke-InstallerTxApply -Name $component }
+        Write-InstallerLog 'prepared and applied'
+        Invoke-InstallerInject 'verify'
+        if (-not (Test-InstallerInstallation -Entries $entries -GlobalDir $globalDir -GlobalTarget $script:InstallerGlobalTarget -GlobalSourceSha $plan.SourceSha256)) {
+            throw 'installed result failed verification'
+        }
+        Invoke-InstallerInject 'commit'
+        [IO.File]::WriteAllText((Join-Path $script:InstallerTx 'committed'), '', [Text.UTF8Encoding]::new($false))
+    } catch {
+        $reason = $_.Exception.Message
+        if ($started) {
+            try { Undo-InstallerTx; [Console]::Error.WriteLine('The previous installation state was restored.') }
+            catch { [Console]::Error.WriteLine("Recovery is incomplete ($($_.Exception.Message)); the next installer run retries it.") }
+        } else { Remove-InstallerDirectories -Directories $script:InstallerCreatedDirs }
+        throw $reason
+    }
+    Invoke-InstallerInject 'after-commit'
+    try { Complete-InstallerTx } catch { throw "installation is committed; rerun the installer to finish cleanup: $($_.Exception.Message)" }
+    Write-Output "Installed Work, Tooling, Shared and the Work/Skill CLI for $selectedHost."
 }
 
 try {
-    Invoke-InstallerCore
+    Invoke-InstallerLocked -Transaction { Invoke-InstallerCore }
     exit 0
 } catch {
     [Console]::Error.WriteLine("Error: $($_.Exception.Message)")

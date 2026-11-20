@@ -28,21 +28,24 @@ class ReleasePackageTests(unittest.TestCase):
             with patch("version_guard.validate_lock", return_value=workspace_version):
                 self.assertEqual(checked_version(repository), release_version)
 
-    def test_three_skills_and_new_instruction_modules_are_packaged(self):
+    def test_work_tooling_and_the_single_shared_tree_are_packaged(self):
         repository = Path(__file__).resolve().parents[4]
         paths = tracked_skill_files(repository)
-        self.assertIn(Path("skills/work/SKILL.md"), paths)
-        self.assertIn(Path("skills/work/references/instruction-loading/tool-policy-integration.md"), paths)
-        self.assertIn(Path("skills/tooling/SKILL.md"), paths)
-        self.assertIn(Path("skills/tooling/references/instruction-loading.md"), paths)
-        self.assertIn(Path("skills/contract/SKILL.md"), paths)
-        self.assertIn(Path("skills/contract/references/instruction-loading.md"), paths)
-        self.assertNotIn(Path("skills/tooling/references/instructions/interfaces/repl/instructions.md"), paths)
+        for required in ("skills/work/SKILL.md", "skills/tooling/SKILL.md", "skills/shared/bootstrap.md"):
+            self.assertIn(Path(required), paths)
+        self.assertNotIn(Path("skills/shared/SKILL.md"), paths)
+        self.assertFalse(any(path.parts[1] not in ("work", "tooling", "shared") for path in paths))
         self.assertFalse(any(path.name == ".DS_Store" for path in paths))
-        self.assertNotIn(Path("skills/work/references/instruction-loading/handoff.md"), paths)
-
-        with patch("release_package.subprocess.run", side_effect=[SimpleNamespace(stdout=b"skills/work/SKILL.md\0"), SimpleNamespace(stdout=b"")]):
-            with self.assertRaisesRegex(ValueError, "Tooling skill entry is missing"):
+        self.assertEqual(paths, sorted(paths))
+        for missing in ("skills/work/SKILL.md", "skills/tooling/SKILL.md", "skills/shared/bootstrap.md"):
+            listed = "\0".join(name for name in ("skills/work/SKILL.md", "skills/tooling/SKILL.md", "skills/shared/bootstrap.md")
+                               if name != missing).encode() + b"\0"
+            with patch("release_package.subprocess.run", side_effect=[SimpleNamespace(stdout=listed), SimpleNamespace(stdout=b"")]):
+                with self.assertRaisesRegex(ValueError, "required Skill resource is missing"):
+                    tracked_skill_files(repository)
+        listed = b"skills/work/SKILL.md\0skills/tooling/SKILL.md\0skills/shared/bootstrap.md\0skills/shared/SKILL.md\0"
+        with patch("release_package.subprocess.run", side_effect=[SimpleNamespace(stdout=listed), SimpleNamespace(stdout=b"")]):
+            with self.assertRaisesRegex(ValueError, "Shared must not be a Skill"):
                 tracked_skill_files(repository)
 
     def test_standalone_downloaders_are_bound_to_the_release_tag(self):
@@ -77,7 +80,7 @@ class ReleasePackageTests(unittest.TestCase):
             output = root / "output"
             repository.mkdir()
             sources = ["instructions/global-instructions.md", "LICENSE", "docs/release/README.md",
-                       "os-scripts/common/installer/options.tsv", "os-scripts/common/installer/install-state.json"]
+                       "os-scripts/common/installer/options.tsv"]
             config = PLATFORMS["macos-arm64"]
             for platform_config in PLATFORMS.values():
                 sources.extend((platform_config["installer"], *platform_config["modules"]))
@@ -88,8 +91,8 @@ class ReleasePackageTests(unittest.TestCase):
                 path.write_text(name, encoding="utf-8")
             binary = root / "work"
             binary.write_bytes(b"binary")
-            tooling_binary = root / "tooling"
-            tooling_binary.write_bytes(b"tooling binary")
+            skill_binary = root / "skill"
+            skill_binary.write_bytes(b"skill binary")
             environment = {
                 "runner_label": "macos-latest",
                 "runner_os": "macOS",
@@ -101,9 +104,9 @@ class ReleasePackageTests(unittest.TestCase):
                 "os_build": "24G207",
             }
             skill_files = [
-                "skills/work/SKILL.md", "skills/work/references/instruction-loading.md",
-                "skills/tooling/SKILL.md", "skills/tooling/references/instruction-loading.md",
-                "skills/contract/SKILL.md", "skills/contract/references/instruction-loading.md",
+                "skills/work/SKILL.md", "skills/work/instructions/instructions.md",
+                "skills/tooling/SKILL.md", "skills/tooling/instructions/instructions.md",
+                "skills/shared/bootstrap.md",
             ]
             for name in skill_files:
                 path = repository / name
@@ -118,7 +121,7 @@ class ReleasePackageTests(unittest.TestCase):
                     self.assertTrue(check)
                     Path(command[command.index("-o") + 1]).write_bytes(b"native lock helper")
                 run.side_effect = compile_helper
-                archive_path = build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, environment, "codex")
+                archive_path = build_package(repository, output, "macos-arm64", binary, skill_binary, "a" * 40, environment, "codex")
                 archives = {("macos-arm64", "codex"): archive_path}
                 for platform in PLATFORMS:
                     for host in ("codex", "claude"):
@@ -126,7 +129,7 @@ class ReleasePackageTests(unittest.TestCase):
                             continue
                         platform_environment = {**environment, "runner_label": PLATFORMS[platform]["runner_label"]}
                         archives[(platform, host)] = build_package(
-                            repository, output, platform, binary, tooling_binary,
+                            repository, output, platform, binary, skill_binary,
                             "a" * 40, platform_environment, host)
             self.assertEqual({path.name for path in archives.values()}, {
                 f"agent-work-kit-v1.2.3-{host}-{platform}.zip"
@@ -147,12 +150,12 @@ class ReleasePackageTests(unittest.TestCase):
                 info = json.loads(archive.read("release-info.json"))
                 self.assertEqual(archive.read("bin/work-install-lock"), b"native lock helper")
                 self.assertEqual(archive.read("bin/work"), b"binary")
-                self.assertEqual(archive.read("bin/tooling"), b"tooling binary")
+                self.assertEqual(archive.read("bin/skill"), b"skill binary")
+                self.assertFalse(any("tooling" in name and name.startswith("bin/") for name in archive.namelist()))
                 for name in skill_files:
                     self.assertEqual(archive.read(name), name.encode())
                 self.assertEqual(archive.read("installer/cli/options.tsv"), b"os-scripts/common/installer/options.tsv")
-                self.assertEqual(archive.read("installer/state/install-state.json"),
-                                 b"os-scripts/common/installer/install-state.json")
+                self.assertNotIn("installer/state/install-state.json", archive.namelist())
                 for source in config["modules"]:
                     relative = Path(source).relative_to("os-scripts/mac/installer")
                     self.assertEqual(archive.read(Path("installer", relative).as_posix()), source.encode())
@@ -167,11 +170,11 @@ class ReleasePackageTests(unittest.TestCase):
                 incomplete = environment.copy()
                 incomplete[field] = ""
                 with self.subTest(field=field), self.assertRaises(ValueError):
-                    build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, incomplete, "codex")
+                    build_package(repository, output, "macos-arm64", binary, skill_binary, "a" * 40, incomplete, "codex")
             wrong_label = environment.copy()
             wrong_label["runner_label"] = "windows-latest"
             with self.assertRaises(ValueError):
-                build_package(repository, output, "macos-arm64", binary, tooling_binary, "a" * 40, wrong_label, "codex")
+                build_package(repository, output, "macos-arm64", binary, skill_binary, "a" * 40, wrong_label, "codex")
 
 
 if __name__ == "__main__":

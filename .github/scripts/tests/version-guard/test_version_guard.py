@@ -89,17 +89,17 @@ class VersionGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rust = root / "rust"
-            tooling = rust / "crates/tooling/tooling-cli"
+            tooling = rust / "crates/skill/skill-cli"
             tooling.mkdir(parents=True)
             (root / "VERSION").write_text("2.0.0\n", encoding="utf-8")
             (rust / "Cargo.toml").write_text(
-                '[workspace]\nmembers = ["crates/tooling/tooling-cli"]\n'
+                '[workspace]\nmembers = ["crates/skill/skill-cli"]\n'
                 '[workspace.package]\nversion = "2.0.0"\n', encoding="utf-8"
             )
-            manifest = '[package]\nname = "tooling-cli"\nversion.workspace = true\n'
+            manifest = '[package]\nname = "skill-cli"\nversion.workspace = true\n'
             (tooling / "Cargo.toml").write_text(manifest, encoding="utf-8")
             (rust / "Cargo.lock").write_text(
-                '[[package]]\nname = "tooling-cli"\nversion = "2.0.0"\n', encoding="utf-8"
+                '[[package]]\nname = "skill-cli"\nversion = "2.0.0"\n', encoding="utf-8"
             )
             self.assertEqual(guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text())), "2.0.0")
             (tooling / "Cargo.toml").write_text(manifest.replace("version.workspace = true", 'version = "2.0.0"'), encoding="utf-8")
@@ -107,7 +107,7 @@ class VersionGuardTests(unittest.TestCase):
                 guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text()))
             (tooling / "Cargo.toml").write_text(manifest, encoding="utf-8")
             (rust / "Cargo.lock").write_text(
-                '[[package]]\nname = "tooling-cli"\nversion = "1.0.0"\n', encoding="utf-8"
+                '[[package]]\nname = "skill-cli"\nversion = "1.0.0"\n', encoding="utf-8"
             )
             with self.assertRaisesRegex(ValueError, "Cargo.lock workspace versions"):
                 guard.validate_lock(root, guard.tomllib.loads((rust / "Cargo.toml").read_text()))

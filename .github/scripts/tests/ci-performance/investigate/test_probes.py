@@ -1,4 +1,4 @@
-"""Verify independent fixture probe samples."""
+"""Verify independent probe samples."""
 
 import importlib.util
 from pathlib import Path
@@ -13,7 +13,7 @@ SPEC.loader.exec_module(PROBES)
 
 
 class ProbeTests(unittest.TestCase):
-    def test_fixture_probe_uses_independent_sample_paths(self):
+    def test_probe_uses_independent_sample_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = PROBES.probe_operation("sample", 2, lambda index: (root / str(index)).write_text("x"))

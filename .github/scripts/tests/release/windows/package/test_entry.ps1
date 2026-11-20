@@ -1,10 +1,10 @@
-param([string] $Binary, [string] $ToolingBinary)
+param([string] $Binary, [string] $SkillBinary)
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 if ([string]::IsNullOrEmpty($Binary)) { $Binary = Join-Path $repoRoot 'rust/target/release/work.exe' }
-if ([string]::IsNullOrEmpty($ToolingBinary)) { $ToolingBinary = Join-Path $repoRoot 'rust/target/release/tooling.exe' }
+if ([string]::IsNullOrEmpty($SkillBinary)) { $SkillBinary = Join-Path $repoRoot 'rust/target/release/skill.exe' }
 if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw 'native Work binary is required' }
-if (-not (Test-Path -LiteralPath $ToolingBinary -PathType Leaf)) { throw 'native Tooling binary is required' }
+if (-not (Test-Path -LiteralPath $SkillBinary -PathType Leaf)) { throw 'native Skill binary is required' }
 $scratch = Join-Path $repoRoot ('.pkgtest.' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $resolved = (Resolve-Path -LiteralPath $scratch).Path
@@ -20,7 +20,7 @@ try {
     $output = Join-Path $scratch 'dist'
     $commit = (git rev-parse HEAD).Trim()
     foreach ($installerHost in @('codex', 'claude')) {
-        & python -B (Join-Path $repoRoot '.github/scripts/release/release_package.py') package --repository $repoRoot --output $output --host $installerHost --platform windows-x64-msvc --binary $Binary --tooling-binary $ToolingBinary --commit $commit --runner-label windows-latest --runner-os Windows --runner-arch X64 --runner-image test-windows --runner-image-version 1 --os-name Windows --os-version 10 --os-build 1 | Out-Null
+        & python -B (Join-Path $repoRoot '.github/scripts/release/release_package.py') package --repository $repoRoot --output $output --host $installerHost --platform windows-x64-msvc --work-binary $Binary --skill-binary $SkillBinary --commit $commit --runner-label windows-latest --runner-os Windows --runner-arch X64 --runner-image test-windows --runner-image-version 1 --os-name Windows --os-version 10 --os-build 1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Windows $installerHost package build failed" }
         $version = (Get-Content (Join-Path $repoRoot 'VERSION') -Raw).Trim()
         $archive = Join-Path $output "agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
@@ -29,14 +29,16 @@ try {
         Expand-Archive -LiteralPath $archive -DestinationPath $package
         $entry = Join-Path $package 'install-agent-work-kit-from-package.bat'
         if (-not (Test-Path -LiteralPath $entry)) { throw 'new Package entry is missing' }
-        $skillsParent = Join-Path $scratch "i-$installerHost"
-        $target = Join-Path $skillsParent 'work'
+        $skillsParent = Join-Path $scratch "i-$installerHost/skills"
         & $entry --host $installerHost --non-interactive --global-instructions no --skills-dir $skillsParent | Out-Null
         $statePath = Join-Path $skillsParent 'install-state.json'
+        $cliBin = Join-Path (Split-Path -Parent $skillsParent) 'agent-work-kit/bin'
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $statePath) -or
-            (Test-Path -LiteralPath (Join-Path $target 'install-state.json')) -or
-            (Test-Path -LiteralPath (Join-Path $skillsParent 'tooling/install-state.json')) -or
-            -not (Test-Path -LiteralPath (Join-Path $skillsParent 'tooling/scripts/tooling.exe'))) {
+            -not (Test-Path -LiteralPath (Join-Path $skillsParent 'shared/bootstrap.md')) -or
+            (Test-Path -LiteralPath (Join-Path $skillsParent 'contract')) -or
+            -not (Test-Path -LiteralPath (Join-Path $cliBin 'work.exe')) -or
+            -not (Test-Path -LiteralPath (Join-Path $cliBin 'skill.exe')) -or
+            (Test-Path -LiteralPath (Join-Path $cliBin 'tooling.exe'))) {
             throw "Windows $installerHost offline Package installation failed"
         }
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
@@ -52,7 +54,7 @@ try {
             --zip $archive --checksums $checksums --platform windows-x64-msvc
         if ($LASTEXITCODE -ne 0) { throw "Windows $installerHost Downloader E2E failed" }
     }
-    Write-Output 'Windows Package entry fixture passed.'
+    Write-Output 'Windows Package entry test passed.'
 } finally {
     $env:USERPROFILE = $originalUserProfile
     $env:HOME = $originalHome
