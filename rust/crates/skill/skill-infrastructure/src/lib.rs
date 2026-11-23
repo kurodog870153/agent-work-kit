@@ -3,6 +3,7 @@
 //! Every read resolves the real path first. A source is accepted only when its
 //! real path stays inside the boundary that owns it (Shared or one Skill), so
 //! symlinks and junctions may alias inside a boundary but never cross one.
+//! Unmanaged Host Skills are outside this installation's source inventory.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,10 +11,13 @@ use std::path::{Path, PathBuf};
 use skill_feature::{DirEntry, SourceContent, SourceStore};
 use skill_model::{Reason, SkillError, SourceId, SourceRef, SourceRoot};
 use skill_operations::decode;
-use skill_operations::path::{is_kebab, validate_relative};
+use skill_operations::path::validate_relative;
 
 /// Directory name of the single Shared boundary inside an installation.
 pub const SHARED_DIR: &str = "shared";
+
+/// Skill roots owned by this installation, not every Skill exposed by the Host.
+const MANAGED_SKILLS: [&str; 2] = ["tooling", "work"];
 
 /// One installation: `<install>/shared` plus one directory per Skill.
 #[derive(Debug, Clone)]
@@ -41,7 +45,7 @@ impl FsStore {
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
-            if name != SHARED_DIR && !is_kebab(&name) {
+            if name != SHARED_DIR && !is_managed_skill(&name) {
                 continue;
             }
             let Ok(real) = fs::canonicalize(entry.path()) else {
@@ -68,7 +72,7 @@ impl FsStore {
         let name = match root {
             SourceRoot::Shared => SHARED_DIR,
             SourceRoot::Skill(name) => {
-                if name == SHARED_DIR || !is_kebab(name) {
+                if !is_managed_skill(name) {
                     return Err(SkillError::new(
                         Reason::UnknownRoot,
                         format!("not a Skill name: {name:?}"),
@@ -118,6 +122,10 @@ impl FsStore {
     }
 }
 
+fn is_managed_skill(name: &str) -> bool {
+    MANAGED_SKILLS.contains(&name)
+}
+
 fn same_name(path: &Path, name: &str) -> bool {
     path.file_name().is_some_and(|found| found == name)
 }
@@ -125,20 +133,16 @@ fn same_name(path: &Path, name: &str) -> bool {
 impl SourceStore for FsStore {
     fn skills(&self) -> Result<Vec<String>, SkillError> {
         let mut skills = Vec::new();
-        let entries = fs::read_dir(&self.install)
-            .map_err(|error| SkillError::new(Reason::Unreadable, error.to_string()))?;
-        for entry in entries.flatten() {
-            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-                continue;
-            };
-            if name != SHARED_DIR
-                && is_kebab(&name)
-                && fs::canonicalize(entry.path()).is_ok_and(|real| real.is_dir())
-            {
-                skills.push(name);
+        for name in MANAGED_SKILLS {
+            let path = self.install.join(name);
+            if fs::canonicalize(path).is_ok_and(|real| {
+                real.is_dir()
+                    && real.parent() == Some(self.install.as_path())
+                    && same_name(&real, name)
+            }) {
+                skills.push(name.to_owned());
             }
         }
-        skills.sort();
         Ok(skills)
     }
 
