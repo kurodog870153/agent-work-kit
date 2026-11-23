@@ -308,13 +308,40 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
 }
 
 #[test]
-fn a_boundary_that_resolves_outside_the_installation_is_a_mixed_install() {
+fn an_unmanaged_host_skill_link_does_not_block_work_or_tooling() {
+    let tree = Tree::new("unmanaged");
+    base(&tree);
+    tree.outside("elsewhere/find-skills/SKILL.md", "external Skill");
+    assert!(link_dir(
+        &tree.root.join("elsewhere/find-skills"),
+        &tree.install().join("find-skills")
+    ));
+    // A regular third-party directory must be ignored as well.
+    tree.text("other-skill/SKILL.md", "external Skill");
+
+    let store = FsStore::open(tree.install()).expect("Host Skills may coexist");
+    assert_eq!(store.skills().unwrap(), ["tooling", "work"]);
+    assert!(validate_all(&store).unwrap().is_valid());
+    assert!(discover(&store, "work", "").is_ok());
+    assert_eq!(
+        reason_of(&store, &SourceRef::skill("find-skills", "SKILL.md")),
+        Reason::UnknownRoot
+    );
+    assert_eq!(
+        reason_of(&store, &SourceRef::skill("other-skill", "SKILL.md")),
+        Reason::UnknownRoot
+    );
+}
+
+#[test]
+fn a_managed_boundary_that_resolves_outside_is_a_mixed_install() {
     let tree = Tree::new("mixed");
     base(&tree);
     tree.outside("elsewhere/foreign/SKILL.md", "foreign");
+    fs::remove_dir_all(tree.install().join("tooling")).expect("replace managed Skill");
     assert!(link_dir(
         &tree.root.join("elsewhere/foreign"),
-        &tree.install().join("foreign")
+        &tree.install().join("tooling")
     ));
     let error = FsStore::open(tree.install()).unwrap_err();
     assert_eq!(error.reason, Reason::MixedInstall);
