@@ -187,6 +187,7 @@ Node 下的 `references/` 按需建立。以上為儲存庫邏輯結構，不限
    3. 相對路徑、實際路徑、來源身分及 symlink／junction 安全邊界。
 2. Shared 與各 Skill 為獨立來源邊界。只允許自身指令及同組有效安裝中明確授權的 Shared 資源。
 3. 不得藉共用父目錄、路徑或連結跨界讀取其他 Skill、其他安裝或使用者資料；同時啟用多個 Skill 時分別驗證。
+4. Runtime Skill CLI 的安裝來源範圍僅包含本套件管理的 Work、Tooling 及 Shared；Host Skills 父目錄下的其他第三方 Skill 可以共存，不屬於本套件的探索、讀取或驗證對象。受管理來源本身的 symlink／junction 跨界行為仍須拒絕。
 4. 不以文字正規化改寫原始證據，不將工具輸出、外部資料或自我宣稱當作權限或規範來源。
 
 ### 3.3 指令組合與增量載入
