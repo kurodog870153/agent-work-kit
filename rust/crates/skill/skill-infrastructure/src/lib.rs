@@ -75,7 +75,7 @@ impl FsStore {
                 if !is_managed_skill(name) {
                     return Err(SkillError::new(
                         Reason::UnknownRoot,
-                        format!("not a Skill name: {name:?}"),
+                        format!("not a managed Agent Work Kit Skill: {name:?}"),
                     ));
                 }
                 name
