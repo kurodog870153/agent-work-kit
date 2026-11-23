@@ -60,28 +60,32 @@ function Invoke-InstallerCore {
     $globalSource = Join-Path $Root 'instructions/global-instructions.md'
 
     # --- Locations ---
-    $defaultSkills = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.agents/skills' } else { Join-Path $env:USERPROFILE '.claude/skills' }
+    $hostHome = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.agents' } else { Join-Path $env:USERPROFILE '.claude' }
     $defaultGlobalDir = if ($selectedHost -eq 'codex') { Join-Path $env:USERPROFILE '.codex' } else { Join-Path $env:USERPROFILE '.claude' }
     $globalFilename = if ($selectedHost -eq 'codex') { 'AGENTS.md' } else { 'CLAUDE.md' }
-    $skillsInput = if ($null -ne $cli.SkillsDir) { $cli.SkillsDir } else { $defaultSkills }
-    if ($null -eq $cli.SkillsDir -and -not $cli.NonInteractive) {
-        switch (Read-InstallerChoice -Prompt "Skills directory: 1) default ($defaultSkills), 2) custom" -Default '1') {
+    $hostSkillsDir = Join-Path $hostHome 'skills'
+    $installInput = if ($null -ne $cli.InstallDir) { $cli.InstallDir } else { Join-Path $hostHome 'agent-work-kit' }
+    if ($null -eq $cli.InstallDir -and -not $cli.NonInteractive) {
+        switch (Read-InstallerChoice -Prompt "Installation directory: 1) default ($installInput), 2) custom" -Default '1') {
             '1' { }
             '2' {
-                $skillsInput = Read-InstallerChoice -Prompt 'Custom Skills directory' -Default ''
-                if ([string]::IsNullOrWhiteSpace($skillsInput)) { throw 'Skills directory cannot be empty' }
+                $installInput = Read-InstallerChoice -Prompt 'Custom installation directory' -Default ''
+                if ([string]::IsNullOrWhiteSpace($installInput)) { throw 'Installation directory cannot be empty' }
             }
-            default { throw 'invalid Skills directory choice' }
+            default { throw 'invalid installation directory choice' }
         }
     }
-    try { $skillsDir = [IO.Path]::GetFullPath($skillsInput).TrimEnd('\', '/') } catch { throw "invalid --skills-dir path <$skillsInput>: $_" }
-    if (-not (Test-InstallerDirectoryPathSafe -Path $skillsDir)) { throw 'unsafe Skills directory' }
-    $cliDir = [IO.Path]::GetFullPath((Join-Path $skillsDir '../agent-work-kit')).TrimEnd('\', '/')
-    if (-not (Test-InstallerDirectoryPathSafe -Path $cliDir)) { throw 'unsafe CLI directory' }
-    if (Test-InstallerPathOverlap $skillsDir $cliDir) { throw 'the CLI directory must be separate from the Skills directory' }
+    try { $installDir = [IO.Path]::GetFullPath($installInput).TrimEnd('\', '/') } catch { throw "invalid --install-dir path <$installInput>: $_" }
+    if (-not (Test-InstallerDirectoryPathSafe -Path $installDir)) { throw 'unsafe installation directory' }
+    if (-not (Test-InstallerDirectoryPathSafe -Path $hostSkillsDir)) { throw 'unsafe Host Skills directory' }
+    if (Test-InstallerPathOverlap $installDir $hostSkillsDir) { throw 'installation directory must not overlap the Host Skills directory' }
+    $skillsDir = Join-Path $installDir 'skills'
+    $cliDir = $installDir
+    $script:InstallerInstallDir = $installDir
+    $script:InstallerHostSkillsDir = $hostSkillsDir
     $script:InstallerSkillsDir = $skillsDir
     $script:InstallerCliDir = $cliDir
-    $script:InstallerTx = Join-Path $skillsDir '.agent-work-kit-txn'
+    $script:InstallerTx = Join-Path $installDir '.agent-work-kit-txn'
     $script:InstallerCreatedDirs = @()
     $script:InstallerGlobalTarget = ''
 
@@ -90,7 +94,7 @@ function Invoke-InstallerCore {
         if ($cli.DryRun) { throw 'dry run cannot resolve a pending installation transaction' }
         Restore-InstallerInterrupted
     }
-    $inspection = Get-InstallerTargetInspection -SkillsDir $skillsDir -CliDir $cliDir
+    $inspection = Get-InstallerTargetInspection -InstallDir $installDir -HostSkillsDir $hostSkillsDir -InstallerHost $selectedHost
     if ($inspection.Kind -eq 'unsafe') {
         throw "targets cannot be installed: $($inspection.Reason). Existing content is preserved and not taken over; inspect it yourself or choose other directories."
     }
@@ -170,7 +174,9 @@ function Invoke-InstallerCore {
 
     # --- Plan and confirmation ---
     Write-Output "Host: $selectedHost; version: $version; Rust workspace: $rustVersion; action: $($inspection.Kind)"
+    Write-Output "Install: $installDir"
     Write-Output "Skills: $skillsDir\{work,tooling,shared}"
+    Write-Output "Host discovery: $hostSkillsDir\{work,tooling}"
     Write-Output "CLI: $cliDir\bin\{work,skill}"
     Write-Output "Global Instructions: $(if ($script:InstallerGlobalTarget) { $script:InstallerGlobalTarget } else { 'disabled' }) ($globalAction)"
     if ($cli.DryRun) { Write-Output 'Dry run: no installation target changed.'; return }
@@ -180,10 +186,11 @@ function Invoke-InstallerCore {
     $script:InstallerCreatedDirs = @()
     $started = $false
     try {
-        New-InstallerDirectories -Path $skillsDir
+        New-InstallerDirectories -Path $installDir
         Start-InstallerTx
         $started = $true
-        New-InstallerDirectories -Path $cliDir
+        New-InstallerDirectories -Path $skillsDir
+        New-InstallerDirectories -Path $hostSkillsDir
         if ($globalDir -ne '') { New-InstallerDirectories -Path $globalDir }
         Add-InstallerTxCreated -Directories $script:InstallerCreatedDirs -Reset
         Invoke-InstallerInject 'prepare'
@@ -191,9 +198,10 @@ function Invoke-InstallerCore {
         $entries = Get-InstallerNewManifest -GlobalDir $globalDir -GlobalTarget $script:InstallerGlobalTarget -GlobalSourceSha $plan.SourceSha256
         $statePath = Join-Path $script:InstallerTx 'staged/state'
         Write-InstallerState -Path $statePath -InstallerHost $selectedHost -Version $version -RustVersion $rustVersion `
-            -SkillsDir $skillsDir -CliDir $cliDir -GlobalDir $globalDir -Files $entries
+            -InstallDir $installDir -GlobalDir $globalDir -Files $entries
         if ($null -eq (Read-InstallerState -Path $statePath)) { throw 'prepared install state is invalid' }
         $components = @('work', 'tooling', 'shared', 'bin')
+        if ($inspection.Kind -eq 'new') { $components += @('link-work', 'link-tooling') }
         if ($globalAction -in @('install', 'replace')) { $components += 'global' }
         Write-InstallerTxPlan -Names ($components + 'state')
         foreach ($component in $components) { Invoke-InstallerTxApply -Name $component }

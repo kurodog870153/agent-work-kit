@@ -25,7 +25,7 @@ function Copy-InstallerPayload {
 function Get-InstallerNewManifest {
     param([string] $GlobalDir, [string] $GlobalTarget, [string] $GlobalSourceSha)
     $staged = Join-Path $script:InstallerTx 'staged'
-    $entries = @(Get-InstallerActualManifest -SkillsRoot $staged -BinDir (Join-Path $staged 'bin'))
+    $entries = @(Get-InstallerActualManifest -InstallDir $staged -Staged)
     if ($entries.Count -eq 0) { throw 'no installation resources were prepared' }
     if (-not [string]::IsNullOrEmpty($GlobalDir)) { $entries += "$GlobalSourceSha  global/$([IO.Path]::GetFileName($GlobalTarget))" }
     return $entries
@@ -34,7 +34,10 @@ function Get-InstallerNewManifest {
 # Checks the installed result: exact managed content, runnable binaries and the Global Instructions copy.
 function Test-InstallerInstallation {
     param([string[]] $Entries, [string] $GlobalDir, [string] $GlobalTarget, [string] $GlobalSourceSha)
-    if (-not (Test-InstallerManifestMatches -SkillsRoot $script:InstallerSkillsDir -BinDir (Join-Path $script:InstallerCliDir 'bin') -Entries $Entries)) { return $false }
+    if (-not (Test-InstallerManifestMatches -InstallDir $script:InstallerInstallDir -Entries $Entries)) { return $false }
+    foreach ($name in 'work', 'tooling') {
+        if (-not (Test-InstallerHostLink -Name $name -InstallDir $script:InstallerInstallDir -HostSkillsDir $script:InstallerHostSkillsDir)) { return $false }
+    }
     foreach ($name in 'work', 'skill') {
         & (Join-Path $script:InstallerCliDir "bin/$name.exe") --help *> $null
         if ($LASTEXITCODE -ne 0) { return $false }

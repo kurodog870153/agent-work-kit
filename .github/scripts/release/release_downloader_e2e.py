@@ -24,9 +24,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def exercise_public_crash(entry, home, environment, platform, info, skills_dir, global_dir=None):
+def exercise_public_crash(entry, home, environment, platform, info, install_dir, global_dir=None):
     """An interrupted public install leaves a recoverable transaction; the next run restores service."""
-    options = ["--host", info["host"], "--non-interactive", "--global-instructions", "no", "--skills-dir", str(skills_dir)]
+    options = ["--host", info["host"], "--non-interactive", "--global-instructions", "no", "--install-dir", str(install_dir)]
     command = (["cmd.exe", "/D", "/C", str(entry)] if platform == "windows-x64-msvc"
                else ["/bin/bash", str(entry)]) + options
 
@@ -38,17 +38,17 @@ def exercise_public_crash(entry, home, environment, platform, info, skills_dir, 
     if initial.returncode:
         raise AssertionError(f"public entry initial install failed: {initial.stdout!r}, {initial.stderr!r}")
     suffix = ".exe" if platform == "windows-x64-msvc" else ""
-    binary = skills_dir.parent / "agent-work-kit" / "bin" / f"work{suffix}"
-    before = {str(path.relative_to(skills_dir)): path.read_bytes() for path in skills_dir.rglob("*") if path.is_file()}
+    binary = install_dir / "bin" / f"work{suffix}"
+    before = {str(path.relative_to(install_dir)): path.read_bytes() for path in install_dir.rglob("*") if path.is_file()}
     interrupted = invoke(INSTALLER_TEST_CRASH="verify")
     if interrupted.returncode == 0:
         raise AssertionError("public entry did not stop at the injected interruption")
     restarted = invoke()
     if restarted.returncode:
         raise AssertionError(f"public entry recovery failed: {restarted.stdout!r}, {restarted.stderr!r}")
-    after = {str(path.relative_to(skills_dir)): path.read_bytes() for path in skills_dir.rglob("*") if path.is_file()}
-    state = json.loads((skills_dir / "install-state.json").read_text(encoding="utf-8"))
-    if after != before or state["status"] != "installed" or state["version"] != info["version"] or any(skills_dir.glob(".agent-work-kit-txn*")):
+    after = {str(path.relative_to(install_dir)): path.read_bytes() for path in install_dir.rglob("*") if path.is_file()}
+    state = json.loads((install_dir / "install-state.json").read_text(encoding="utf-8"))
+    if after != before or state["status"] != "installed" or state["version"] != info["version"] or any(install_dir.glob(".agent-work-kit-txn*")):
         raise AssertionError("public entry recovery did not restore the installed resources")
     subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
 
@@ -76,7 +76,7 @@ def main():
         scratch = root / "scratch"
         home.mkdir()
         scratch.mkdir()
-        target = root / "中文 path & symbols" / "skills"
+        target = root / "中文 path & symbols" / "agent-work-kit"
         global_dir = root / "全域 path & symbols"
         handler = functools.partial(QuietHandler, directory=str(root))
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -98,7 +98,7 @@ def main():
             else:
                 entry = downloaders["install-agent-work-kit-from-github-release.command"]
                 command = ["/bin/bash", str(entry)]
-            command += ["--host", info["host"], "--non-interactive", "--global-instructions", "yes", "--skills-dir", str(target.parent),
+            command += ["--host", info["host"], "--non-interactive", "--global-instructions", "yes", "--install-dir", str(target),
                         "--instructions-dir", str(global_dir)]
             entry_command = command[:4] if args.platform == "windows-x64-msvc" else command[:2]
             help_result = subprocess.run(entry_command + ["--help"], cwd=home, env=environment,
@@ -114,12 +114,13 @@ def main():
                                     capture_output=True, timeout=180)
             if result.returncode:
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
-            skills_dir = target.parent
-            state_path = skills_dir / "install-state.json"
+            install_dir = target
+            skills_dir = install_dir / "skills"
+            state_path = install_dir / "install-state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             if (state["host"] != info["host"] or state["version"] != info["version"] or
                     state["rust_workspace_version"] != info["rust_workspace_version"] or
-                    Path(state["skill_install_dir"]) != skills_dir or state["status"] != "installed" or
+                    Path(state["install_dir"]) != install_dir or state["status"] != "installed" or
                     state["global_instructions_dir"] != str(global_dir)):
                 raise AssertionError(f"Downloader installed the wrong state: {state!r}")
             for required in ("work/SKILL.md", "tooling/SKILL.md", "shared/bootstrap.md"):
@@ -128,7 +129,7 @@ def main():
             if any((skills_dir / name).exists() for name in ("contract", "shared/SKILL.md")):
                 raise AssertionError("Downloader installed an obsolete resource")
             suffix = ".exe" if sys.platform == "win32" else ""
-            cli_bin = Path(state["cli_install_dir"]) / "bin"
+            cli_bin = install_dir / "bin"
             if {path.name for path in cli_bin.iterdir()} != {f"work{suffix}", f"skill{suffix}"}:
                 raise AssertionError("Downloader installed the wrong CLI set")
             instruction_name = "AGENTS.md" if info["host"] == "codex" else "CLAUDE.md"
@@ -138,11 +139,12 @@ def main():
             before_state = state_path.read_bytes()
             before_agents = (global_dir / instruction_name).read_bytes()
             for options, expected in ((["--host", info["host"], "--non-interactive", "--dry-run",
-                                      "--skills-dir", str(skills_dir), "--instructions-dir", str(global_dir)], 0),
+                                      "--install-dir", str(install_dir), "--instructions-dir", str(global_dir)], 0),
                                       (["--host", info["host"], "--unknown"], 2),
                                       (["--host", info["host"], "--skills"], 2),
+                                      (["--host", info["host"], "--skills-dir", "legacy"], 2),
                                       (["--host", info["host"], "--migrate"], 2),
-                                      (["--host", info["host"], "--install-dir", "old/work"], 2),
+                                      (["--host", info["host"], "--install-dir"], 2),
                                       (["--host", info["host"], "--global-instructions", "no", "--instructions-dir", str(global_dir)], 2),
                                       (["--host", info["host"], "--verbose", "--verbose"], 2)):
                 check = subprocess.run(entry_command + options, cwd=home, env=environment,
@@ -155,7 +157,13 @@ def main():
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
             if list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("Downloader retained temporary files")
-            exercise_public_crash(entry, home, environment, args.platform, info, root / "downloader-crash/skills")
+            # A separate Host home is required: discovery links from the first install
+            # intentionally cannot be repointed to another install root.
+            crash_home = root / "crash-home"
+            crash_home.mkdir()
+            crash_environment = {**environment, "HOME": str(crash_home), "USERPROFILE": str(crash_home)}
+            exercise_public_crash(entry, crash_home, crash_environment, args.platform, info,
+                                  root / "downloader-crash/agent-work-kit")
             print(f"Public Downloader interruption recovery passed: {args.platform}", flush=True)
             if list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("public crash recovery retained downloader scratch files")

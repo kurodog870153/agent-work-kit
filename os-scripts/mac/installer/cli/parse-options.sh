@@ -5,7 +5,7 @@ installer_cli_usage() {
     cat <<'USAGE'
 Usage: install-agent-work-kit-from-{source,package}.command [options]
   --host codex|claude
-  --skills-dir <parent-directory>
+  --install-dir <directory>
   --instructions-dir <directory>
   --global-instructions yes|no
   --non-interactive
@@ -41,7 +41,7 @@ installer_cli_parse() {
     installer_cli_action=install
     installer_cli_host=''
     installer_cli_global_instructions=''
-    installer_cli_skills_dir=''
+    installer_cli_install_dir=''
     installer_cli_instructions_dir=''
     installer_cli_non_interactive=0
     installer_cli_dry_run=0
@@ -63,7 +63,7 @@ installer_cli_parse() {
                     --verbose) installer_cli_verbose=1 ;;
                 esac
                 ;;
-            --host|--skills-dir|--instructions-dir|--global-instructions)
+            --host|--install-dir|--instructions-dir|--global-instructions)
                 [[ "$seen" != *",$flag,"* ]] || { installer_cli_error "duplicate option $flag"; return 2; }
                 seen+="$flag,"
                 (( $# )) || { installer_cli_error "missing value for $flag"; return 2; }
@@ -74,7 +74,7 @@ installer_cli_parse() {
                     --host)
                         [[ "$value" == codex || "$value" == claude ]] || { installer_cli_error 'invalid Host'; return 2; }
                         installer_cli_host="$value" ;;
-                    --skills-dir) installer_cli_skills_dir="$value" ;;
+                    --install-dir) installer_cli_install_dir="$value" ;;
                     --instructions-dir) installer_cli_instructions_dir="$value" ;;
                     --global-instructions)
                         [[ "$value" == yes || "$value" == no ]] || { installer_cli_error 'invalid Global Instructions choice'; return 2; }

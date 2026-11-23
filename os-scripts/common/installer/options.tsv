@@ -2,7 +2,7 @@ kind	name	path
 option	--help
 option	-h
 option	--host
-option	--skills-dir
+option	--install-dir
 option	--instructions-dir
 option	--global-instructions
 option	--non-interactive

@@ -14,8 +14,9 @@ function Get-InstallerTxFinal {
     param([string] $Name)
     switch -CaseSensitive ($Name) {
         { $_ -in 'work', 'tooling', 'shared' } { return (Join-Path $script:InstallerSkillsDir $Name) }
+        { $_ -in 'link-work', 'link-tooling' } { return (Join-Path $script:InstallerHostSkillsDir $Name.Substring(5)) }
         'bin' { return (Join-Path $script:InstallerCliDir 'bin') }
-        'state' { return (Join-Path $script:InstallerSkillsDir 'install-state.json') }
+        'state' { return (Join-Path $script:InstallerInstallDir 'install-state.json') }
         'global' { return $script:InstallerGlobalTarget }
     }
     throw "unknown component $Name"
@@ -44,7 +45,8 @@ function Remove-InstallerDirectories {
     param([string[]] $Directories)
     for ($index = $Directories.Count - 1; $index -ge 0; $index--) {
         $path = $Directories[$index]
-        if (-not (Test-Path -LiteralPath $path -PathType Container) -or @(Get-ChildItem -LiteralPath $path -Force).Count -gt 0) { break }
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) { continue }
+        if (@(Get-ChildItem -LiteralPath $path -Force).Count -gt 0) { break }
         Remove-Item -LiteralPath $path -ErrorAction Stop
     }
 }
@@ -95,6 +97,14 @@ function Invoke-InstallerTxApply {
     $final = Get-InstallerTxFinal $Name
     $staged = Join-Path $script:InstallerTx "staged/$Name"
     $backup = Join-Path $script:InstallerTx "backup/$Name"
+    if ($Name -in @('link-work', 'link-tooling')) {
+        if (Test-InstallerExists $final) { throw "Host discovery entry is occupied: $final" }
+        Invoke-InstallerInject 'link-create-denied' # simulate a Windows symlink privilege failure
+        $target = Join-Path $script:InstallerSkillsDir $Name.Substring(5)
+        New-Item -ItemType SymbolicLink -Path $final -Target $target -ErrorAction Stop | Out-Null
+        Invoke-InstallerInject "apply-$Name"
+        return
+    }
     if (-not (Test-InstallerExists $staged)) { throw "staged $Name is missing" }
     if (Test-InstallerExists $final) { Move-InstallerComponent -From $final -To $backup }
     Invoke-InstallerInject "apply-$Name-moved"
@@ -106,6 +116,15 @@ function Restore-InstallerTxComponent {
     param([string] $Name, [string] $Had, [string] $Final)
     $staged = Join-Path $script:InstallerTx "staged/$Name"
     $backup = Join-Path $script:InstallerTx "backup/$Name"
+    if ($Name -in @('link-work', 'link-tooling')) {
+        if (Test-InstallerExists $Final) {
+            if (-not (Test-InstallerHostLink -Name $Name.Substring(5) -InstallDir $script:InstallerInstallDir -HostSkillsDir $script:InstallerHostSkillsDir)) {
+                throw "Host discovery link was modified during recovery: $Final"
+            }
+            [IO.Directory]::Delete($Final) # remove the link itself, never follow its target
+        }
+        return
+    }
     if (Test-InstallerExists $backup) {
         if (Test-InstallerExists $final) {
             if (Test-InstallerExists $staged) { throw "ambiguous state for $Name" }
@@ -137,7 +156,8 @@ function Read-InstallerTxPlan {
         $parts = $line.Split("`t")
         if ($parts.Count -ne 3 -or $parts[1] -cnotin @('0', '1')) { throw 'invalid installation plan' }
         $name = $parts[0]
-        if ($name -cin @('work', 'tooling', 'shared', 'bin', 'state')) {
+        if ($name -cin @('work', 'tooling', 'shared', 'bin', 'state', 'link-work', 'link-tooling')) {
+            if ($name -in @('link-work', 'link-tooling') -and $parts[1] -cne '0') { throw 'invalid Host discovery link plan' }
             if (-not (Test-InstallerPathEqual (Get-InstallerTxFinal $name) $parts[2])) { throw 'installation plan targets another location' }
         } elseif ($name -ceq 'global') {
             if ([IO.Path]::GetFileName($parts[2]) -cnotin @('AGENTS.md', 'CLAUDE.md') -or -not [IO.Path]::IsPathRooted($parts[2])) { throw 'invalid installation plan' }
@@ -171,7 +191,12 @@ function Complete-InstallerTx {
     $plan = Read-InstallerTxPlan
     if ($null -eq $plan) { throw 'committed installation transaction has no plan' }
     if (Test-InstallerExists (Join-Path $script:InstallerTx 'staged/state')) { Invoke-InstallerTxApply -Name 'state' }
-    if ($null -eq (Read-InstallerState -Path (Join-Path $script:InstallerSkillsDir 'install-state.json'))) { throw 'published install state is invalid' }
+    if ($null -eq (Read-InstallerState -Path (Join-Path $script:InstallerInstallDir 'install-state.json'))) { throw 'published install state is invalid' }
+    foreach ($name in 'work', 'tooling') {
+        if (-not (Test-InstallerHostLink -Name $name -InstallDir $script:InstallerInstallDir -HostSkillsDir $script:InstallerHostSkillsDir)) {
+            throw "missing or invalid Host discovery link after commit: $name"
+        }
+    }
     try { Remove-InstallerTx } catch { [Console]::Error.WriteLine("Warning: installation transaction awaits cleanup: $($script:InstallerTx)") }
 }
 

@@ -21,8 +21,8 @@ installer_cli_parse --help </dev/null
 [[ "$installer_cli_action" == help ]] || fail 'help action'
 installer_cli_parse -h </dev/null
 [[ "$installer_cli_action" == help ]] || fail 'short help action'
-installer_cli_parse --host claude --global-instructions yes --skills-dir '目錄 有空白 !&' --instructions-dir '全域 有空白 !&' --non-interactive --dry-run --verbose </dev/null
-[[ "$installer_cli_skills_dir" == '目錄 有空白 !&' && "$installer_cli_instructions_dir" == '全域 有空白 !&' ]] || fail 'path boundary'
+installer_cli_parse --host claude --global-instructions yes --install-dir '目錄 有空白 !&' --instructions-dir '全域 有空白 !&' --non-interactive --dry-run --verbose </dev/null
+[[ "$installer_cli_install_dir" == '目錄 有空白 !&' && "$installer_cli_instructions_dir" == '全域 有空白 !&' ]] || fail 'path boundary'
 [[ "$installer_cli_non_interactive" == 1 && "$installer_cli_dry_run" == 1 && "$installer_cli_verbose" == 1 ]] || fail 'boolean options'
 [[ "$installer_cli_host" == claude && "$installer_cli_global_instructions" == yes ]] || fail 'Host and global override'
 installer_cli_parse --host codex --global-instructions no </dev/null
@@ -40,7 +40,8 @@ expect_invalid --global-agents-install-dir old/global
 expect_invalid --skills-dir
 expect_invalid --skills-dir ''
 expect_invalid --instructions-dir --dry-run
-expect_invalid --install-dir old/work
+expect_invalid --install-dir
+expect_invalid --install-dir ''
 expect_invalid --global-agent --no-global-agent
 expect_invalid --host unknown
 expect_invalid --host codex --global-instructions maybe

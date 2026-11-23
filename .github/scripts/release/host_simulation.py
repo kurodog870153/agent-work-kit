@@ -226,10 +226,19 @@ def task_and_acceptance(work, root, evidence):
     evidence["trace_anchors"] = 6
 
 
-def run(work_binary, skill_binary, skills_dir):
+def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
     evidence = {}
     work, skill = Cli(work_binary), Cli(skill_binary)
     skills_dir = Path(skills_dir).resolve()
+    if host_skills_dir is not None:
+        discovery = Path(host_skills_dir)
+        for name in ("work", "tooling"):
+            link = discovery / name
+            if not link.is_symlink() or not link.readlink().is_absolute() or link.resolve() != (skills_dir / name):
+                raise AssertionError(f"invalid Host discovery link: {link}")
+            if not (link / "SKILL.md").is_file():
+                raise AssertionError(f"Host discovery did not expose {name}")
+        evidence["host_discovery_links"] = ["work", "tooling"]
     with tempfile.TemporaryDirectory(prefix="host-simulation-") as directory:
         scratch = Path(directory)
         cli_contract_smoke(work, skill, evidence)
@@ -245,10 +254,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--work", required=True, type=Path)
     parser.add_argument("--skill", required=True, type=Path)
-    parser.add_argument("--skills-dir", required=True, type=Path, help="installation root holding work, tooling and shared")
+    parser.add_argument("--install", required=True, type=Path, help="managed root holding work, tooling and shared")
+    parser.add_argument("--host-skills-dir", type=Path, help="fixed Host discovery directory")
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()
-    evidence = run(args.work, args.skill, args.skills_dir)
+    evidence = run(args.work, args.skill, args.install, args.host_skills_dir)
     text = json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True)
     if args.evidence:
         args.evidence.parent.mkdir(parents=True, exist_ok=True)

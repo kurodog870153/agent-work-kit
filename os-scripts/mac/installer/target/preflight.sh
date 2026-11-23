@@ -56,32 +56,41 @@ installer_sources_safe() {
         { installer_fail 'Shared source is missing or unsafe'; return 1; }
 }
 
-# installer_inspect_targets SKILLS CLI: sets installer_target_kind to
-# new (nothing installed), managed (valid state and matching content) or unsafe.
+# Host discovery links are special: only the two known entry points may be inspected.
+installer_host_link_matches() {
+    local name="$1" link target
+    link="$installer_host_skills_dir/$name"
+    target="$installer_install_dir/skills/$name"
+    [[ -L "$link" && "$(readlink "$link")" == "$target" && -d "$link" && "$link" -ef "$target" ]]
+}
+
+# One root owns all managed files; Host Skills may contain arbitrary unrelated Skills.
 installer_inspect_targets() {
-    local skills="$1" cli="$2" name entry
+    local install="$1" name entry
     installer_target_kind=unsafe
     installer_target_reason=''
     installer_state_clear
-    if [[ -e "$skills/install-state.json" || -L "$skills/install-state.json" ]]; then
-        installer_state_read "$skills/install-state.json" || { installer_target_reason='install-state.json is invalid'; return; }
-        [[ "$installer_state_skills_dir" == "$skills" && "$installer_state_cli_dir" == "$cli" ]] ||
-            { installer_target_reason='install state belongs to another Skills or CLI directory'; return; }
-        installer_manifest_matches "$skills" "$cli" "${installer_state_files[@]}" ||
+    if [[ -e "$install/install-state.json" || -L "$install/install-state.json" ]]; then
+        installer_state_read "$install/install-state.json" || { installer_target_reason='install-state.json is invalid'; return; }
+        [[ "$installer_state_install_dir" == "$install" && "$installer_state_host" == "$selected_host" ]] ||
+            { installer_target_reason='install state belongs to another Host or installation directory'; return; }
+        installer_manifest_matches "$install" "${installer_state_files[@]}" ||
             { installer_target_reason='installed content differs from the recorded installation'; return; }
+        for name in work tooling; do
+            installer_host_link_matches "$name" ||
+                { installer_target_reason="missing or invalid Host discovery link: $name"; return; }
+        done
         installer_target_kind=managed
         return
     fi
-    for name in work tooling shared; do
-        entry="$skills/$name"
-        if [[ -e "$entry" || -L "$entry" ]]; then
-            [[ -d "$entry" && ! -L "$entry" && -z "$(find "$entry" -mindepth 1 -print -quit)" ]] ||
-                { installer_target_reason="existing content without a valid install state: $entry"; return; }
-        fi
-    done
-    if [[ -e "$cli/bin" || -L "$cli/bin" ]]; then
-        [[ -d "$cli/bin" && ! -L "$cli/bin" && -z "$(find "$cli/bin" -mindepth 1 -print -quit)" ]] ||
-            { installer_target_reason="existing content without a valid install state: $cli/bin"; return; }
+    if [[ -d "$install" && -n "$(find "$install" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+        installer_target_reason="existing content without a valid install state: $install"
+        return
     fi
+    for name in work tooling; do
+        entry="$installer_host_skills_dir/$name"
+        [[ ! -e "$entry" && ! -L "$entry" ]] ||
+            { installer_target_reason="Host discovery entry is occupied: $entry"; return; }
+    done
     installer_target_kind=new
 }

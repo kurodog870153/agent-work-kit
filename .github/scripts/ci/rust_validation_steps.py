@@ -38,7 +38,7 @@ def simulate_host():
         f"target/release/work{suffix}",
         "--skill",
         f"target/release/skill{suffix}",
-        "--skills-dir",
+        "--install",
         "../skills",
         "--evidence",
         ".ci-perf/host-simulation.json",

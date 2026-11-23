@@ -19,35 +19,33 @@ function Get-InstallerFileSha256 {
 }
 function Test-InstallerPathEqual { param([string] $A, [string] $B) return [string]::Equals($A.TrimEnd('\', '/'), $B.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase) }
 
-# Hash lines of the managed files below the given roots; $null when anything is a link or not a regular file/directory.
+# Hash lines of managed files in a single install root, never the Host discovery parent.
 function Get-InstallerActualManifest {
-    param([string] $SkillsRoot, [string] $BinDir)
+    param([string] $InstallDir, [switch] $Staged)
     $lines = [System.Collections.Generic.List[string]]::new()
-    $roots = @()
-    foreach ($name in 'work', 'tooling', 'shared') { $roots += , @((Join-Path $SkillsRoot $name), "skills/$name") }
-    $roots += , @($BinDir, 'cli/bin')
-    foreach ($entry in $roots) {
-        $base = $entry[0]
+    foreach ($name in 'work', 'tooling', 'shared', 'bin') {
+        $prefix = if ($name -eq 'bin') { 'bin' } else { "skills/$name" }
+        $source = if ($name -eq 'bin' -or $Staged) { $name } else { "skills/$name" }
+        $base = Join-Path $InstallDir $source
         if (-not (Test-Path -LiteralPath $base)) { continue }
         $rootItem = Get-Item -LiteralPath $base -Force
         if (-not $rootItem.PSIsContainer -or (Test-InstallerReparse $rootItem)) { return $null }
-        $prefix = $rootItem.FullName.TrimEnd('\', '/')
+        $rootPath = $rootItem.FullName.TrimEnd('\', '/')
         foreach ($item in @(Get-ChildItem -LiteralPath $base -Recurse -Force)) {
             if (Test-InstallerReparse $item) { return $null }
             if ($item.PSIsContainer) { continue }
-            $relative = $item.FullName.Substring($prefix.Length).TrimStart('\', '/').Replace('\', '/')
-            $label = "$($entry[1])/$relative"
+            $relative = $item.FullName.Substring($rootPath.Length).TrimStart('\', '/').Replace('\', '/')
+            $label = "$prefix/$relative"
             if (-not (Test-InstallerRelative $label)) { return $null }
             $lines.Add("$(Get-InstallerFileSha256 -Path $item.FullName)  $label")
         }
     }
-    # Callers wrap the result in @(); $null (not an empty list) signals an unsafe tree.
     return @($lines | Sort-Object { $_ } -CaseSensitive)
 }
 
 function Test-InstallerManifestMatches {
-    param([string] $SkillsRoot, [string] $BinDir, [string[]] $Entries)
-    $actual = Get-InstallerActualManifest -SkillsRoot $SkillsRoot -BinDir $BinDir
+    param([string] $InstallDir, [string[]] $Entries)
+    $actual = Get-InstallerActualManifest -InstallDir $InstallDir
     if ($null -eq $actual) { return $false }
     $expected = @($Entries | Where-Object { $_ -cnotmatch '^[0-9a-f]{64}  global/' } | Sort-Object { $_ } -CaseSensitive)
     return ($expected -join "`n") -ceq (@($actual) -join "`n")
@@ -59,13 +57,11 @@ function Read-InstallerState {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     if (Test-InstallerReparse (Get-Item -LiteralPath $Path -Force)) { return $null }
     try { $value = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($Path)) -ErrorAction Stop } catch { return $null }
-    $keys = 'cli_install_dir,files,global_instructions_dir,host,rust_workspace_version,skill_install_dir,status,version'
+    $keys = 'files,global_instructions_dir,host,install_dir,rust_workspace_version,status,version'
     if ($value -isnot [pscustomobject] -or (@($value.PSObject.Properties.Name | Sort-Object { $_ } -CaseSensitive) -join ',') -cne $keys) { return $null }
     if ($value.host -cnotin @('codex', 'claude') -or $value.status -cne 'installed' -or
         -not (Test-InstallerVersion $value.version) -or -not (Test-InstallerVersion $value.rust_workspace_version)) { return $null }
-    foreach ($dir in @($value.skill_install_dir, $value.cli_install_dir)) {
-        if ($dir -isnot [string] -or -not [IO.Path]::IsPathRooted($dir)) { return $null }
-    }
+    if ($value.install_dir -isnot [string] -or -not [IO.Path]::IsPathRooted($value.install_dir)) { return $null }
     if ($null -ne $value.global_instructions_dir -and
         ($value.global_instructions_dir -isnot [string] -or -not [IO.Path]::IsPathRooted($value.global_instructions_dir))) { return $null }
     $files = @($value.files)
@@ -77,11 +73,11 @@ function Read-InstallerState {
 }
 
 function Write-InstallerState {
-    param([string] $Path, [string] $InstallerHost, [string] $Version, [string] $RustVersion, [string] $SkillsDir,
-        [string] $CliDir, [AllowNull()][string] $GlobalDir, [string[]] $Files)
+    param([string] $Path, [string] $InstallerHost, [string] $Version, [string] $RustVersion, [string] $InstallDir,
+        [AllowNull()][string] $GlobalDir, [string[]] $Files)
     $value = [ordered]@{
         host = $InstallerHost; version = $Version; rust_workspace_version = $RustVersion
-        skill_install_dir = $SkillsDir; cli_install_dir = $CliDir
+        install_dir = $InstallDir
         global_instructions_dir = $(if ([string]::IsNullOrEmpty($GlobalDir)) { $null } else { $GlobalDir })
         status = 'installed'; files = @($Files)
     }
