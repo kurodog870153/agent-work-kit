@@ -27,9 +27,10 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                 with self.subTest(platform=platform, host=host), tempfile.TemporaryDirectory() as directory:
                     home = Path(directory)
                     layout = HostLayout(home, host, platform)
-                    self.assertEqual(layout.skills, home / skills_path)
+                    self.assertEqual(layout.discovery, home / skills_path)
+                    self.assertEqual(layout.skills, layout.install / "skills")
                     self.assertEqual(layout.global_file, home / instructions_path)
-                    self.assertEqual(layout.cli, layout.skills.parent / "agent-work-kit")
+                    self.assertEqual(layout.cli, layout.install)
                     self.assertEqual(layout.work.suffix, ".exe" if platform == "windows-x64-msvc" else "")
                     self.assertEqual(layout.snapshot(), {})
                     (layout.skills / "work").mkdir(parents=True)
@@ -101,9 +102,9 @@ class ReleaseInstallE2ETests(unittest.TestCase):
     def test_installation_state_is_accepted_only_for_its_own_host_and_resources(self):
         with tempfile.TemporaryDirectory() as directory:
             layout = HostLayout(Path(directory), "claude", "macos-arm64")
-            layout.skills.mkdir(parents=True)
+            layout.install.mkdir(parents=True)
             state = {"host": "claude", "version": "1.2.3", "rust_workspace_version": "1.2.3",
-                     "skill_install_dir": str(layout.skills), "cli_install_dir": str(layout.cli),
+                     "install_dir": str(layout.install),
                      "global_instructions_dir": None, "status": "installed", "files": []}
             layout.state.write_text(json.dumps(state), encoding="utf-8")
             info = {"version": "1.2.3", "rust_workspace_version": "1.2.3"}

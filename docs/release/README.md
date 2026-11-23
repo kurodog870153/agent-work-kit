@@ -115,7 +115,7 @@ macOS Terminal：
 ./install-agent-work-kit-from-package.command
 ```
 
-安裝器每次共同安裝 Work、Tooling、Shared 與 Work／Skill CLI；CLI 安裝在 Skills 目錄旁的 `agent-work-kit/bin`，與 Skill 目錄分離。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
+安裝器每次共同安裝 Work、Tooling、Shared 與 Work／Skill CLI，實體資源集中在 `<install_dir>/skills` 與 `<install_dir>/bin`，狀態檔位於 `<install_dir>/install-state.json`。Host Skills 目錄只建立 Work／Tooling 的探索連結；Release ZIP 的 `README.md` 不會被複製到正式安裝目錄。互動模式會詢問 Host；非互動模式必須指定 `--host`，且須與 ZIP 相符。Codex 的 Global Instructions 目標是 `~/.codex/AGENTS.md`，Claude Code 是 `~/.claude/CLAUDE.md`。安裝器會先驗證包內 manifest、Host、平台及 binary，再修改正式目標。
 
 ### 3.4 可用參數
 
@@ -124,7 +124,7 @@ macOS Terminal：
 1. `--help` 或 `-h`：顯示用法，不安裝。
 2. `--host codex|claude`：選擇 Host；非互動模式必填。
 3. `--global-instructions yes|no`：啟用或停用 Global Instructions。
-4. `--skills-dir <path>`：指定 Work、Tooling 與 Shared 的共同父目錄；CLI 目錄為其同層的 `agent-work-kit`。路徑含空白時須加引號。
+4. `--install-dir <path>`：指定 agent-work-kit 的**實體安裝根目錄**；不支援自訂 Host Skills 探索目錄。路徑含空白時須加引號。
 5. `--instructions-dir <path>`：指定 Global Instructions 所在目錄；路徑含空白時須加引號。
 6. `--non-interactive`：不讀取互動輸入；需要確認時會拒絕安裝並保留原目標。
 7. `--dry-run`：列出預計動作，不修改正式安裝目標。
@@ -141,20 +141,23 @@ macOS Terminal：
 
 ### 3.6 安裝狀態與重新安裝
 
-安裝器會在 Work、Tooling 與 Shared 的共同父目錄管理唯一的 `install-state.json`，用來辨識安裝版本、位置、Host、Global Instructions 設定與安裝結果。不需要手動建立或修改。
+安裝器在 `<install_dir>/install-state.json` 管理唯一的正式安裝狀態，以 `install_dir` 記錄套件根目錄，Skill／CLI 位置由它推導；探索目錄由 Host 固定決定，不另記錄 `host_skills_dir`。不需要手動建立或修改。
 
 | Host | 預設狀態檔位置 |
 | --- | --- |
-| Codex | `~/.agents/skills/install-state.json` |
-| Claude Code | `~/.claude/skills/install-state.json` |
+| Codex | `~/.agents/agent-work-kit/install-state.json` |
+| Claude Code | `~/.claude/agent-work-kit/install-state.json` |
 
-使用 `--skills-dir <path>` 時，Skill、Shared 與狀態檔會移至指定的共同父目錄，CLI 目錄隨之位於其同層。重新安裝時會沿用同一 Host 的有效 Global Instructions 設定，仍可用 `--global-instructions yes|no` 指定此次選擇；首次安裝預設啟用。狀態檔存在不代表安裝有效，安裝器還會檢查實際內容。
+預設根目錄為上表狀態檔所在的 `agent-work-kit` 目錄。使用 `--install-dir <path>` 自訂後，重新安裝必須再提供**相同**安裝位置；不根據探索連結反向搜尋或自動遷移。Host 探索連結固定放在 Codex `~/.agents/skills/{work,tooling}` 或 Claude Code `~/.claude/skills/{work,tooling}`，目標為絕對路徑的 Directory Symbolic Link；不建立 Shared 的獨立探索入口。重新安裝只沿用經驗證的有效連結，連結缺失、被替換或指向錯誤時拒絕，不自動修復。重新安裝時會沿用同一 Host 的有效 Global Instructions 設定，仍可用 `--global-instructions yes|no` 指定此次選擇；首次安裝預設啟用。狀態檔存在不代表安裝有效，還須檢查完整性及連結。
 
 ### 3.7 安全警告與錯誤處理
 
 這些 binary 未經 Apple 或 Microsoft 平台簽章，作業系統可能顯示安全警告。確認下載來源、Checksum 與 Attestation 後，再依平台提供的正常操作方式允許執行。
 
-若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效安裝狀態或不安全連結被拒絕時，保留原資料並整理目標或改選安裝目錄；非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效安裝狀態、已占用的 Work／Tooling 探索入口或不安全連結被拒絕時，保留原資料並由使用者自行處理；不覆蓋任何第三方 Skill。Windows 需要可建立 Directory Symbolic Link 的權限／環境，建立失敗時安裝安全中止，不使用 Junction 作為替代。非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+
+
+Host 的原生 Skill 探索設定不由 Installer 修改；若自行變更 Host 探索目錄，須由使用者自行配置，檔案已安裝不代表真實 Host 一定已探索成功。
 
 ### 3.8 安裝中斷
 

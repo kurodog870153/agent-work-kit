@@ -86,10 +86,10 @@ class DownloaderTests(unittest.TestCase):
         self.package()
         skills = str(self.root / "中文 path & symbols")
         global_dir = str(self.root / "全域 path & symbols")
-        result = self.run_downloader("--skills-dir", skills,
+        result = self.run_downloader("--install-dir", skills,
                                      "--instructions-dir", global_dir)
         self.assertEqual(0, result.returncode, (result.stdout, result.stderr))
-        self.assertEqual(["--host", "codex", "--skills-dir", skills, "--instructions-dir", global_dir],
+        self.assertEqual(["--host", "codex", "--install-dir", skills, "--instructions-dir", global_dir],
                          (self.root / "argv.txt").read_text(encoding="utf-8").splitlines())
         failed = {**self.environment, "AGENT_WORK_KIT_RELEASE_TEST_EXIT": "17"}
         self.assertEqual(17, self.run_downloader(environment=failed).returncode)

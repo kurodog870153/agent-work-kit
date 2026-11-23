@@ -29,10 +29,11 @@ try {
         Expand-Archive -LiteralPath $archive -DestinationPath $package
         $entry = Join-Path $package 'install-agent-work-kit-from-package.bat'
         if (-not (Test-Path -LiteralPath $entry)) { throw 'new Package entry is missing' }
-        $skillsParent = Join-Path $scratch "i-$installerHost/skills"
-        & $entry --host $installerHost --non-interactive --global-instructions no --skills-dir $skillsParent | Out-Null
-        $statePath = Join-Path $skillsParent 'install-state.json'
-        $cliBin = Join-Path (Split-Path -Parent $skillsParent) 'agent-work-kit/bin'
+         $installDir = Join-Path $scratch "i-$installerHost/agent-work-kit"
+        $skillsParent = Join-Path $installDir "skills"
+        & $entry --host $installerHost --non-interactive --global-instructions no --install-dir $installDir | Out-Null
+        $statePath = Join-Path $installDir 'install-state.json'
+        $cliBin = Join-Path $installDir 'bin'
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $statePath) -or
             -not (Test-Path -LiteralPath (Join-Path $skillsParent 'shared/bootstrap.md')) -or
             (Test-Path -LiteralPath (Join-Path $skillsParent 'contract')) -or
@@ -46,7 +47,7 @@ try {
         if ($state.host -cne $installerHost -or $releaseInfo.host -cne $installerHost -or
             $state.status -ne 'installed' -or $state.version -ne $releaseInfo.version -or
             $state.rust_workspace_version -ne $releaseInfo.rust_workspace_version -or
-            $state.skill_install_dir -ne $skillsParent) { throw 'Windows Package state is invalid' }
+            $state.install_dir -ne $installDir) { throw 'Windows Package state is invalid' }
         $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         $checksums = Join-Path $output 'SHA256SUMS.txt'
         [IO.File]::WriteAllText($checksums, "$digest  $([IO.Path]::GetFileName($archive))`n")

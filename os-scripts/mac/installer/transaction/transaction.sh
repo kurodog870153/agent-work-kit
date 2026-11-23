@@ -14,8 +14,9 @@ installer_inject() {
 installer_tx_final() {
     case "$1" in
         work|tooling|shared) printf '%s/%s\n' "$installer_skills_dir" "$1" ;;
+        link-work|link-tooling) printf '%s/%s\n' "$installer_host_skills_dir" "${1#link-}" ;;
         bin) printf '%s/bin\n' "$installer_cli_dir" ;;
-        state) printf '%s/install-state.json\n' "$installer_skills_dir" ;;
+        state) printf '%s/install-state.json\n' "$installer_install_dir" ;;
         global) printf '%s\n' "$installer_global_target" ;;
     esac
 }
@@ -77,6 +78,12 @@ installer_tx_apply_component() {
     final="$(installer_tx_final "$name")"
     staged="$installer_tx/staged/$name"
     backup="$installer_tx/backup/$name"
+    if [[ "$name" == link-* ]]; then
+        [[ ! -e "$final" && ! -L "$final" ]] || return 1
+        ln -s -- "$installer_skills_dir/${name#link-}" "$final" || return 1
+        installer_inject "apply-$name"
+        return
+    fi
     [[ -e "$staged" ]] || return 1
     if [[ -e "$final" || -L "$final" ]]; then mv -- "$final" "$backup" || return 1; fi
     installer_inject "apply-$name-moved" || return 1
@@ -88,6 +95,13 @@ installer_tx_rollback_component() {
     local name="$1" had="$2" final="$3" staged backup
     staged="$installer_tx/staged/$name"
     backup="$installer_tx/backup/$name"
+    if [[ "$name" == link-* ]]; then
+        if [[ -e "$final" || -L "$final" ]]; then
+            installer_host_link_matches "${name#link-}" || return 1
+            rm -- "$final" || return 1
+        fi
+        return 0
+    fi
     if [[ -e "$backup" || -L "$backup" ]]; then
         if [[ -e "$final" || -L "$final" ]]; then
             [[ ! -e "$staged" && ! -L "$staged" ]] || return 1
@@ -117,6 +131,7 @@ installer_tx_load_plan() {
     while IFS=$'\t' read -r name had final; do
         case "$name" in
             work|tooling|shared|bin|state) [[ "$final" == "$(installer_tx_final "$name")" ]] || return 1 ;;
+            link-work|link-tooling) [[ "$had" == 0 && "$final" == "$(installer_tx_final "$name")" ]] || return 1 ;;
             global) [[ "$final" == /*/AGENTS.md || "$final" == /*/CLAUDE.md ]] && installer_path_valid "$final" || return 1 ;;
             *) return 1 ;;
         esac
@@ -152,7 +167,7 @@ installer_tx_restore_created() {
     fi
     installer_tx_remove || { installer_fail "could not remove installation transaction: $installer_tx"; return 1; }
     for ((index=${#created[@]}-1; index>=0; index--)); do
-        rmdir -- "${created[index]}" 2>/dev/null || break
+        rmdir -- "${created[index]}" 2>/dev/null || true
     done
 }
 
@@ -161,7 +176,8 @@ installer_tx_finish() {
     installer_tx_load_plan; status=$?
     (( status == 0 )) || { installer_fail "unsafe installation transaction; preserved for review: $installer_tx"; return 1; }
     if [[ -e "$installer_tx/staged/state" ]]; then installer_tx_apply_component state || return 1; fi
-    installer_state_read "$installer_skills_dir/install-state.json" || { installer_fail 'published install state is invalid'; return 1; }
+    installer_state_read "$installer_install_dir/install-state.json" || { installer_fail 'published install state is invalid'; return 1; }
+    for name in work tooling; do installer_host_link_matches "$name" || return 1; done
     installer_tx_cleanup
 }
 

@@ -88,30 +88,32 @@ installer_global_source="$installer_root/instructions/global-instructions.md"
 
 # --- Locations -----------------------------------------------------------------------------------------------
 if [[ "$selected_host" == codex ]]; then
-    default_skills="$HOME/.agents/skills"; default_global_dir="$HOME/.codex"; global_filename=AGENTS.md
+    host_home="$HOME/.agents"; default_global_dir="$HOME/.codex"; global_filename=AGENTS.md
 else
-    default_skills="$HOME/.claude/skills"; default_global_dir="$HOME/.claude"; global_filename=CLAUDE.md
+    host_home="$HOME/.claude"; default_global_dir="$HOME/.claude"; global_filename=CLAUDE.md
 fi
-skills_input="${installer_cli_skills_dir:-$default_skills}"
-if [[ -z "$installer_cli_skills_dir" && "$installer_cli_non_interactive" != 1 ]]; then
-    choice="$(installer_prompt "Skills directory: 1) default ($default_skills), 2) custom" 1)" || exit 1
+installer_host_skills_dir="$host_home/skills"
+install_input="${installer_cli_install_dir:-$host_home/agent-work-kit}"
+if [[ -z "$installer_cli_install_dir" && "$installer_cli_non_interactive" != 1 ]]; then
+    choice="$(installer_prompt "Installation directory: 1) default ($install_input), 2) custom" 1)" || exit 1
     case "$choice" in
         1) ;;
-        2) skills_input="$(installer_prompt 'Custom Skills directory' '')" || exit 1
-           [[ -n "$skills_input" ]] || { installer_fail 'Skills directory cannot be empty'; exit 1; } ;;
-        *) installer_fail 'invalid Skills directory choice'; exit 1 ;;
+        2) install_input="$(installer_prompt 'Custom installation directory' '')" || exit 1
+           [[ -n "$install_input" ]] || { installer_fail 'Installation directory cannot be empty'; exit 1; } ;;
+        *) installer_fail 'invalid installation directory choice'; exit 1 ;;
     esac
 fi
-installer_skills_dir="$(installer_absolute_path "$skills_input")"
-installer_path_valid "$installer_skills_dir" && installer_directory_path_safe "$installer_skills_dir" ||
-    { installer_fail 'unsafe Skills directory'; exit 1; }
-installer_tx="$installer_skills_dir/.agent-work-kit-txn"
-installer_cli_dir="$(installer_absolute_path "$installer_skills_dir/../agent-work-kit")"
-installer_path_valid "$installer_cli_dir" && installer_directory_path_safe "$installer_cli_dir" ||
-    { installer_fail 'unsafe CLI directory'; exit 1; }
-if installer_path_overlaps "$installer_skills_dir" "$installer_cli_dir"; then
-    installer_fail 'the CLI directory must be separate from the Skills directory'; exit 1
+installer_install_dir="$(installer_absolute_path "$install_input")"
+installer_path_valid "$installer_install_dir" && installer_directory_path_safe "$installer_install_dir" ||
+    { installer_fail 'unsafe installation directory'; exit 1; }
+installer_directory_path_safe "$installer_host_skills_dir" ||
+    { installer_fail 'unsafe Host Skills directory'; exit 1; }
+if installer_path_overlaps "$installer_install_dir" "$installer_host_skills_dir"; then
+    installer_fail 'installation directory must not overlap the Host Skills directory'; exit 1
 fi
+installer_skills_dir="$installer_install_dir/skills"
+installer_cli_dir="$installer_install_dir"
+installer_tx="$installer_install_dir/.agent-work-kit-txn"
 installer_log 'locations selected'
 
 # --- Recovery and target inspection --------------------------------------------------------------------------
@@ -122,7 +124,7 @@ if [[ -e "$installer_tx" || -L "$installer_tx" ]]; then
     installer_tx_recover || exit 1
     installer_log 'interrupted installation recovered'
 fi
-installer_inspect_targets "$installer_skills_dir" "$installer_cli_dir"
+installer_inspect_targets "$installer_install_dir"
 if [[ "$installer_target_kind" == unsafe ]]; then
     installer_fail "targets cannot be installed: $installer_target_reason"
     printf 'Existing content is preserved and not taken over. Inspect it yourself or choose other directories.\n'
@@ -203,7 +205,7 @@ done
 
 # --- Plan and confirmation -----------------------------------------------------------------------------------
 printf 'Host: %s; version: %s; Rust workspace: %s; action: %s\n' "$selected_host" "$version" "$rust_version" "$installer_target_kind"
-printf 'Skills: %s/{work,tooling,shared}\nCLI: %s/bin/{work,skill}\n' "$installer_skills_dir" "$installer_cli_dir"
+printf 'Install: %s\nSkills: %s/{work,tooling,shared}\nCLI: %s/bin/{work,skill}\nHost discovery: %s/{work,tooling}\n' "$installer_install_dir" "$installer_skills_dir" "$installer_cli_dir" "$installer_host_skills_dir"
 printf 'Global Instructions: %s (%s)\n' "${installer_global_target:-disabled}" "$installer_global_action"
 if [[ "$installer_cli_dry_run" == 1 ]]; then printf 'Dry run: no installation target changed.\n'; exit 0; fi
 if [[ "$installer_cli_non_interactive" != 1 ]]; then
@@ -218,17 +220,18 @@ installer_transaction_failed() {
     else printf 'Recovery is incomplete; the next installer run retries it.\n' >&2; fi
     exit 1
 }
-installer_create_directories "$installer_skills_dir" || { installer_remove_created_directories; installer_fail 'could not create the Skills directory'; exit 1; }
+installer_create_directories "$installer_install_dir" || { installer_remove_created_directories; installer_fail 'could not create the Skills directory'; exit 1; }
 if ! installer_tx_begin; then installer_remove_created_directories; installer_fail 'could not start the installation transaction'; exit 1; fi
-installer_create_directories "$installer_cli_dir" && { [[ -z "$installer_global_dir" ]] || installer_create_directories "$installer_global_dir"; } &&
+installer_create_directories "$installer_skills_dir" && installer_create_directories "$installer_host_skills_dir" && { [[ -z "$installer_global_dir" ]] || installer_create_directories "$installer_global_dir"; } &&
     installer_tx_note_created "${installer_created_dirs[@]+"${installer_created_dirs[@]}"}" ||
     installer_transaction_failed 'could not create installation directories'
 installer_inject prepare || installer_transaction_failed 'prepare failed'
 installer_stage_payload && installer_build_manifest || installer_transaction_failed 'could not prepare installation resources'
-installer_state_write "$installer_tx/staged/state" "$selected_host" "$version" "$rust_version" "$installer_skills_dir" "$installer_cli_dir" \
+installer_state_write "$installer_tx/staged/state" "$selected_host" "$version" "$rust_version" "$installer_install_dir" \
     "$installer_global_dir" "${installer_new_files[@]}" || installer_transaction_failed 'could not prepare install state'
 installer_state_read "$installer_tx/staged/state" || installer_transaction_failed 'prepared install state is invalid'
 plan=(work tooling shared bin)
+[[ "$installer_target_kind" != new ]] || plan+=(link-work link-tooling)
 [[ "$installer_global_action" != install && "$installer_global_action" != replace ]] || plan+=(global)
 plan+=(state)
 installer_tx_write_plan "${plan[@]}" || installer_transaction_failed 'could not record the installation plan'

@@ -11,7 +11,7 @@ function Get-InstallerCliUsage {
     @'
 Usage: install-agent-work-kit-from-{source,package}.bat [options]
   --host codex|claude
-  --skills-dir <parent-directory>
+  --install-dir <directory>
   --instructions-dir <directory>
   --global-instructions yes|no
   --non-interactive
@@ -40,7 +40,7 @@ function Parse-InstallerCli {
         Action = 'install'
         InstallerHost = $null
         GlobalInstructions = $null
-        SkillsDir = $null
+        InstallDir = $null
         InstructionsDir = $null
         NonInteractive = $false
         DryRun = $false
@@ -60,7 +60,7 @@ function Parse-InstallerCli {
             '--non-interactive' { $result.NonInteractive = $true }
             '--dry-run' { $result.DryRun = $true }
             '--verbose' { $result.Verbose = $true }
-            { $_ -in @('--host', '--skills-dir', '--instructions-dir', '--global-instructions') } {
+            { $_ -in @('--host', '--install-dir', '--instructions-dir', '--global-instructions') } {
                 $index++
                 if ($index -ge $Tokens.Count -or [string]::IsNullOrEmpty($Tokens[$index]) -or $Tokens[$index].StartsWith('--')) {
                     throw (New-InstallerCliError "Missing value for $flag")
@@ -78,7 +78,7 @@ function Parse-InstallerCli {
                         if ($value -cnotin @('yes', 'no')) { throw (New-InstallerCliError 'Invalid Global Instructions choice') }
                         $result.GlobalInstructions = $value -ceq 'yes'
                     }
-                    '--skills-dir' { $result.SkillsDir = $value }
+                    '--install-dir' { $result.InstallDir = $value }
                     '--instructions-dir' { $result.InstructionsDir = $value }
                 }
             }

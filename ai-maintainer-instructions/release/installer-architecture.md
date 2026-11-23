@@ -28,6 +28,14 @@ metadata:
 
 Source 與 Package 共用該平台的安裝核心，遵循相同的安裝交易與狀態契約。
 
+### 2.1 安裝根目錄與 Host 探索邊界
+
+1. 公開安裝位置參數為 `--install-dir`，不再支援 `--skills-dir`。Codex 預設 `~/.agents/agent-work-kit`、Claude Code 預設 `~/.claude/agent-work-kit`；使用者只可自訂整體實體安裝根目錄，未指定時不從舊連結反向推導。
+2. `install_dir` 是單一管理根目錄：`skills/{work,tooling,shared}`、`bin/{work,skill}`、`install-state.json`。Skill CLI 的 `--install` 應指向 `install_dir/skills`。Release ZIP 根目錄的 README 不安裝到此根目錄。
+3. Host 探索目錄固定於 Codex `~/.agents/skills` 或 Claude Code `~/.claude/skills`；只為 Work、Tooling 建立絕對目標 Directory Symbolic Link，不為 Shared 建立獨立 Host Skill 入口。macOS／Windows 一致，Windows 不使用 Junction 或其他 fallback。
+4. Host Skills 目錄中的第三方 Skill（包括外部連結）不屬於本套件來源、Manifest 或交易範圍；Installer 僅管理經驗證的 Work／Tooling 探索入口。不得放寬 `install_dir/skills` 內各來源與非法連結的拒絕規則。
+5. 初次安裝僅在探索入口未占用時建立連結；重新安裝驗證後沿用既有連結，缺失、損毀或目標不符則拒絕，不自行修復。Installer 不修改 Host 原生探索設定，也不把模擬探索宣稱為真實 Host 實測。
+
 ```mermaid
 flowchart TD
     Release[Release] --> Assets[發布套件與完整性資訊]
@@ -56,7 +64,7 @@ Global Instructions 未啟用時，不參與其目標檢查或安裝交易；啟
 
 ## 4. 安裝交易
 
-1. 每次安裝是一個整體交易，Work／Tooling Skill、Shared 與 Work／Skill CLI 必須共同安裝；Global Instructions 啟用時納入同一交易。各元件只是交易參與者，不得獨立安裝或提交。
+1. 每次安裝是一個整體交易，Work／Tooling Skill、Shared、Work／Skill CLI 與首次建立的 Work／Tooling Host 探索連結必須共同安裝；Global Instructions 啟用時納入同一交易。各元件只是交易參與者，不得獨立安裝或提交。
 2. 採用全域安裝鎖，同一台電腦同一時間僅允許一個安裝交易，不區分 Host 或安裝目標。互斥保護涵蓋整體交易，包括依賴可變安裝狀態的預檢。
 3. 採用邏輯原子性，允許分階段寫入，但未提交的中間狀態不得視為有效安裝或供相依工作使用。所有必要資源及正式安裝結果通過驗證後，才能統一提交。
 
@@ -70,12 +78,12 @@ Global Instructions 未啟用時，不參與其目標檢查或安裝交易；啟
 
 以上為邏輯階段，可依實作需要組織，但不得破壞其職責、必要相依順序及約束。
 
-正式寫入前失敗須保留原有安裝；正式寫入後失敗或中斷，由整體交易統一處理並保留必要的復原資訊。未完成的交易不得宣告成功；無法安全處理時保留現況並回報原因。須具備安全復原能力，不強制 Rollback、Resume 或獨立復原機制。
+安裝根目錄與 Host Skills 探索目錄可能分屬不同磁碟；交易與復原不得依賴跨磁碟原子移動。Windows 無法建立 Symbolic Link 時安全拒絕，不以 Junction 替代。正式寫入前失敗須保留原有安裝；正式寫入後失敗或中斷，由整體交易統一處理並保留必要的復原資訊。未完成的交易不得宣告成功；無法安全處理時保留現況並回報原因。須具備安全復原能力，不強制 Rollback、Resume 或獨立復原機制。
 
 ## 5. 安裝狀態
 
 1. 每組安裝的正式狀態僅有一個權威來源，對應 Runtime CLI、Shared、Skill 的同一組有效安裝及 Host。所有正式狀態及必要暫存資訊由整體交易集中管理，各元件不得獨立管理或提交安裝狀態。
-2. Source、Package 與各平台遵循共用狀態契約。狀態須能辨識 Host、整體發布版本、Rust workspace 版本、Skill 安裝位置、Shared 與共用 Runtime CLI 的位置或可驗證的解析資訊、Global Instructions 設定及安裝完成狀態。
+2. Source、Package 與各平台遵循共用狀態契約。唯一狀態檔位於 `install_dir/install-state.json`，僅以 `install_dir` 記錄實體安裝根路徑，取代 `skill_install_dir` 與 `cli_install_dir`；保留 Host、整體發布版本、Rust workspace 版本、Global Instructions、完成狀態及受管理檔案 Manifest，不增加 `host_skills_dir` 或連結專用欄位。位置與連結目標均須能推導並驗證。
 3. 發布版本以根目錄 VERSION 為準；Rust workspace 版本以 Cargo workspace 的版本為準，兩者不得混用。安裝狀態、發布套件與 Work／Skill CLI 的 Rust host 中繼資料須使用一致的 Rust workspace 版本語意。
 4. 暫存資訊僅供交易判斷及必要復原使用，不是正式安裝狀態；完成後清理不再需要的交易資訊。狀態檔存在不代表安裝有效，須同時驗證實際安裝內容。
 5. 重新安裝時僅沿用同一 Host 的有效既有設定，明確的使用者選擇優先。目標目錄不存在或為空且無既有安裝時視為首次安裝，預設啟用 Global Instructions；目標已有內容但無有效狀態時，保留原內容並拒絕接管，但已確認屬於未完成交易的內容可依交易失敗處理原則安全處理。

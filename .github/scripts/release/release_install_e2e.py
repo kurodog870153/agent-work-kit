@@ -21,7 +21,7 @@ if sys.platform == "win32":
     from windows_job import CREATE_SUSPENDED, WindowsInstallerJob
 
 
-CLI_OPTIONS = ("--host", "--global-instructions", "--skills-dir",
+CLI_OPTIONS = ("--host", "--global-instructions", "--install-dir",
                "--instructions-dir", "--non-interactive", "--dry-run", "--verbose",
                "--help")
 
@@ -312,57 +312,69 @@ def assert_no_target(result, home, target):
 
 
 class HostLayout:
-    """Default installation layout of one Host inside a temporary home."""
+    """Independent managed root and Host-specific discovery parent."""
 
-    def __init__(self, home, host, platform):
+    def __init__(self, home, host, platform, install_dir=None):
         suffix = ".exe" if platform == "windows-x64-msvc" else ""
         self.host = host
         self.home = home
-        self.skills = home / (".agents/skills" if host == "codex" else ".claude/skills")
-        self.cli = self.skills.parent / "agent-work-kit"
+        self.discovery = home / (".agents/skills" if host == "codex" else ".claude/skills")
+        self.install = install_dir if install_dir is not None else self.discovery.parent / "agent-work-kit"
+        self.skills = self.install / "skills"
+        self.cli = self.install
         self.global_dir = home / (".codex" if host == "codex" else ".claude")
         self.global_file = self.global_dir / ("AGENTS.md" if host == "codex" else "CLAUDE.md")
-        self.state = self.skills / "install-state.json"
-        self.work = self.cli / "bin" / f"work{suffix}"
-        self.skill = self.cli / "bin" / f"skill{suffix}"
+        self.state = self.install / "install-state.json"
+        self.work = self.install / "bin" / f"work{suffix}"
+        self.skill = self.install / "bin" / f"skill{suffix}"
 
     def snapshot(self):
         files = {}
-        for base in (self.skills, self.cli):
-            if base.exists():
-                files.update({str(path.relative_to(self.home)): hashlib.sha256(path.read_bytes()).hexdigest()
-                              for path in base.rglob("*") if path.is_file()})
+        if self.install.exists():
+            files.update({str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                          for p in self.install.rglob("*") if p.is_file()})
+        for name in ("work", "tooling"):
+            link = self.discovery / name
+            if link.is_symlink():
+                files[str(link)] = "link:" + str(link.readlink())
+            elif link.exists():
+                files[str(link)] = "unexpected entry"
         if self.global_file.is_file():
-            files[str(self.global_file.relative_to(self.home))] = hashlib.sha256(self.global_file.read_bytes()).hexdigest()
+            files[str(self.global_file)] = hashlib.sha256(self.global_file.read_bytes()).hexdigest()
         return files
 
 
 def assert_installation(layout, info, global_instructions):
-    """The one authoritative state, the exact resource set and runnable Work/Skill CLIs."""
+    """Exact State, resource set, absolute discovery links and runnable binaries."""
     state = json.loads(layout.state.read_text(encoding="utf-8"))
-    expected_keys = {"host", "version", "rust_workspace_version", "skill_install_dir", "cli_install_dir",
-                     "global_instructions_dir", "status", "files"}
-    if (set(state) != expected_keys or state["host"] != layout.host or state["version"] != info["version"] or
+    keys = {"host", "version", "rust_workspace_version", "install_dir",
+            "global_instructions_dir", "status", "files"}
+    if (set(state) != keys or state["host"] != layout.host or state["version"] != info["version"] or
             state["rust_workspace_version"] != info["rust_workspace_version"] or state["status"] != "installed" or
-            Path(state["skill_install_dir"]) != layout.skills or Path(state["cli_install_dir"]) != layout.cli or
+            Path(state["install_dir"]) != layout.install or
             state["global_instructions_dir"] != (str(layout.global_dir) if global_instructions else None)):
         raise AssertionError(f"unexpected installation state: {state!r}")
     for required in ("work/SKILL.md", "tooling/SKILL.md", "shared/bootstrap.md"):
         if not (layout.skills / required).is_file():
             raise AssertionError(f"installation omitted {required}")
-    entries = {path.name for path in layout.skills.iterdir()}
-    if entries != {"work", "tooling", "shared", "install-state.json"}:
-        raise AssertionError(f"unexpected Skills entries: {sorted(entries)}")
+    if {p.name for p in layout.skills.iterdir()} != {"work", "tooling", "shared"}:
+        raise AssertionError("unexpected managed Skills entries")
+    if {p.name for p in layout.install.iterdir()} != {"skills", "bin", "install-state.json"}:
+        raise AssertionError("unexpected installation root entries (or README installed)")
+    for name in ("work", "tooling"):
+        link = layout.discovery / name
+        if not link.is_symlink() or not link.readlink().is_absolute() or link.resolve() != (layout.skills / name).resolve():
+            raise AssertionError(f"missing or invalid absolute Host discovery link: {link}")
+        if not (link / "SKILL.md").is_file():
+            raise AssertionError(f"Host discovery did not expose {name} SKILL.md")
     for obsolete in ("shared/SKILL.md", "work/scripts", "tooling/scripts", "contract"):
         if (layout.skills / obsolete).exists():
             raise AssertionError(f"obsolete resource installed: {obsolete}")
-    if {path.name for path in (layout.cli / "bin").iterdir()} != {layout.work.name, layout.skill.name}:
-        raise AssertionError("CLI directory must hold exactly the Work and Skill binaries")
-    if layout.skill.parent.parent == layout.skills or layout.skills in layout.cli.parents:
-        raise AssertionError("CLI must be separate from the Skills directory")
+    if {p.name for p in (layout.install / "bin").iterdir()} != {layout.work.name, layout.skill.name}:
+        raise AssertionError("CLI directory must hold exactly Work and Skill binaries")
     for binary in (layout.work, layout.skill):
         subprocess.run([str(binary), "--help"], check=True, capture_output=True, timeout=30)
-    if any(layout.skills.glob(".agent-work-kit-txn*")):
+    if any(layout.install.glob(".agent-work-kit-txn*")):
         raise AssertionError("a successful installation retained its transaction")
     if global_instructions != layout.global_file.is_file():
         raise AssertionError("Global Instructions presence does not match the selection")
@@ -388,7 +400,7 @@ def run_installed_host_simulation(layout, report, zip_path, info, platform):
     report.mkdir(parents=True, exist_ok=True)
     evidence = report / f"{layout.host}-{platform}.json"
     result = subprocess.run([sys.executable, "-B", str(scenario), "--work", str(layout.work), "--skill", str(layout.skill),
-                             "--skills-dir", str(layout.skills), "--evidence", str(evidence)],
+                             "--install", str(layout.skills), "--host-skills-dir", str(layout.discovery), "--evidence", str(evidence)],
                             capture_output=True, text=True, timeout=300)
     if result.returncode:
         raise AssertionError(f"installed Host simulation failed: {result.stdout}\n{result.stderr}")
@@ -418,7 +430,7 @@ def exercise_cli_entries(entries, root, run_installer):
         assert_success(verbose)
         if b"Installer" not in verbose[1]:
             raise AssertionError(f"{entry.name} verbose dry run omitted diagnostics: {verbose!r}")
-        for invalid in (["--unknown"], ["--skills"], ["--install-dir", "old/work"], ["--migrate"], ["--upgrade"],
+        for invalid in (["--unknown"], ["--skills"], ["--install-dir"], ["--migrate"], ["--upgrade"],
                         ["--skills-dir"], ["--instructions-dir"],
                         ["--global-instructions", "yes", "--global-instructions", "no"],
                         ["--verbose", "--verbose"], ["--help", "-h"], ["--yes"], ["--force"]):
@@ -465,8 +477,16 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     assert_success(run_installer(script, home, [*common, "--dry-run"]))
     if any((home / name).exists() for name in (".agents", ".codex", ".claude")):
         raise AssertionError("dry run changed the installation target")
+    # Third-party Skill symlinks remain outside our managed source boundary.
+    foreign = root / "unrelated-skill"
+    foreign.mkdir(exist_ok=True)
+    layout.discovery.mkdir(parents=True, exist_ok=True)
+    foreign_link = layout.discovery / "find-skills"
+    os.symlink(foreign, foreign_link, target_is_directory=True)
     assert_success(run_installer(script, home, common))
     assert_installation(layout, info, global_instructions=False)
+    if foreign_link.resolve() != foreign.resolve():
+        raise AssertionError("installer modified unrelated Skill")
     assert_installed_resolution(layout)
     first = layout.snapshot()
     assert_success(run_installer(script, home, common))
@@ -496,12 +516,35 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     stale = root / "invalid state"
     stale.mkdir()
     stale_layout = HostLayout(stale, host, platform)
-    stale_layout.skills.mkdir(parents=True)
+    stale_layout.install.mkdir(parents=True)
     stale_layout.state.write_text("{\"status\": \"installed\"}\n", encoding="utf-8")
     before = stale_layout.snapshot()
     assert_failed(run_installer(script, stale, common))
     if stale_layout.snapshot() != before or (stale_layout.skills / "work").exists():
         raise AssertionError("an invalid state was repaired or taken over")
+
+    log_phase("first-install discovery link rollback")
+    link_home = root / "link failure"
+    link_home.mkdir()
+    link_layout = HostLayout(link_home, host, platform)
+    assert_failed(run_installer(script, link_home, common, extra_env={"INSTALLER_TEST_FAILURE": "apply-link-work"}))
+    if link_layout.install.exists() or (link_layout.discovery / "work").is_symlink():
+        raise AssertionError("failed install retained managed data or discovery links")
+
+    log_phase("custom installation root")
+    custom_home = root / "custom installation"
+    custom_home.mkdir()
+    custom_root = root / "custom target" / "agent-work-kit"
+    custom = HostLayout(custom_home, host, platform, install_dir=custom_root)
+    custom_options = [*common, "--install-dir", str(custom_root)]
+    assert_success(run_installer(script, custom_home, custom_options))
+    assert_installation(custom, info, global_instructions=False)
+    before_custom = custom.snapshot()
+    assert_failed(run_installer(script, custom_home, common))
+    if custom.snapshot() != before_custom:
+        raise AssertionError("default install changed custom installation")
+    assert_success(run_installer(script, custom_home, custom_options))
+    assert_installation(custom, info, global_instructions=False)
 
     log_phase("failure injection and interruption recovery")
     failure_home = root / "failure injection"
@@ -511,7 +554,7 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     before = failure.snapshot()
     for point in ("prepare", "apply-work", "apply-shared", "verify", "commit"):
         assert_failed(run_installer(script, failure_home, common, extra_env={"INSTALLER_TEST_FAILURE": point}))
-        if failure.snapshot() != before or any(failure.skills.glob(".agent-work-kit-txn*")):
+        if failure.snapshot() != before or any(failure.install.glob(".agent-work-kit-txn*")):
             raise AssertionError(f"failure at {point} did not restore the previous installation")
     assert_failed(run_installer(script, failure_home, common, extra_env={"INSTALLER_TEST_CRASH": "verify"}))
     assert_success(run_installer(script, failure_home, common))
