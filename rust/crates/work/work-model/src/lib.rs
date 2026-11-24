@@ -30,9 +30,8 @@ pub use request::{
 pub use response::{
     CORRECTION_LIST_RESPONSE, CORRECTION_PREVIEW_RESPONSE, CorrectionListData,
     CorrectionPreviewData, DISCUSSION_RESPONSE, DiscussionData, Envelope, ErrorData,
-    HISTORY_RESPONSE, HistoryData, PROGRESS_RESPONSE, ProgressData, RECOVER_RESPONSE,
-    RecordSummary, RecoverData, SOURCE_RESPONSE, STATUS_RESPONSE, SourceData, StatusData,
-    VersionSummary, WRITE_RESPONSE, WriteData,
+    HISTORY_RESPONSE, HistoryData, PROGRESS_RESPONSE, ProgressData, RecordSummary, SOURCE_RESPONSE,
+    STATUS_RESPONSE, SourceData, StatusData, VersionSummary, WRITE_RESPONSE, WriteData,
 };
 pub use task::{
     Attempt, AttemptInput, AttemptResult, ConclusionInput, Criterion, CriterionState,

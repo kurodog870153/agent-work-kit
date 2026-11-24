@@ -9,7 +9,7 @@ use work_model::{
 };
 use work_operations::{apply_round, encode, new_correction, new_discussion, new_source, summarise};
 
-use crate::port::{Precondition, RecordStore, StoredRecord, WritePlan};
+use crate::port::{Precondition, RecordStore, StoredRecord};
 
 pub(crate) fn check_schema(actual: &str, expected: &str) -> Result<(), WorkError> {
     if actual == expected {
@@ -124,15 +124,14 @@ pub fn create_source(
         .bytes();
     let digest = store.content_digest(bytes);
     let record = StoredRecord::Source(new_source(request, digest)?);
-    let plan = WritePlan {
-        preconditions: vec![Precondition {
+    store.write(
+        &record,
+        &[Precondition {
             kind: RecordKind::Source,
             id: record.id().clone(),
             latest: None,
         }],
-        writes: vec![record.clone()],
-    };
-    store.commit(&plan)?;
+    )?;
     Ok(reference(&record))
 }
 
@@ -182,10 +181,7 @@ pub fn create_discussion(
             });
         }
     }
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![record.clone()],
-    })?;
+    store.write(&record, &preconditions)?;
     Ok(reference(&record))
 }
 
@@ -210,10 +206,7 @@ pub fn discussion_round(
         id,
         latest: Some(1),
     }));
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![next.clone()],
-    })?;
+    store.write(&next, &preconditions)?;
     Ok(reference(&next))
 }
 
@@ -329,8 +322,9 @@ pub fn correction_apply(
         ));
     }
     let stored = StoredRecord::Correction(record);
-    store.commit(&WritePlan {
-        preconditions: vec![
+    store.write(
+        &stored,
+        &[
             Precondition {
                 kind: RecordKind::Correction,
                 id: stored.id().clone(),
@@ -342,11 +336,6 @@ pub fn correction_apply(
                 latest: Some(newest),
             },
         ],
-        writes: vec![stored.clone()],
-    })?;
+    )?;
     Ok(reference(&stored))
-}
-
-pub fn recover(store: &impl RecordStore) -> Result<Vec<String>, WorkError> {
-    store.recover()
 }

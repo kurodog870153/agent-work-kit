@@ -30,7 +30,6 @@ pub const PROGRESS_RESPONSE: &str = "work-progress-response";
 pub const STATUS_RESPONSE: &str = "work-status-response";
 pub const CORRECTION_PREVIEW_RESPONSE: &str = "work-correction-preview-response";
 pub const CORRECTION_LIST_RESPONSE: &str = "work-correction-list-response";
-pub const RECOVER_RESPONSE: &str = "work-recover-response";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WriteData {
@@ -110,10 +109,4 @@ pub struct CorrectionPreviewData {
 pub struct CorrectionListData {
     pub schema: &'static str,
     pub corrections: Vec<CorrectionRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RecoverData {
-    pub schema: &'static str,
-    pub rolled_back: Vec<String>,
 }

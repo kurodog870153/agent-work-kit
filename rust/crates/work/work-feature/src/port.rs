@@ -65,14 +65,6 @@ pub struct Precondition {
     pub latest: Option<u32>,
 }
 
-/// Write plan decided by a use case. The store executes it as one unit and
-/// must re-check every precondition inside its own mutual exclusion.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WritePlan {
-    pub preconditions: Vec<Precondition>,
-    pub writes: Vec<StoredRecord>,
-}
-
 pub trait RecordStore {
     /// Compute the digest of raw Source bytes in the technical adapter.
     fn content_digest(&self, bytes: &[u8]) -> String;
@@ -91,9 +83,8 @@ pub trait RecordStore {
     /// Identifiers of every existing record of one kind, in stable order.
     fn ids(&self, kind: RecordKind) -> Result<Vec<RecordId>, WorkError>;
 
-    /// Apply a plan atomically; on failure nothing of it remains visible.
-    fn commit(&self, plan: &WritePlan) -> Result<(), WorkError>;
-
-    /// Undo an interrupted transaction; returns what was removed.
-    fn recover(&self) -> Result<Vec<String>, WorkError>;
+    /// Publish one new version atomically, checking all preconditions under the write lock.
+    /// A failure after publication does not undo the published version.
+    fn write(&self, record: &StoredRecord, preconditions: &[Precondition])
+    -> Result<(), WorkError>;
 }

@@ -34,7 +34,7 @@ flowchart LR
 
 Work 驗證正式紀錄的格式、來源與關聯、版本、保存完整性及狀態規則，保存原始需求、確認決策、外部回報及驗收結論；外部執行、AI 審查及指定使用者確認須有明確來源。Work 不自行判斷外部執行真實性或外部驗收是否通過；正式紀錄操作限制不等同 Host 工具授權。移除強制 Hierarchy Selection、Instruction Selection、Skill Selection 正式綁定、衍生指紋與 Routing Catalog；正式需求中指定的技術或規範限制仍須保存，實際使用來源可作為必要證據。
 
-Work 正式狀態與歷史查詢以已保存的正式紀錄為唯一權威。已發布的正式歷史不可覆寫，目前狀態依領域契約更新，錯誤結果以新增修正紀錄處理。Work 管理 Source、Discussion、TASK、Execution、Attempt、Requirement／TASK Acceptance、Revise、Correction 及 Recovery，各紀錄的職責與規則見 [Skill 架構](../skills/architecture.md) 第 4 節；Work 不提供資料 Migration 功能或公開契約，也不支援舊版 CLI、Schema 或資料格式。Skill 的指令操作不建立或變更 Work 正式紀錄，失效來源僅影響相依操作。
+Work 正式狀態與歷史查詢以已保存的正式紀錄為唯一權威。已發布的正式歷史不可覆寫，目前狀態依領域契約更新，錯誤結果以新增修正紀錄處理。Work 管理 Source、Discussion、TASK、Execution、Attempt、Requirement／TASK Acceptance、Revise 及 Correction，各紀錄的職責與規則見 [Skill 架構](../skills/architecture.md) 第 4 節；Work 不提供資料 Migration 功能或公開契約，也不支援舊版 CLI、Schema 或資料格式。Skill 的指令操作不建立或變更 Work 正式紀錄，失效來源僅影響相依操作。
 
 Skill 使用統一 Root／Node／Reference 階層模型及文件格式契約，每個採用指令階層的 Skill 只有直接位於其 `instructions/` 的單一 Root；Work 的 Task、Execute 為子節點，不保留 Work 的 general 特殊 Root、模式專屬 Root 或 Workflow 專屬載入機制。普通 Runtime 探索只讀直接子節點 Metadata，不全樹掃描或建立持久化 Metadata Index。按選取集合解析完整祖先、適用 Reference 與 Module，驗證來源、去重與增量載入；集合異動須重新驗證完整候選，不強制 SHA 或 Fingerprint。
 
@@ -102,10 +102,10 @@ flowchart LR
 
 ## 5. 交易與資料一致性
 
-1. Feature 決定業務交易邊界、Write Plan、候選及業務復原政策；Infrastructure 執行互斥、資料寫入、必要回讀驗證及技術復原，不得自行修改寫入計畫。
-2. 依各正式資料的儲存契約保護資料一致性及必要的邏輯原子性，未完成的交易不得視為有效結果。失敗須具備必要安全復原能力；復原資料須符合原操作的正式候選與保存規則，不限制 Journal 或復原的具體實作方式。
+1. Feature 決定單筆正式紀錄、必要 Precondition 與候選；RecordStore 直接接收紀錄及 Precondition，不提供多筆寫入或額外寫入計畫型別。Infrastructure 僅執行互斥、原子寫入及回讀，不修改業務內容。
+2. 每次只原子發布一個新版本；Work Root 的 lock 與單一 write.tmp 由 Infrastructure 管理，暫存與正式目標須位於相同檔案系統。保留版本、相依完整性與 Digest 驗證，禁止覆寫既有版本。發布前失敗不得產生正式版本，遺留暫存檔在後續寫入時於鎖內清理；發布後失敗不得刪除已發布版本或回報未確認成功。Windows／macOS 維持一致的原子不覆寫語意。
 3. Preview／Apply 僅適用既有需要批准候選的流程，保留批准與實際審查候選的明確綁定、版本與候選一致性、必要短鎖及 Readback。不強制使用 Fingerprint、SHA 或特定綁定技術；不得以可變候選識別代替實際批准內容及相依資料的重驗。重讀、核對、寫入及回讀須在同一必要互斥保護範圍內完成；批准、候選或版本衝突時拒絕套用。
-4. 不因寫入或資料一致性需求，強制所有操作使用 Preview／Apply、同一 Journal 或通用交易框架。
+4. 不因寫入或資料一致性需求，強制所有操作使用 Preview／Apply、通用交易框架；Work 不提供獨立復原指令或舊版交易 Migration。
 
 ## 6. 模組與測試
 

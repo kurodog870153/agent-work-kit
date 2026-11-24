@@ -76,7 +76,7 @@ def cli_contract_smoke(work, skill, evidence):
         check(work.ok("example", "--contract", contract, "--scenario", "default")["valid"], contract)
     work.reject("unknown_scenario", "example", "--contract", "work-source-create-request", "--scenario", "none")
     # Tooling and Contract Skill are not CLIs any more.
-    for retired in ("tooling", "contract", "migration"):
+    for retired in ("tooling", "contract", "migration", "recover"):
         check(retired not in " ".join(work.ok("list")["commands"]), f"Work CLI still exposes {retired}")
     check(work.raw("migration").returncode != 0, "Work CLI accepted a migration command")
 
@@ -161,13 +161,28 @@ def task_and_acceptance(work, root, evidence):
     def reviewed_task(operation, draft):
         proposal = {"operation": operation, "request": json.loads(draft)}
         preview = send("task", "preview", body=request(schema="work-task-preview-request", draft=proposal))
-        # An AI Host may only apply the exact candidate it has reviewed.
-        send("task", "apply", body=request(
-            schema="work-task-apply-request", draft=proposal,
-            approved_candidate=preview["candidate"],
-            reviewed_dependencies=preview["reviewed_dependencies"]))
+        path = Path(root) / "preview" / "task" / (proposal["request"]["id"] + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(request(**preview), encoding="utf-8")
+        preview = send("task", "preview", body=request(schema="work-task-preview-request", draft=proposal))
+        path.write_text(request(**preview), encoding="utf-8")
+        reviewed = json.loads(path.read_text(encoding="utf-8"))
+        check(list(path.parent.iterdir()) == [path], "duplicate Preview file")
+        apply = dict(schema="work-task-apply-request", draft=proposal,
+                     approved_candidate=reviewed["candidate"], reviewed_dependencies=reviewed["reviewed_dependencies"])
+        work.reject("approval_mismatch", "task", "apply", "--root", root, "--request", "-",
+                    stdin=request(**{**apply, "approved_candidate": "not approved"}))
+        check(path.exists(), "failed Apply lost Preview")
+        send("task", "apply", body=request(**apply))
+        path.unlink()
+        check(not path.exists(), "successful Apply retained Preview")
 
     reviewed_task("create", task)
+    log = Path(root) / "log" / "task-1"
+    log.mkdir(parents=True)
+    (log / "build.log").write_text("initial build failed", encoding="utf-8")
+    (log / "retry").mkdir()
+    (log / "retry" / "test.log").write_text("export test passed", encoding="utf-8")
     send("execution", "record", body=request(
         schema="work-execution-record-request", id="exec-1", task_id="task-1",
         attempt={"id": "at-1", "result": "failed", "changes": ["added button"], "anomalies": ["timeout"]}))
@@ -222,8 +237,42 @@ def task_and_acceptance(work, root, evidence):
             check(expected in traced, f"trace from {kind} lacks {expected}")
     status = {item["id"] for item in work.ok("status", "--root", root)["records"]}
     check({"src-1", "disc-1", "task-1", "exec-1", "acc-1", "req-1"} <= status, status)
-    check(work.ok("recover", "--root", root) is not None, "recover failed on a clean root")
+    check(not (Path(root) / "txn").exists(), "unexpected transaction directory")
+    check(not (Path(root) / "write.tmp").exists(), "temporary file survived a successful write")
+    check("build.log" not in json.dumps(work.ok("status", "--root", root)), "Log leaked into formal status")
+    shutil.rmtree(log)
+    check("export test" in json.dumps(work.ok("execution", "show", "--root", root, "--id", "exec-1")),
+          "formal verification depended on disposable Log")
     evidence["trace_anchors"] = 6
+    evidence["host_task_preview_and_log"] = True
+
+
+def correction_preview(work, root, evidence):
+    def send(*command, body):
+        return work.ok(*command, "--root", root, "--request", "-", stdin=body)
+    draft = dict(schema="work-correction-draft-request", id="cor-1",
+                 target={"kind": "source", "id": "src-1", "version": 1},
+                 statement="first candidate", reason="typo", origin={"source": "user"})
+    path = Path(root) / "preview" / "correction" / "cor-1.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    first = send("correction", "preview", body=request(**draft))
+    path.write_text(request(**first), encoding="utf-8")
+    draft["statement"] = "reviewed candidate"
+    preview = send("correction", "preview", body=request(**draft))
+    path.write_text(request(**preview), encoding="utf-8")
+    check(list(path.parent.iterdir()) == [path], "duplicate Correction Preview")
+    check("cor-1" not in json.dumps(work.ok("status", "--root", root)), "unapproved Correction became formal")
+    reviewed = json.loads(path.read_text(encoding="utf-8"))
+    apply = dict(schema="work-correction-apply-request", draft=draft,
+                 approved_candidate=reviewed["candidate"],
+                 reviewed_target_version=reviewed["reviewed_target_version"])
+    work.reject("approval_mismatch", "correction", "apply", "--root", root, "--request", "-",
+                stdin=request(**{**apply, "approved_candidate": first["candidate"]}))
+    check(path.exists(), "failed Correction Apply lost Preview")
+    send("correction", "apply", body=request(**apply))
+    path.unlink()
+    check("cor-1" in json.dumps(work.ok("status", "--root", root)), "approved Correction not published")
+    evidence["host_correction_preview"] = True
 
 
 def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
@@ -244,9 +293,10 @@ def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
         cli_contract_smoke(work, skill, evidence)
         skill.ok("validate", "--install", skills_dir)
         on_demand_loading(skill, skills_dir, scratch, evidence)
-        root = str(scratch / "work-data")
+        root = str(scratch / ".work")
         requirement_clarification(work, root, evidence)
         task_and_acceptance(work, root, evidence)
+        correction_preview(work, root, evidence)
     return evidence
 
 

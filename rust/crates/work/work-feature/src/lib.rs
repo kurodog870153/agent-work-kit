@@ -7,11 +7,10 @@ mod port;
 mod task;
 mod usecase;
 
-pub use port::{Precondition, RecordStore, StoredRecord, WritePlan};
+pub use port::{Precondition, RecordStore, StoredRecord};
 pub use usecase::{
     correction_apply, correction_preview, corrections_for, create_discussion, create_source,
-    discussion_history, discussion_round, recover, show_discussion, show_progress, show_source,
-    status,
+    discussion_history, discussion_round, show_discussion, show_progress, show_source, status,
 };
 
 pub use task::{

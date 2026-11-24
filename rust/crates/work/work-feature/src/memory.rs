@@ -1,5 +1,5 @@
 //! In-memory store and use-case tests. The store only models the port contract:
-//! preconditions are re-checked at commit and a failed commit leaves no trace.
+//! preconditions are re-checked before publishing a single record.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -57,27 +57,34 @@ impl RecordStore for MemoryStore {
             .collect())
     }
 
-    fn commit(&self, plan: &WritePlan) -> Result<(), WorkError> {
+    fn write(
+        &self,
+        record: &StoredRecord,
+        preconditions: &[Precondition],
+    ) -> Result<(), WorkError> {
         if *self.fail_commit.borrow() {
             return Err(WorkError::new(Reason::StorageFailure, "injected"));
         }
-        for condition in &plan.preconditions {
+        for condition in preconditions {
             if self.latest_version(condition.kind, &condition.id)? != condition.latest {
                 return Err(WorkError::new(Reason::VersionConflict, "precondition"));
             }
         }
-        for write in &plan.writes {
-            self.records
-                .borrow_mut()
-                .entry((write.kind(), write.id().clone()))
-                .or_default()
-                .push(write.clone());
+        let latest = self
+            .latest_version(record.kind(), record.id())?
+            .unwrap_or(0);
+        if latest.checked_add(1) != Some(record.version()) {
+            return Err(WorkError::new(
+                Reason::AlreadyExists,
+                "published history is immutable",
+            ));
         }
+        self.records
+            .borrow_mut()
+            .entry((record.kind(), record.id().clone()))
+            .or_default()
+            .push(record.clone());
         Ok(())
-    }
-
-    fn recover(&self) -> Result<Vec<String>, WorkError> {
-        Ok(Vec::new())
     }
 }
 

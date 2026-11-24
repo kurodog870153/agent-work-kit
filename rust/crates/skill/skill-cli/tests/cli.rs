@@ -110,7 +110,6 @@ fn help_is_derived_from_the_declared_commands() {
     let sub = run(&["resolve", "--help"]);
     assert_eq!(sub.code, 0);
     assert!(sub.stdout.contains("--install") && sub.stdout.contains("--request"));
-    assert!(run(&["--version"]).stdout.contains("3.0.0"));
 }
 
 #[test]

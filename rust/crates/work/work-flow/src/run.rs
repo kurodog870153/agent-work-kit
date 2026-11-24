@@ -6,12 +6,12 @@ use work_model::{
     CorrectionDraftRequest, CorrectionListData, CorrectionPreviewData, DISCUSSION_RESPONSE,
     DiscussionCreateRequest, DiscussionData, DiscussionRoundRequest, EXECUTION_RESPONSE,
     ExecutionData, ExecutionRecordRequest, HISTORY_RESPONSE, HistoryData, PROGRESS_RESPONSE,
-    ProgressData, RECOVER_RESPONSE, REQUIREMENT_ACCEPTANCE_RESPONSE, RecordId, RecordKind,
-    RecordRef, RecoverData, RequirementAcceptanceData, RequirementAcceptanceRecordRequest,
-    SOURCE_RESPONSE, STATUS_RESPONSE, SourceCreateRequest, SourceData, StatusData,
-    TASK_ACCEPTANCE_RESPONSE, TASK_PREVIEW_RESPONSE, TASK_RESPONSE, TRACE_RESPONSE,
-    TaskAcceptanceData, TaskAcceptanceRecordRequest, TaskApplyRequest, TaskCompleteRequest,
-    TaskData, TaskPreviewData, TaskPreviewRequest, TraceData, WRITE_RESPONSE, WorkError, WriteData,
+    ProgressData, REQUIREMENT_ACCEPTANCE_RESPONSE, RecordId, RecordKind, RecordRef,
+    RequirementAcceptanceData, RequirementAcceptanceRecordRequest, SOURCE_RESPONSE,
+    STATUS_RESPONSE, SourceCreateRequest, SourceData, StatusData, TASK_ACCEPTANCE_RESPONSE,
+    TASK_PREVIEW_RESPONSE, TASK_RESPONSE, TRACE_RESPONSE, TaskAcceptanceData,
+    TaskAcceptanceRecordRequest, TaskApplyRequest, TaskCompleteRequest, TaskData, TaskPreviewData,
+    TaskPreviewRequest, TraceData, WRITE_RESPONSE, WorkError, WriteData,
 };
 
 fn written(reference: RecordRef) -> WriteData {
@@ -148,13 +148,6 @@ pub fn correction_list(
     Ok(CorrectionListData {
         schema: CORRECTION_LIST_RESPONSE,
         corrections: work_feature::corrections_for(store, kind, id)?,
-    })
-}
-
-pub fn recover(store: &impl RecordStore) -> Result<RecoverData, WorkError> {
-    Ok(RecoverData {
-        schema: RECOVER_RESPONSE,
-        rolled_back: work_feature::recover(store)?,
     })
 }
 
