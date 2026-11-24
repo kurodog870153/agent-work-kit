@@ -1,0 +1,18 @@
+name: Validation preflight
+description: Shared Workflow syntax, approved Actions and release-script checks without PR or publication requirements.
+runs:
+  using: composite
+  steps:
+    - name: Set up Ruby for workflow YAML checks
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '4.0'
+    - name: Check workflow YAML syntax
+      shell: bash
+      run: ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].each { YAML.parse_file(it) }'
+    - name: Check approved workflow actions
+      shell: bash
+      run: python3 -B .github/scripts/release/check_workflow_actions.py
+    - name: Test release scripts
+      shell: bash
+      run: python3 -B -m unittest discover -s .github/scripts/tests/release -p 'test_*.py'
