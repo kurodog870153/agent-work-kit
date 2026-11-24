@@ -6,14 +6,14 @@
 
 | 領域目錄 | 適用範圍 |
 | --- | --- |
-| [issues/](issues/) | GitHub Issue、需求討論及任務規劃。 |
+| [github/](github/) | GitHub Actions、Issue、需求討論及任務規劃；依 actions/、issues/ 子領域探索。 |
 | [release/](release/) | 版本管理、發布、打包及安裝器。 |
 | [rust/](rust/) | Rust Workspace 架構、crate 職責、公開契約、資料流及測試。 |
 | [skills/](skills/) | Skill 架構、共用文件契約、規範載入及 Work／Tooling 責任邊界。 |
 
 ## 2. 規範載入
 
-1. 進行專案相關工作前，依工作範圍選擇所有相關領域，探索其規範文件；必要時擴大探索範圍。
+1. 進行專案相關工作前，依工作範圍選擇所有相關領域，遞迴探索其規範文件（含巢狀子目錄）；必要時擴大探索範圍。
 2. 讀取候選規範的 YAML Frontmatter，以 `description` 作為適用性判斷依據，`metadata.tags` 作為輔助資訊。
 3. 完整閱讀並遵守所有適用規範，不載入無關規範正文；適用性不明確時，進一步閱讀必要內容。
 4. 工作範圍改變時，重新判斷適用規範。

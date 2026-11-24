@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 set -uo pipefail
+# Only the outermost public entry owns the final prompt.
+installer_entry_non_interactive=0
+for installer_entry_arg in "$@"; do
+    [[ "$installer_entry_arg" != --non-interactive ]] || installer_entry_non_interactive=1
+done
+installer_entry_finish() {
+    local result=$?
+    trap - EXIT
+    if [[ -n "${installer_entry_scratch:-}" ]]; then
+        rm -rf -- "$installer_entry_scratch" ||
+            printf 'Warning: Downloader temporary directory awaits cleanup: %s\n' "$installer_entry_scratch" >&2
+    fi
+    if [[ "$installer_entry_non_interactive" != 1 && "${AGENT_WORK_KIT_INSTALLER_NESTED:-}" != 1 &&
+          -z "${CI:-}" && -z "${GITHUB_ACTIONS:-}" && -t 0 ]]; then
+        printf '\nInstaller exited (code %s).\nPress Enter to exit...' "$result"
+        IFS= read -r installer_entry_answer || true
+    fi
+    exit "$result"
+}
+trap installer_entry_finish EXIT
 export LC_ALL=C
 
 release_tag=__AGENT_WORK_KIT_RELEASE_TAG__
@@ -76,8 +96,8 @@ release_cleanup_stale() {
 release_cleanup_stale
 scratch="$(mktemp -d "$scratch_root/agent-work-kit-release.XXXXXXXX")" || exit 1
 [[ -d "$scratch" && ! -L "$scratch" && "${scratch##*/}" == agent-work-kit-release.* ]] || exit 1
-printf 'agent-work-kit-release-v1 %s\n' "$$" > "$scratch/.agent-work-kit-release-owner" || exit 1
-trap 'rm -rf -- "$scratch"' EXIT
+installer_entry_scratch="$scratch"
+printf 'agent-work-kit-release-v1 %s\n' "$" > "$scratch/.agent-work-kit-release-owner" || exit 1
 
 download() {
     local name="$1" url="$release_base/$1"
@@ -145,5 +165,5 @@ IFS=$'\t' read -r package_tag package_host package_target <<< "$package_identity
     printf 'Error: Package Release identity does not match Downloader.\n' >&2; exit 1;
 }
 release_log 'starting verified Package installer'
-/bin/bash "$entry" "${forward_args[@]}"
+AGENT_WORK_KIT_INSTALLER_NESTED=1 /bin/bash "$entry" "${forward_args[@]}"
 exit $?

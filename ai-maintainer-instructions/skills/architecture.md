@@ -305,7 +305,7 @@ Tooling 為獨立 Runtime Skill，可單獨啟用，不另設 Tooling Rust 領�
 
 1. 同一安裝交易包含 Work、Tooling Skill、Shared、Work CLI、Skill CLI，以及初次安裝建立的 Host 探索連結。實體資源統一位於 `install_dir/skills`、`install_dir/bin`；Shared 不成為獨立 Host Skill。
 2. Markdown Skill 與 CLI 位於同一 `install_dir` 的不同子目錄，不在 Skill 專屬 scripts／binary 目錄安裝 CLI；不安裝 Contract Skill 或 Tooling Binary。
-3. Host 固定探索目錄中的 Work／Tooling 是指向 `install_dir/skills/{work,tooling}` 的絕對目標 Directory Symbolic Link；Skill CLI 只以 `install_dir/skills` 作為管理來源，第三方 Host Skills 不屬於本套件來源邊界。Host 只使用同一組有效安裝的資源，不混用其他版本、Host 或安裝來源，不猜測替代 binary。缺失、無效或來源不明時依第 3.4 節停止相依操作。
+3. Host 固定探索目錄中的 Work／Tooling 是指向 `install_dir/skills/{work,tooling}` 的絕對目標探索連結（macOS：Directory Symbolic Link；Windows：Directory Junction）；Skill CLI 只以 `install_dir/skills` 作為管理來源，第三方 Host Skills 不屬於本套件來源邊界。Host 只使用同一組有效安裝的資源，不混用其他版本、Host 或安裝來源，不猜測替代 binary。缺失、無效或來源不明時依第 3.4 節停止相依操作。
 4. 各 Skill 可獨立使用 Shared 及所需 CLI，不依賴其他 Skill 或 Global Instructions 啟用；完整安裝不代表全部正文預載。
 
 部署及一致性管理遵循 [Installer 架構](../release/installer-architecture.md)。

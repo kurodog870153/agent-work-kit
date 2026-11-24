@@ -1,39 +1,38 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('normal', 'hold', 'contend', 'recover', 'user-name')]
+    [string] $Mode,
+    [string] $Marker
+)
+
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../..')).Path
 . (Join-Path $repoRoot 'os-scripts/windows/installer/lock/mutex.ps1')
-$result = Invoke-InstallerLocked -Transaction { 'ok' }
-if ($result -ne 'ok') { throw 'normal transaction failed' }
-$scratch = Join-Path $repoRoot ('.installer-test-lock.' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $scratch | Out-Null
-$resolvedScratch = (Resolve-Path -LiteralPath $scratch).Path
-if (-not $resolvedScratch.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
-    -not ([IO.Path]::GetFileName($resolvedScratch) -match '^\.installer-test-lock\.[0-9a-f]{32}$')) { throw 'unsafe test cleanup path' }
-$marker = Join-Path $scratch 'ready'
-$job = $null
-try {
-    $job = Start-Job -ArgumentList $marker -ScriptBlock {
-        param($path)
-        $mutex = [Threading.Mutex]::new($false, 'Global\AgentWorkKitInstall')
-        $null = $mutex.WaitOne(0)
-        Set-Content -LiteralPath $path -Value 'ready'
-        Start-Sleep -Seconds 30
-        $mutex.ReleaseMutex()
-        $mutex.Dispose()
+
+switch ($Mode) {
+    'user-name' { Get-InstallerUserLockName }
+    'normal' {
+        $result = Invoke-InstallerLocked -Transaction { 'ok' }
+        if ($result -ne 'ok') { throw 'normal transaction failed' }
     }
-    for ($attempt = 0; $attempt -lt 100 -and -not (Test-Path -LiteralPath $marker); $attempt++) { Start-Sleep -Milliseconds 100 }
-    if (-not (Test-Path -LiteralPath $marker)) { throw 'lock holder did not start' }
-    try {
-        $null = Invoke-InstallerLocked -Transaction { 'unexpected' }
-        throw 'concurrent installation acquired lock'
-    } catch {
-        if ($_.Exception.Message -notmatch 'another installation') { throw }
+    'hold' {
+        if ([string]::IsNullOrWhiteSpace($Marker)) { throw 'holder marker is required' }
+        Invoke-InstallerLocked -Transaction {
+            Set-Content -LiteralPath $Marker -Value 'ready'
+            Start-Sleep -Seconds 120
+            throw 'lock holder was not terminated by test controller'
+        }
     }
-    Stop-Job $job
-    $null = Wait-Job $job
-    $result = Invoke-InstallerLocked -Transaction { 'after-abandon' }
-    if ($result -ne 'after-abandon') { throw 'abandoned mutex was not recovered' }
-    Write-Output 'Windows installation lock cases passed.'
-} finally {
-    if ($null -ne $job) { Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -Force -ErrorAction SilentlyContinue }
-    if ((Resolve-Path -LiteralPath $scratch).Path -eq $resolvedScratch) { Remove-Item -LiteralPath $resolvedScratch -Recurse -Force }
+    'contend' {
+        try {
+            $null = Invoke-InstallerLocked -Transaction { throw 'concurrent installation acquired lock' }
+            throw 'concurrent installation did not reject the lock'
+        } catch {
+            if ($_.Exception.Message -ne 'another installation is running') { throw }
+        }
+    }
+    'recover' {
+        $result = Invoke-InstallerLocked -Transaction { 'after-abandon' }
+        if ($result -ne 'after-abandon') { throw 'abandoned mutex was not recovered' }
+    }
 }

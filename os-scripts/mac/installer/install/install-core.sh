@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Runs the installer core under the machine-wide installation lock (one transaction at a time, any Host or target).
+# Hold one UID-scoped installation lock from selection through transaction cleanup.
 installer_run() {
     local mode="$1" root="$2" helper lock_build='' result
     shift 2
@@ -22,7 +22,7 @@ installer_run() {
         helper="$root/bin/work-install-lock"
         [[ -x "$helper" ]] || { printf 'Error: packaged macOS lock helper is missing.\n' >&2; return 1; }
     fi
-    "$helper" /private/tmp/agent-work-kit-install.lock /bin/bash "$installer_dir/install/install-core.sh" "$mode" "$root" "$@"
+    "$helper" /bin/bash "$installer_dir/install/install-core.sh" "$mode" "$root" "$@"
     result=$?
     if [[ -n "$lock_build" && -d "$lock_build" ]]; then rm -rf -- "$lock_build"; fi
     return "$result"

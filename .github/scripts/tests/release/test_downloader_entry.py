@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / ".github/scripts/release"))
 sys.path.insert(0, str(ROOT / ".github/scripts/tests/release/common"))
 from downloader_server import build_test_downloaders, start_server, write_assets, write_checksum
+from installer_console import interactive_environment, run_console
 
 
 TAG = f"v{(ROOT / 'VERSION').read_text(encoding='ascii').strip()}"
@@ -97,6 +98,27 @@ class DownloaderTests(unittest.TestCase):
         if not self.windows:
             self.assertEqual(130, self.run_downloader(
                 environment={**self.environment, "AGENT_WORK_KIT_RELEASE_TEST_EXIT": "130"}).returncode)
+
+    def test_interactive_exit_after_package_and_cleanup(self):
+        # Use the actual nested public Package entry with a controlled early verification failure.
+        platform = "windows" if self.windows else "mac"
+        entry = (ROOT / "os-scripts" / platform / self.entry).read_bytes()
+        verify = ("installer/package/verify-integrity.ps1" if self.windows
+                  else "installer/package/verify-integrity.sh")
+        failure = (b'[Console]::Error.WriteLine("nested verification error")\r\nexit 1\r\n'
+                   if self.windows else
+                   b'verify_release_package() { echo "nested verification error" >&2; return 1; }\n')
+        self.package({self.entry: entry, verify: failure})
+        env = interactive_environment(self.environment)
+        pattern = "agent-work-kit-release-*" if self.windows else "agent-work-kit-release.*"
+
+        def cleaned():
+            self.assertFalse(list(self.scratch.glob(pattern)), "Downloader paused before cleanup")
+
+        code, data = run_console(self.downloader, ("--host", "codex"), env,
+                                 expect_pause=True, before_enter=cleaned, timeout=90)
+        self.assertEqual(1, code)
+        self.assertIn(b"nested verification error", data)
 
     def test_help_does_not_download(self):
         self.assertEqual(0, self.run_downloader("--help").returncode)

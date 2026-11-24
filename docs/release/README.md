@@ -148,13 +148,13 @@ macOS Terminal：
 | Codex | `~/.agents/agent-work-kit/install-state.json` |
 | Claude Code | `~/.claude/agent-work-kit/install-state.json` |
 
-預設根目錄為上表狀態檔所在的 `agent-work-kit` 目錄。使用 `--install-dir <path>` 自訂後，重新安裝必須再提供**相同**安裝位置；不根據探索連結反向搜尋或自動遷移。Host 探索連結固定放在 Codex `~/.agents/skills/{work,tooling}` 或 Claude Code `~/.claude/skills/{work,tooling}`，目標為絕對路徑的 Directory Symbolic Link；不建立 Shared 的獨立探索入口。重新安裝只沿用經驗證的有效連結，連結缺失、被替換或指向錯誤時拒絕，不自動修復。重新安裝時會沿用同一 Host 的有效 Global Instructions 設定，仍可用 `--global-instructions yes|no` 指定此次選擇；首次安裝預設啟用。狀態檔存在不代表安裝有效，還須檢查完整性及連結。
+預設根目錄為上表狀態檔所在的 `agent-work-kit` 目錄。使用 `--install-dir <path>` 自訂後，重新安裝必須再提供**相同**安裝位置；不根據探索連結反向搜尋或自動遷移。Host 探索連結固定放在 Codex `~/.agents/skills/{work,tooling}` 或 Claude Code `~/.claude/skills/{work,tooling}`，目標為絕對路徑，macOS 使用 Directory Symbolic Link，Windows 使用 Directory Junction；不建立 Shared 的獨立探索入口。重新安裝只沿用經驗證的有效連結，連結缺失、被替換或指向錯誤時拒絕，不自動修復。重新安裝時會沿用同一 Host 的有效 Global Instructions 設定，仍可用 `--global-instructions yes|no` 指定此次選擇；首次安裝預設啟用。狀態檔存在不代表安裝有效，還須檢查完整性及連結。
 
 ### 3.7 安全警告與錯誤處理
 
 這些 binary 未經 Apple 或 Microsoft 平台簽章，作業系統可能顯示安全警告。確認下載來源、Checksum 與 Attestation 後，再依平台提供的正常操作方式允許執行。
 
-若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效安裝狀態、已占用的 Work／Tooling 探索入口或不安全連結被拒絕時，保留原資料並由使用者自行處理；不覆蓋任何第三方 Skill。Windows 需要可建立 Directory Symbolic Link 的權限／環境，建立失敗時安裝安全中止，不使用 Junction 作為替代。非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
+若驗證回報 checksum、manifest 或平台錯誤，請重新下載同一 Release 的正確 ZIP 與 `SHA256SUMS.txt`。因未知內容、無有效安裝狀態、已占用的 Work／Tooling 探索入口或不安全連結被拒絕時，保留原資料並由使用者自行處理；不覆蓋任何第三方 Skill。安裝鎖以實際作業系統使用者為範圍，同一使用者並行安裝會安全拒絕；不同使用者可同時安裝至各自獨立的位置。不支援不同使用者共用同一實體安裝根目錄、Host 探索目錄或 Global Instructions 目標，請勿將自訂目錄設為共用安裝位置。Windows 安裝不需要管理員權限或 Developer Mode；若目標不可寫入或不支援 Junction，安裝安全中止，不自動提權。既有 Windows Symbolic Link 不相容，不自動遷移或刪除。非互動模式不會跳過必要確認。復原失敗時保留安裝器指出的現有目錄與錯誤訊息。
 
 
 Host 的原生 Skill 探索設定不由 Installer 修改；若自行變更 Host 探索目錄，須由使用者自行配置，檔案已安裝不代表真實 Host 一定已探索成功。
@@ -164,3 +164,7 @@ Host 的原生 Skill 探索設定不由 Installer 修改；若自行變更 Host 
 1. 保留安裝目錄、狀態檔、安裝器指出的交易資料及錯誤訊息。
 2. 重新執行相同的安裝命令，使用原本的安裝位置與選項，不加上 `--dry-run`，因為預覽不會處理待復原的交易。
 3. 確認安裝器回報的結果；只有通過驗證的內容才視為安裝完成。若無法辨識檔案、發現外部修改或復原失敗，停止操作並保留現場與錯誤訊息，不要自行刪除安裝目錄或交易資料。
+
+### 互動式安裝結束
+
+Windows 與 macOS 的 Source、Package、Downloader 在互動式安裝成功、失敗、取消或 Dry Run 後，保留最後訊息並等待 Enter 後退出；不需區分雙擊或終端機執行。使用 `--non-interactive`、CI 或沒有可用互動輸入時不等待。退出碼仍反映原始執行結果。

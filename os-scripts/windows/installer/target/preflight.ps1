@@ -48,14 +48,14 @@ function Assert-InstallerSources {
         (Test-Path -LiteralPath (Join-Path $shared 'SKILL.md'))) { throw 'Shared source is missing or unsafe' }
 }
 
-# Validate the exact absolute target and directory symlink type; Junction is never accepted.
+# Validate the exact absolute target and Directory Junction type; SymbolicLink is never accepted.
 function Test-InstallerHostLink {
     param([string] $Name, [string] $InstallDir, [string] $HostSkillsDir)
     $link = Join-Path $HostSkillsDir $Name
     $expected = Join-Path $InstallDir "skills/$Name"
     if (-not (Test-InstallerExists $link)) { return $false }
     $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item -or -not (Test-InstallerReparse $item) -or $item.LinkType -cne 'SymbolicLink') { return $false }
+    if ($null -eq $item -or -not (Test-InstallerReparse $item) -or $item.LinkType -cne 'Junction') { return $false }
     $targets = @($item.Target)
     if ($targets.Count -ne 1 -or -not [IO.Path]::IsPathRooted([string] $targets[0]) -or
         -not (Test-InstallerPathEqual ([string] $targets[0]) $expected)) { return $false }

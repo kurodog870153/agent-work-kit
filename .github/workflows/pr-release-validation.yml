@@ -57,14 +57,14 @@ jobs:
       actions: read
 
   rust-validation-report:
-    name: Rust validation report
+    name: rust validation report
     needs: package-ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     steps:
-      - name: Check out source for Rust validation report
+      - name: Check out source for rust validation report
         uses: actions/checkout@v7
         with:
           persist-credentials: false

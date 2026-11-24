@@ -335,7 +335,7 @@ class HostLayout:
                           for p in self.install.rglob("*") if p.is_file()})
         for name in ("work", "tooling"):
             link = self.discovery / name
-            if link.is_symlink():
+            if (link.is_junction() if sys.platform == "win32" else link.is_symlink()):
                 files[str(link)] = "link:" + str(link.readlink())
             elif link.exists():
                 files[str(link)] = "unexpected entry"
@@ -363,7 +363,7 @@ def assert_installation(layout, info, global_instructions):
         raise AssertionError("unexpected installation root entries (or README installed)")
     for name in ("work", "tooling"):
         link = layout.discovery / name
-        if not link.is_symlink() or not link.readlink().is_absolute() or link.resolve() != (layout.skills / name).resolve():
+        if not (link.is_junction() if sys.platform == "win32" else link.is_symlink()) or not link.readlink().is_absolute() or link.resolve() != (layout.skills / name).resolve():
             raise AssertionError(f"missing or invalid absolute Host discovery link: {link}")
         if not (link / "SKILL.md").is_file():
             raise AssertionError(f"Host discovery did not expose {name} SKILL.md")
@@ -528,7 +528,7 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     link_home.mkdir()
     link_layout = HostLayout(link_home, host, platform)
     assert_failed(run_installer(script, link_home, common, extra_env={"INSTALLER_TEST_FAILURE": "apply-link-work"}))
-    if link_layout.install.exists() or (link_layout.discovery / "work").is_symlink():
+    if link_layout.install.exists() or os.path.lexists(link_layout.discovery / "work"):
         raise AssertionError("failed install retained managed data or discovery links")
 
     log_phase("custom installation root")
