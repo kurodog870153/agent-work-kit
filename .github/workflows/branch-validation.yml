@@ -1,0 +1,77 @@
+name: branch validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: branch-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: validate branch preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Run shared validation preflight
+        uses: ./.github/actions/validation-preflight
+
+  rust-ci:
+    name: rust validation
+    needs: preflight
+    uses: ./.github/workflows/rust-validation.yml
+    permissions:
+      contents: read
+      actions: read
+
+  package-ci:
+    name: build and validate packages
+    needs: preflight
+    uses: ./.github/workflows/build-and-validate-packages.yml
+    permissions:
+      contents: read
+      actions: read
+
+  rust-validation-report:
+    name: Rust validation report
+    needs: [rust-ci, package-ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out source for Rust validation report
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate evidence and upload report
+        uses: ./.github/actions/rust-validation-report
+        with:
+          release: 'false'
+
+  confirm-branch-validation:
+    name: confirm branch validation
+    if: always()
+    needs: [preflight, rust-ci, package-ci, rust-validation-report]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation to pass
+        env:
+          PREFLIGHT: ${{ needs.preflight.result }}
+          RUST_VALIDATION: ${{ needs.rust-ci.result }}
+          PACKAGE_VALIDATION: ${{ needs.package-ci.result }}
+          REPORT_VALIDATION: ${{ needs.rust-validation-report.result }}
+        run: |
+          for result in "$PREFLIGHT" "$RUST_VALIDATION" "$PACKAGE_VALIDATION" "$REPORT_VALIDATION"; do
+            if [[ "$result" != success ]]; then
+              echo "Required branch validation did not pass: $result"
+              exit 1
+            fi
+          done
