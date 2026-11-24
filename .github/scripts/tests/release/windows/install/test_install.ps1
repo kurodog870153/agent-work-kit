@@ -25,7 +25,7 @@ function Remove-TestHostLinks {
         $link = Join-Path $hostLinks $name
         $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
         if ($null -ne $item) {
-            if ($item.LinkType -cne 'SymbolicLink') { Fail "unexpected Host discovery entry: $link" }
+            if ($item.LinkType -cne 'Junction') { Fail "unexpected Host discovery entry: $link" }
             [IO.Directory]::Delete($link)
         }
     }
@@ -63,7 +63,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $scratch 't')) { Fail 'dry run changed target' }
     $result = Run ($codex + @('--global-instructions', 'no')) @{ INSTALLER_TEST_FAILURE = 'link-create-denied' }
     if ($result.Code -eq 0 -or (Test-Path -LiteralPath $cliDir) -or (Test-Path -LiteralPath (Join-Path $hostLinks 'work'))) {
-        Fail 'simulated Symbolic Link permission failure was not rolled back'
+        Fail 'simulated Junction creation failure was not rolled back'
     }
     $result = Run ($codex + @('--global-instructions', 'no')) @{ INSTALLER_TEST_FAILURE = 'apply-link-work' }
     if ($result.Code -eq 0 -or (Test-Path -LiteralPath $cliDir)) { Fail 'first link failure was not rolled back' }
@@ -80,6 +80,25 @@ try {
     $result = Run ($codex + @('--instructions-dir', $globalDir))
     if ($result.Code -ne 0 -or $result.Output -notmatch 'unchanged') { Fail "reinstall: $($result.Output)" }
 
+    # A valid Junction is reused; a repointed Junction or legacy SymbolicLink is never adopted.
+    $workLink = Join-Path $hostLinks 'work'
+    $expectedWork = Join-Path $skills 'work'
+    $foreign = Join-Path $scratch 'foreign'
+    New-Item -ItemType Directory -Path $foreign | Out-Null
+    [IO.File]::WriteAllText((Join-Path $foreign 'keep.txt'), 'keep')
+    [IO.Directory]::Delete($workLink)
+    New-Item -ItemType Junction -Path $workLink -Target $foreign | Out-Null
+    $before = Get-Snapshot
+    if ((Run ($codex + @('--instructions-dir', $globalDir))).Code -eq 0) { Fail 'accepted wrong Junction' }
+    if ((Get-Snapshot) -ne $before -or [IO.File]::ReadAllText((Join-Path $foreign 'keep.txt')) -cne 'keep') { Fail 'wrong Junction target changed' }
+    [IO.Directory]::Delete($workLink)
+    if ((Run ($codex + @('--instructions-dir', $globalDir))).Code -eq 0) { Fail 'repaired missing discovery link' }
+    New-Item -ItemType SymbolicLink -Path $workLink -Target $expectedWork | Out-Null
+    try {
+        if ((Run ($codex + @('--instructions-dir', $globalDir))).Code -eq 0) { Fail 'accepted legacy SymbolicLink' }
+        if ((Get-Item -LiteralPath $workLink -Force).LinkType -cne 'SymbolicLink') { Fail 'legacy link was changed' }
+    } finally { [IO.Directory]::Delete($workLink) }
+    New-Item -ItemType Junction -Path $workLink -Target $expectedWork | Out-Null
     $before = Get-Snapshot
     foreach ($stage in 'prepare', 'apply-work-moved', 'apply-work', 'apply-shared', 'apply-bin', 'verify') {
         $result = Run ($codex + @('--instructions-dir', $globalDir)) @{ INSTALLER_TEST_FAILURE = $stage }
@@ -135,7 +154,7 @@ try {
     # on moving Skills or CLI binaries between volumes.
     if (-not [string]::IsNullOrWhiteSpace($originalProfile) -and
         [IO.Path]::GetPathRoot($originalProfile) -ine [IO.Path]::GetPathRoot($cliDir)) {
-        $crossHome = Join-Path $originalProfile ('.issue-131-cross-drive-' + [guid]::NewGuid().ToString('N'))
+        $crossHome = Join-Path $originalProfile ('.issue-134-cross-drive-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $crossHome -ErrorAction Stop | Out-Null
         $previousProfile = $env:USERPROFILE
         try {
@@ -146,7 +165,7 @@ try {
             foreach ($name in 'work', 'tooling') {
                 $link = Join-Path $crossLinks $name
                 $item = Get-Item -LiteralPath $link -Force -ErrorAction Stop
-                if ($item.LinkType -cne 'SymbolicLink' -or -not (Test-Path -LiteralPath $link -PathType Container)) {
+                if ($item.LinkType -cne 'Junction' -or -not (Test-Path -LiteralPath $link -PathType Container)) {
                     Fail "cross-drive Host discovery link missing: $link"
                 }
                 if (-not [IO.Path]::IsPathRooted([string] @($item.Target)[0])) { Fail 'cross-drive link target is not absolute' }
@@ -172,12 +191,12 @@ try {
             }
             if (Test-Path -LiteralPath (Join-Path $cliDir '.agent-work-kit-txn')) { Fail 'cross-drive Recovery left a transaction' }
             [IO.File]::WriteAllBytes($globalSource, $originalGlobal)
-            Write-Output 'Windows cross-drive symbolic link and Global Instructions crash recovery passed.'
+            Write-Output 'Windows cross-drive Junction and Global Instructions crash recovery passed.'
         } finally {
             foreach ($name in 'work', 'tooling') {
                 $link = Join-Path $crossHome ".agents/skills/$name"
                 $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-                if ($null -ne $item -and $item.LinkType -ceq 'SymbolicLink') { [IO.Directory]::Delete($link) }
+                if ($null -ne $item -and $item.LinkType -ceq 'Junction') { [IO.Directory]::Delete($link) }
             }
             $env:USERPROFILE = $previousProfile
             if (Test-Path -LiteralPath $cliDir) { Remove-Item -LiteralPath $cliDir -Recurse -Force }

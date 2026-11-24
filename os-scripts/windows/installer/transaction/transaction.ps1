@@ -99,9 +99,9 @@ function Invoke-InstallerTxApply {
     $backup = Join-Path $script:InstallerTx "backup/$Name"
     if ($Name -in @('link-work', 'link-tooling')) {
         if (Test-InstallerExists $final) { throw "Host discovery entry is occupied: $final" }
-        Invoke-InstallerInject 'link-create-denied' # simulate a Windows symlink privilege failure
+        Invoke-InstallerInject 'link-create-denied' # simulate a Windows Junction creation failure
         $target = Join-Path $script:InstallerSkillsDir $Name.Substring(5)
-        New-Item -ItemType SymbolicLink -Path $final -Target $target -ErrorAction Stop | Out-Null
+        New-Item -ItemType Junction -Path $final -Target $target -ErrorAction Stop | Out-Null
         Invoke-InstallerInject "apply-$Name"
         return
     }

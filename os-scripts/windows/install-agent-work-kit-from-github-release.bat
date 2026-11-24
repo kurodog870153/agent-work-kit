@@ -1,30 +1,52 @@
 @echo off
 chcp 65001 <nul >nul
 setlocal DisableDelayedExpansion
-if "%~1"=="--help" if "%~2"=="" (
+set "installer_entry_help="
+if "%~1"=="--help" if "%~2"=="" set "installer_entry_help=1"
+if "%~1"=="-h" if "%~2"=="" set "installer_entry_help=1"
+set "installer_entry_non_interactive="
+:installer_entry_scan
+if "%~1"=="" goto installer_entry_main
+if "%~1"=="--non-interactive" set "installer_entry_non_interactive=1"
+shift /1
+goto installer_entry_scan
+:installer_entry_main
+if defined installer_entry_help (
     echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
     echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
-    exit /b 0
-)
-if "%~1"=="-h" if "%~2"=="" (
-    echo Usage: install-agent-work-kit-from-github-release.bat [installer options]
-    echo Downloads the fixed Windows x64 Release, verifies SHA-256, then runs its Package installer.
-    exit /b 0
+    set "result=0"
+    goto installer_entry_finish
 )
 set "scratch=%TEMP%\agent-work-kit-release-%RANDOM%%RANDOM%%RANDOM%"
-if exist "%scratch%" exit /b 1
-mkdir "%scratch%" || exit /b 1
+if exist "%scratch%" (
+    echo Error: Downloader temporary directory is occupied.
+    set "result=1"
+    goto installer_entry_finish
+)
+mkdir "%scratch%" || (
+    echo Error: could not create Downloader temporary directory.
+    set "result=1"
+    goto installer_entry_finish
+)
 set "marker_line="
 for /f "tokens=1 delims=:" %%N in ('findstr /n /b /c:"# POWERSHELL_PAYLOAD" "%~f0"') do set "marker_line=%%N"
 if not defined marker_line (
     rmdir "%scratch%"
-    exit /b 1
+    echo Error: Downloader payload marker is missing.
+    set "result=1"
+    goto installer_entry_finish
 )
 more +%marker_line% "%~f0" > "%scratch%\download.ps1"
 powershell.exe -NoProfile -File "%scratch%\download.ps1" -Scratch "%scratch%" %*
 set "result=%errorlevel%"
 if exist "%scratch%\download.ps1" del /f /q "%scratch%\download.ps1" >nul 2>nul
 if exist "%scratch%" rmdir /s /q "%scratch%" >nul 2>nul
+:installer_entry_finish
+if "%installer_entry_non_interactive%"=="1" exit /b %result%
+if "%AGENT_WORK_KIT_INSTALLER_NESTED%"=="1" exit /b %result%
+if defined CI exit /b %result%
+if defined GITHUB_ACTIONS exit /b %result%
+powershell.exe -NoProfile -Command "if (-not [Console]::IsInputRedirected) { [Console]::WriteLine('Installer exited (code %result%).'); [Console]::Write('Press Enter to exit...'); [void][Console]::ReadLine() }"
 exit /b %result%
 # POWERSHELL_PAYLOAD
 $ErrorActionPreference = 'Stop'
@@ -165,6 +187,7 @@ try {
         $packageInfo.target -cne 'x86_64-pc-windows-msvc') {
         throw 'Package Release identity does not match Downloader'
     }
+    $env:AGENT_WORK_KIT_INSTALLER_NESTED = '1'
     & $entryPath @cli
     exit $LASTEXITCODE
 } catch {

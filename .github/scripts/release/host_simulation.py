@@ -234,7 +234,7 @@ def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
         discovery = Path(host_skills_dir)
         for name in ("work", "tooling"):
             link = discovery / name
-            if not link.is_symlink() or not link.readlink().is_absolute() or link.resolve() != (skills_dir / name):
+            if not (link.is_junction() if sys.platform == "win32" else link.is_symlink()) or not link.readlink().is_absolute() or link.resolve() != (skills_dir / name):
                 raise AssertionError(f"invalid Host discovery link: {link}")
             if not (link / "SKILL.md").is_file():
                 raise AssertionError(f"Host discovery did not expose {name}")

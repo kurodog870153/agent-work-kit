@@ -12,10 +12,12 @@ cp -- "$repo_root/instructions/global-instructions.md" "$root/instructions/"
 printf '#!/bin/sh\nexit 0\n' > "$root/bin/work"; cp "$root/bin/work" "$root/bin/skill"; chmod 755 "$root/bin/"*
 printf '{\n  "host": "codex",\n  "version": "2.5.0",\n  "rust_workspace_version": "3.0.0",\n  "target": "aarch64-apple-darwin"\n}\n' > "$root/release-info.json"
 printf '#!/bin/sh\nexit 1\n' > "$scratch/shims/lsof"; chmod 755 "$scratch/shims/lsof"
+cc -std=c11 -Wall -Wextra -Werror -o "$root/bin/work-install-lock" "$repo_root/os-scripts/mac/installer/lock/native-lock.c" || exit 1
+source "$core"
 export PATH="$scratch/shims:$PATH" HOME="$scratch/home"
 cli="$scratch/t/agent-work-kit"; skills="$cli/skills"; globaldir="$scratch/g"
 hostlinks="$HOME/.agents/skills"
-run() { bash "$core" package "$root" --host codex --non-interactive --install-dir "$cli" "$@" >"$scratch/out" 2>&1; }
+run() { installer_run package "$root" --host codex --non-interactive --install-dir "$cli" "$@" >"$scratch/out" 2>&1; }
 snapshot() { (cd "$scratch/t" 2>/dev/null && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort; cd "$scratch" && find g -type f -exec shasum -a 256 {} + 2>/dev/null | LC_ALL=C sort) ; }
 
 run --global-instructions no --dry-run || fail 'dry run'
@@ -61,12 +63,12 @@ run --instructions-dir "$globaldir" || fail 'restore Global Instructions'
 before="$(snapshot)"
 # Crash then recovery on the next run (crash before the commit marker restores; after it completes).
 for stage in apply-work apply-bin verify commit; do
-    INSTALLER_TEST_CRASH="$stage" bash "$core" package "$root" --host codex --non-interactive --install-dir "$cli" --instructions-dir "$globaldir" >/dev/null 2>&1
+    INSTALLER_TEST_CRASH="$stage" installer_run package "$root" --host codex --non-interactive --install-dir "$cli" --instructions-dir "$globaldir" >/dev/null 2>&1
     [[ $? -eq 97 ]] || fail "crash injection $stage"
     run --instructions-dir "$globaldir" || { cat "$scratch/out"; fail "recovery after $stage"; }
     [[ ! -e "$cli/.agent-work-kit-txn" ]] || fail "transaction left after $stage"
 done
-INSTALLER_TEST_CRASH=after-commit bash "$core" package "$root" --host codex --non-interactive --install-dir "$cli" --instructions-dir "$globaldir" >/dev/null 2>&1
+INSTALLER_TEST_CRASH=after-commit installer_run package "$root" --host codex --non-interactive --install-dir "$cli" --instructions-dir "$globaldir" >/dev/null 2>&1
 [[ $? -eq 97 ]] || fail 'crash after commit'
 run --instructions-dir "$globaldir" || fail 'recovery after commit'
 [[ -f "$cli/install-state.json" && ! -e "$cli/.agent-work-kit-txn" ]] || fail 'commit recovery'
@@ -84,6 +86,6 @@ echo x >> "$skills/work/SKILL.md"
 before="$(snapshot)"; run --global-instructions no && fail 'accepted modified installation'
 [[ "$(snapshot)" == "$before" ]] || fail 'modified installation changed'
 # Wrong Host package.
-rm -f -- "$hostlinks/work" "$hostlinks/tooling"; rm -rf -- "$scratch/t"; bash "$core" package "$root" --host claude --non-interactive --install-dir "$cli" >/dev/null 2>&1 && fail 'Host mismatch accepted'
+rm -f -- "$hostlinks/work" "$hostlinks/tooling"; rm -rf -- "$scratch/t"; installer_run package "$root" --host claude --non-interactive --install-dir "$cli" >/dev/null 2>&1 && fail 'Host mismatch accepted'
 [[ ! -e "$scratch/t" ]] || fail 'Host mismatch changed target'
 printf 'macOS installer cases passed.\n'

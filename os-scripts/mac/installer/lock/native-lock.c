@@ -1,3 +1,4 @@
+#define _DARWIN_C_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -6,34 +7,26 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Keep the flock descriptor open across exec so the installer itself owns the lock. */
+/* Keep the UID-scoped flock descriptor open across exec. Never unlink the
+ * lock file: concurrent openers must always refer to the same inode. */
 int main(int argc, char **argv) {
-    if (argc < 3) {
-        fputs("Usage: work-install-lock LOCK_FILE COMMAND [ARG...]\n", stderr);
+    if (argc < 2) {
+        fputs("Usage: work-install-lock COMMAND [ARG...]\n", stderr);
         return 2;
     }
+    char lock[128];
+    int n = snprintf(lock, sizeof(lock), "/private/tmp/agent-work-kit-user-%lu.lock", (unsigned long)getuid());
+    if (n < 0 || (size_t)n >= sizeof(lock)) return 1;
 
-    int fd = open(argv[1], O_CREAT | O_RDWR | O_NOFOLLOW, 0666);
+    int fd = open(lock, O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
     if (fd < 0) {
         fprintf(stderr, "Error: cannot open installation lock: %s\n", strerror(errno));
         return 1;
     }
     struct stat info;
-    if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_nlink != 1) {
-        fputs("Error: installation lock is not a regular single-link file.\n", stderr);
-        close(fd);
-        return 1;
-    }
-    /* A shared lock path must remain usable by installers from other user sessions. */
-    if (info.st_uid == getuid() && (info.st_mode & 0666) != 0666) {
-        if (fchmod(fd, 0666) != 0) {
-            fprintf(stderr, "Error: cannot share installation lock: %s\n", strerror(errno));
-            close(fd);
-            return 1;
-        }
-    }
-    if ((info.st_mode & 0111) != 0) {
-        fputs("Error: installation lock has executable permissions.\n", stderr);
+    if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_nlink != 1 ||
+        info.st_uid != getuid() || (info.st_mode & 07777) != 0600) {
+        fputs("Error: unsafe installation lock file.\n", stderr);
         close(fd);
         return 1;
     }
@@ -52,7 +45,7 @@ int main(int argc, char **argv) {
         close(fd);
         return 1;
     }
-    execvp(argv[2], &argv[2]);
+    execvp(argv[1], &argv[1]);
     fprintf(stderr, "Error: cannot start installation: %s\n", strerror(errno));
     close(fd);
     return 1;

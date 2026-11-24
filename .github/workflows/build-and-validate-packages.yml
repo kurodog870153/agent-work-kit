@@ -55,6 +55,7 @@ jobs:
             bash .github/scripts/tests/release/mac/global-instructions/test_policy.sh
           fi
           python3 -B .github/scripts/tests/release/test_downloader_entry.py
+          python3 -B .github/scripts/tests/release/test_installer_exit.py
       - name: Install Rust toolchain
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN"
       - name: Build native release binary
@@ -80,6 +81,8 @@ jobs:
             zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
             python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
           done
+      - name: Verify macOS package permission smoke
+        run: bash .github/scripts/release/mac/verify_non_admin.sh
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
       - name: Upload macOS Host simulation evidence
@@ -132,10 +135,12 @@ jobs:
       - name: Verify Windows installer prerequisites
         run: |
           if ($env:RELEASE_MODE -eq 'false') {
-            powershell.exe -NoProfile -File .github/scripts/tests/release/windows/lock/test_mutex.ps1
+            python -B .github/scripts/tests/release/windows/lock/test_mutex.py
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           python -B .github/scripts/tests/release/test_downloader_entry.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B .github/scripts/tests/release/test_installer_exit.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:RELEASE_MODE -eq 'false') {
             python -B .github/scripts/tests/release/test_release_install_e2e.py
@@ -190,6 +195,8 @@ jobs:
             python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Verify Windows package permission smoke
+        run: pwsh -NoProfile -File .github/scripts/release/windows/verify_non_admin.ps1
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
       - name: Upload Windows Host simulation evidence

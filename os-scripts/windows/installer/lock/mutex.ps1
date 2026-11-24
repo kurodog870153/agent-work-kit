@@ -1,16 +1,21 @@
 Set-StrictMode -Version Latest
 
-# One machine-wide installation lock for every Host and target.
+# One lock per OS account across Hosts, targets and login sessions.
+function Get-InstallerUserLockName {
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    return "Global\AgentWorkKitInstall.User.$sid"
+}
+
 function Invoke-InstallerLocked {
     param([Parameter(Mandatory = $true)][scriptblock] $Transaction)
-    $mutex = [System.Threading.Mutex]::new($false, 'Global\AgentWorkKitInstall')
+    $mutex = [System.Threading.Mutex]::new($false, (Get-InstallerUserLockName))
     $owned = $false
     try {
         try { $owned = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $owned = $true }
         if (-not $owned) { throw 'another installation is running' }
         & $Transaction
     } finally {
-        if ($owned) { $mutex.ReleaseMutex() }
-        $mutex.Dispose()
+        try { if ($owned) { $mutex.ReleaseMutex() } }
+        finally { $mutex.Dispose() }
     }
 }

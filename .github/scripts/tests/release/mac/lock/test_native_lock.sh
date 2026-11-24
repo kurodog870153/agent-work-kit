@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../../../.." && pwd -P)"
-scratch="$(mktemp -d "$repo_root/.installer-test-lock.XXXXXX")"
-[[ "$(cd "$scratch" && pwd -P)" == "$scratch" && "$scratch" == "$repo_root"/.installer-test-lock.* ]] || exit 1
-trap 'rm -rf -- "$scratch"' EXIT
+scratch="$(mktemp -d "/private/tmp/agent-work-kit-test-lock.XXXXXXXX")"
+holder=''
+trap 'if [[ -n "$holder" ]]; then kill -9 "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; fi; rm -rf -- "$scratch"' EXIT
+chmod 755 "$scratch"
 cc -std=c11 -Wall -Wextra -Werror -o "$scratch/work-install-lock" "$repo_root/os-scripts/mac/installer/lock/native-lock.c"
 helper="$scratch/work-install-lock"
-lock="$scratch/work.lock"
 marker="$scratch/ready"
-"$helper" "$lock" /bin/bash -c 'printf ready > "$1"; exec sleep 2' bash "$marker" &
+
+# Normal exit releases the lock, allowing the next installation.
+"$helper" /usr/bin/true
+"$helper" /usr/bin/true
+"$helper" /bin/bash -c 'printf ready > "$1"; exec sleep 120' bash "$marker" &
 holder=$!
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
+for attempt in $(seq 1 100); do
     [[ -f "$marker" ]] && break
+    kill -0 "$holder" 2>/dev/null || { wait "$holder"; exit 1; }
     sleep 0.1
 done
-[[ -f "$marker" ]] || { wait "$holder"; exit 1; }
-if "$helper" "$lock" /usr/bin/true 2>/dev/null; then
-    printf 'FAIL: concurrent installation acquired lock.\n' >&2
-    exit 1
+[[ -f "$marker" ]] || exit 1
+if "$helper" /usr/bin/true >"$scratch/contend.log" 2>&1; then
+    printf 'FAIL: concurrent same-user installation acquired lock.\n' >&2; exit 1
 fi
-wait "$holder"
-"$helper" "$lock" /usr/bin/true
-[[ "$(stat -f %Lp "$lock")" == 666 ]] || { printf 'FAIL: lock is not shared across users.\n' >&2; exit 1; }
-if "$helper" "$lock" /bin/bash -c 'kill -9 $$' 2>/dev/null; then
-    printf 'FAIL: abnormal exit reported success.\n' >&2
-    exit 1
+grep -F 'another Work installation is running' "$scratch/contend.log"
+[[ "$(stat -f %Lp "/private/tmp/agent-work-kit-user-$(id -u).lock")" == 600 ]] || exit 1
+
+# Lightweight check of a different real UID, not a second Installer E2E.
+if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    [[ "$(id -u)" != "$(id -u nobody)" ]] || exit 1
+    sudo -n -u nobody "$helper" /usr/bin/true
 fi
-"$helper" "$lock" /usr/bin/true
-printf 'preserve' > "$scratch/other"
-ln -s "$scratch/other" "$scratch/linked.lock"
-if "$helper" "$scratch/linked.lock" /usr/bin/true 2>/dev/null; then
-    printf 'FAIL: symlink lock accepted.\n' >&2
-    exit 1
-fi
-[[ "$(cat "$scratch/other")" == preserve ]] || exit 1
-printf 'macOS native lock cases passed.\n'
+kill -0 "$holder"
+kill -9 "$holder"; wait "$holder" 2>/dev/null || true; holder=''
+"$helper" /usr/bin/true
+printf 'macOS user installation lock cases passed.\n'

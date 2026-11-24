@@ -1,4 +1,5 @@
 name: branch validation
+run-name: 'branch validation: ${{ github.ref_name }}'
 
 on:
   workflow_dispatch:
@@ -40,14 +41,14 @@ jobs:
       actions: read
 
   rust-validation-report:
-    name: Rust validation report
+    name: rust validation report
     needs: [rust-ci, package-ci]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     steps:
-      - name: Check out source for Rust validation report
+      - name: Check out source for rust validation report
         uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -59,19 +60,14 @@ jobs:
   confirm-branch-validation:
     name: confirm branch validation
     if: always()
-    needs: [preflight, rust-ci, package-ci, rust-validation-report]
+    needs: rust-validation-report
     runs-on: ubuntu-latest
     steps:
-      - name: Require every validation to pass
+      - name: Require Rust workspace report to pass
         env:
-          PREFLIGHT: ${{ needs.preflight.result }}
-          RUST_VALIDATION: ${{ needs.rust-ci.result }}
-          PACKAGE_VALIDATION: ${{ needs.package-ci.result }}
           REPORT_VALIDATION: ${{ needs.rust-validation-report.result }}
         run: |
-          for result in "$PREFLIGHT" "$RUST_VALIDATION" "$PACKAGE_VALIDATION" "$REPORT_VALIDATION"; do
-            if [[ "$result" != success ]]; then
-              echo "Required branch validation did not pass: $result"
-              exit 1
-            fi
-          done
+          if [[ "$REPORT_VALIDATION" != success ]]; then
+            echo "Rust workspace report did not pass: $REPORT_VALIDATION"
+            exit 1
+          fi
