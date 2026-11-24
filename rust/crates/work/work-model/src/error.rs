@@ -11,7 +11,6 @@ pub enum Reason {
     ApprovalMismatch,
     RuleViolation,
     Locked,
-    RecoveryRequired,
     StorageFailure,
 }
 
@@ -26,7 +25,6 @@ impl Reason {
             Self::ApprovalMismatch => "approval_mismatch",
             Self::RuleViolation => "rule_violation",
             Self::Locked => "locked",
-            Self::RecoveryRequired => "recovery_required",
             Self::StorageFailure => "storage_failure",
         }
     }

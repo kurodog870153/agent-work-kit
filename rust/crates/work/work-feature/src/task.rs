@@ -18,7 +18,7 @@ use work_operations::{
     new_task, new_task_acceptance, requirement_state, revise_task as revise,
 };
 
-use crate::port::{Precondition, RecordStore, StoredRecord, WritePlan};
+use crate::port::{Precondition, RecordStore, StoredRecord};
 use crate::usecase::{
     check_schema, corrections_for, latest, not_found, read_discussion, reference, require_sources,
 };
@@ -278,10 +278,7 @@ pub fn task_apply(
             "TASK dependencies changed since preview",
         ));
     }
-    store.commit(&WritePlan {
-        preconditions: conditions,
-        writes: vec![record.clone()],
-    })?;
+    store.write(&record, &conditions)?;
     Ok(reference(&record))
 }
 
@@ -310,10 +307,7 @@ pub fn complete_task(
             Some(record.version),
         ));
     }
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![next.clone()],
-    })?;
+    store.write(&next, &preconditions)?;
     Ok(reference(&next))
 }
 
@@ -378,10 +372,7 @@ pub fn record_execution(
         }
     };
     let stored = StoredRecord::Execution(record);
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![stored.clone()],
-    })?;
+    store.write(&stored, &preconditions)?;
     Ok(reference(&stored))
 }
 
@@ -430,10 +421,7 @@ pub fn record_task_acceptance(
         }
     };
     let stored = StoredRecord::TaskAcceptance(record);
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![stored.clone()],
-    })?;
+    store.write(&stored, &preconditions)?;
     Ok(reference(&stored))
 }
 
@@ -540,10 +528,7 @@ pub fn record_requirement_acceptance(
         }
     };
     let stored = StoredRecord::RequirementAcceptance(record);
-    store.commit(&WritePlan {
-        preconditions,
-        writes: vec![stored.clone()],
-    })?;
+    store.write(&stored, &preconditions)?;
     Ok(reference(&stored))
 }
 

@@ -229,7 +229,6 @@ fn run_record_command(
 ) -> Result<Output, WorkError> {
     match name {
         "status" => Ok(success(work_flow::status(&store(sub)?)?)),
-        "recover" => Ok(success(work_flow::recover(&store(sub)?)?)),
         "trace" => Ok(success(work_flow::trace(
             &store(sub)?,
             record_kind(sub)?,

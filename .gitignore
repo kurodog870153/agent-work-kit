@@ -37,3 +37,5 @@ $RECYCLE.BIN/
 
 # Transport only; runtime and formal evidence remain visible.
 /outputs/work/transactions/
+# Local Work data
+.work/

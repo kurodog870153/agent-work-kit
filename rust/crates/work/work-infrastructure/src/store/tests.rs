@@ -1,13 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
 
-use work_feature::{Precondition, RecordStore, StoredRecord, WritePlan};
+use work_feature::{Precondition, RecordStore, StoredRecord};
 use work_model::{
     DISCUSSION_SCHEMA, DiscussionRecord, DiscussionStatus, Origin, OriginSource, Reason, RecordId,
-    RecordKind, SOURCE_SCHEMA, SourceContent, SourceRecord,
+    RecordKind, SOURCE_SCHEMA, SourceContent, SourceRecord, WorkError,
 };
 
-use super::{Fault, FsStore};
+use super::{Fault, FsStore, WRITE_TMP};
 use crate::digest::digest;
 
 struct Dir(PathBuf);
@@ -69,41 +69,37 @@ fn discussion(name: &str, version: u32) -> StoredRecord {
     })
 }
 
-fn create(record: StoredRecord) -> WritePlan {
-    WritePlan {
-        preconditions: vec![Precondition {
+fn create(store: &FsStore, record: StoredRecord) -> Result<(), WorkError> {
+    store.write(
+        &record,
+        &[Precondition {
             kind: record.kind(),
             id: record.id().clone(),
             latest: None,
         }],
-        writes: vec![record],
-    }
+    )
 }
 
-fn append(record: StoredRecord, latest: u32) -> WritePlan {
-    WritePlan {
-        preconditions: vec![Precondition {
+fn append(store: &FsStore, record: StoredRecord, latest: u32) -> Result<(), WorkError> {
+    store.write(
+        &record,
+        &[Precondition {
             kind: record.kind(),
             id: record.id().clone(),
             latest: Some(latest),
         }],
-        writes: vec![record],
-    }
-}
-
-fn pending_txn(dir: &Dir) -> bool {
-    dir.0.join("txn").join("journal").exists() || dir.0.join("txn").join("stage").exists()
+    )
 }
 
 #[test]
-fn commit_and_read_round_trip_keeps_original_bytes() {
+fn write_and_read_round_trip_keeps_original_bytes() {
     let dir = Dir::new("round");
     let store = FsStore::open(&dir.0);
     assert_eq!(
         store.latest_version(RecordKind::Source, &id("a")).unwrap(),
         None
     );
-    store.commit(&create(source("a", "  x\r\n\ty  "))).unwrap();
+    create(&store, source("a", "  x\r\n\ty  ")).unwrap();
     assert_eq!(
         store.latest_version(RecordKind::Source, &id("a")).unwrap(),
         Some(1)
@@ -113,24 +109,21 @@ fn commit_and_read_round_trip_keeps_original_bytes() {
         source("a", "  x\r\n\ty  ")
     );
     assert_eq!(store.ids(RecordKind::Source).unwrap(), vec![id("a")]);
-    assert!(!pending_txn(&dir));
+    assert!(!dir.0.join(WRITE_TMP).exists());
 }
 
 #[test]
 fn published_versions_are_never_overwritten() {
     let dir = Dir::new("immutable");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(source("a", "original"))).unwrap();
-    let again = store
-        .commit(&create(source("a", "replacement")))
-        .unwrap_err();
+    create(&store, source("a", "original")).unwrap();
+    let again = create(&store, source("a", "replacement")).unwrap_err();
     assert_eq!(again.reason, Reason::AlreadyExists);
-    let forced = WritePlan {
-        preconditions: Vec::new(),
-        writes: vec![source("a", "replacement")],
-    };
     assert_eq!(
-        store.commit(&forced).unwrap_err().reason,
+        store
+            .write(&source("a", "replacement"), &[])
+            .unwrap_err()
+            .reason,
         Reason::AlreadyExists
     );
     assert_eq!(
@@ -140,21 +133,32 @@ fn published_versions_are_never_overwritten() {
 }
 
 #[test]
-fn stale_preconditions_reject_the_whole_plan() {
+fn stale_preconditions_reject_the_write() {
     let dir = Dir::new("stale");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(discussion("d", 1))).unwrap();
-    store.commit(&append(discussion("d", 2), 1)).unwrap();
-    let stale = store.commit(&append(discussion("d", 2), 1)).unwrap_err();
+    create(&store, discussion("d", 1)).unwrap();
+    append(&store, discussion("d", 2), 1).unwrap();
+    let stale = append(&store, discussion("d", 2), 1).unwrap_err();
     assert_eq!(stale.reason, Reason::VersionConflict);
-    let mut plan = append(discussion("d", 3), 2);
-    plan.writes.push(source("ghost-owner", "x"));
-    plan.preconditions.push(Precondition {
-        kind: RecordKind::Source,
-        id: id("never"),
-        latest: Some(1),
-    });
-    assert_eq!(store.commit(&plan).unwrap_err().reason, Reason::NotFound);
+    let conditions = [
+        Precondition {
+            kind: RecordKind::Discussion,
+            id: id("d"),
+            latest: Some(2),
+        },
+        Precondition {
+            kind: RecordKind::Source,
+            id: id("never"),
+            latest: Some(1),
+        },
+    ];
+    assert_eq!(
+        store
+            .write(&discussion("d", 3), &conditions)
+            .unwrap_err()
+            .reason,
+        Reason::NotFound
+    );
     assert_eq!(
         store
             .latest_version(RecordKind::Discussion, &id("d"))
@@ -170,75 +174,78 @@ fn stale_preconditions_reject_the_whole_plan() {
 }
 
 #[test]
-fn an_interrupted_transaction_blocks_until_recovered_then_rolls_back() {
-    let dir = Dir::new("interrupt");
+fn interrupted_before_publish_leaves_no_version_and_next_write_cleans_temporary() {
+    let dir = Dir::new("before-publish");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(source("keep", "kept"))).unwrap();
-
-    store.fault.set(Some(Fault::InterruptAfterFirstPlace));
-    let plan = WritePlan {
-        preconditions: Vec::new(),
-        writes: vec![source("lost-a", "a"), source("lost-b", "b")],
-    };
-    assert!(store.commit(&plan).is_err());
+    create(&store, source("keep", "kept")).unwrap();
+    store.fault.set(Some(Fault::InterruptBeforePublish));
+    assert!(create(&store, source("lost", "x")).is_err());
     store.fault.set(None);
-    assert!(pending_txn(&dir));
-
-    for result in [
-        store
-            .latest_version(RecordKind::Source, &id("keep"))
-            .map(|_| ()),
-        store.ids(RecordKind::Source).map(|_| ()),
-        store.commit(&create(source("next", "n"))),
-    ] {
-        assert_eq!(result.unwrap_err().reason, Reason::RecoveryRequired);
-    }
-
-    let removed = store.recover().unwrap();
-    assert_eq!(removed.len(), 1);
-    assert!(removed[0].ends_with("v0001.json"));
-    assert!(!pending_txn(&dir));
+    assert!(dir.0.join(WRITE_TMP).exists());
     assert_eq!(store.ids(RecordKind::Source).unwrap(), vec![id("keep")]);
     assert_eq!(
-        store.read(RecordKind::Source, &id("keep"), 1).unwrap(),
-        source("keep", "kept")
+        store
+            .latest_version(RecordKind::Source, &id("lost"))
+            .unwrap(),
+        None
     );
-    store.commit(&create(source("lost-a", "a"))).unwrap();
-}
-
-#[test]
-fn a_stage_without_a_journal_is_cleaned_by_recovery() {
-    let dir = Dir::new("stage");
-    let store = FsStore::open(&dir.0);
-    store.commit(&create(source("a", "x"))).unwrap();
-    fs::create_dir_all(dir.0.join("txn").join("stage")).unwrap();
-    fs::write(dir.0.join("txn").join("stage").join("0"), "half").unwrap();
+    create(&store, source("lost", "new")).unwrap();
+    assert!(!dir.0.join(WRITE_TMP).exists());
+    assert!(!dir.0.join("txn").exists());
     assert_eq!(
-        store.ids(RecordKind::Source).unwrap_err().reason,
-        Reason::RecoveryRequired
+        store.read(RecordKind::Source, &id("lost"), 1).unwrap(),
+        source("lost", "new")
     );
-    assert!(store.recover().unwrap().is_empty());
-    assert_eq!(store.ids(RecordKind::Source).unwrap().len(), 1);
 }
 
 #[test]
-fn a_failed_readback_rolls_back_automatically() {
+fn interrupted_after_publish_preserves_version_and_next_write_only_unlinks_temporary() {
+    let dir = Dir::new("after-publish");
+    let store = FsStore::open(&dir.0);
+    store.fault.set(Some(Fault::InterruptAfterPublish));
+    assert!(create(&store, source("a", "original")).is_err());
+    store.fault.set(None);
+    assert!(dir.0.join(WRITE_TMP).exists());
+    assert_eq!(
+        store.read(RecordKind::Source, &id("a"), 1).unwrap(),
+        source("a", "original")
+    );
+    create(&store, source("b", "next")).unwrap();
+    assert!(!dir.0.join(WRITE_TMP).exists());
+    assert_eq!(
+        store.read(RecordKind::Source, &id("a"), 1).unwrap(),
+        source("a", "original")
+    );
+    assert_eq!(
+        create(&store, source("a", "replacement"))
+            .unwrap_err()
+            .reason,
+        Reason::AlreadyExists
+    );
+}
+
+#[test]
+fn failed_readback_preserves_published_record() {
     let dir = Dir::new("readback");
     let store = FsStore::open(&dir.0);
     store.fault.set(Some(Fault::CorruptReadback));
-    let error = store.commit(&create(source("a", "x"))).unwrap_err();
-    assert_eq!(error.reason, Reason::StorageFailure);
+    assert_eq!(
+        create(&store, source("a", "x")).unwrap_err().reason,
+        Reason::StorageFailure
+    );
     store.fault.set(None);
-    assert!(!pending_txn(&dir));
-    assert_eq!(store.ids(RecordKind::Source).unwrap(), Vec::new());
-    store.commit(&create(source("a", "x"))).unwrap();
+    assert!(!dir.0.join(WRITE_TMP).exists());
+    assert_eq!(
+        store.read(RecordKind::Source, &id("a"), 1).unwrap(),
+        source("a", "x")
+    );
 }
 
 #[test]
 fn a_second_writer_is_refused_while_the_root_is_locked() {
     let dir = Dir::new("lock");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(source("a", "x"))).unwrap();
+    create(&store, source("a", "x")).unwrap();
     let holder = fs::OpenOptions::new()
         .write(true)
         .open(dir.0.join("lock"))
@@ -247,10 +254,7 @@ fn a_second_writer_is_refused_while_the_root_is_locked() {
     let mut contender = FsStore::open(&dir.0);
     contender.lock_attempts = 2;
     assert_eq!(
-        contender
-            .commit(&create(source("b", "y")))
-            .unwrap_err()
-            .reason,
+        create(&contender, source("b", "y")).unwrap_err().reason,
         Reason::Locked
     );
     assert_eq!(
@@ -258,15 +262,15 @@ fn a_second_writer_is_refused_while_the_root_is_locked() {
         Reason::Locked
     );
     drop(holder);
-    contender.commit(&create(source("b", "y"))).unwrap();
+    create(&contender, source("b", "y")).unwrap();
 }
 
 #[test]
 fn edited_content_of_valid_json_is_rejected_in_latest_and_history() {
     let dir = Dir::new("digest");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(discussion("d", 1))).unwrap();
-    store.commit(&append(discussion("d", 2), 1)).unwrap();
+    create(&store, discussion("d", 1)).unwrap();
+    append(&store, discussion("d", 2), 1).unwrap();
     let records = dir.0.join("records").join("discussion").join("d");
     for version in [1u32, 2] {
         assert!(
@@ -295,8 +299,8 @@ fn edited_content_of_valid_json_is_rejected_in_latest_and_history() {
 fn damaged_stores_are_reported_not_trusted() {
     let dir = Dir::new("damage");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(source("a", "x"))).unwrap();
-    store.commit(&create(source("b", "y"))).unwrap();
+    create(&store, source("a", "x")).unwrap();
+    create(&store, source("b", "y")).unwrap();
     let records = dir.0.join("records").join("source");
 
     fs::copy(
@@ -350,7 +354,7 @@ fn binary_source_preserves_invalid_utf8_and_rejects_bad_length_or_digest() {
             reference: None,
         },
     });
-    store.commit(&create(binary.clone())).unwrap();
+    create(&store, binary.clone()).unwrap();
     assert_eq!(
         store.read(RecordKind::Source, &id("raw"), 1).unwrap(),
         binary
@@ -379,12 +383,11 @@ fn binary_source_preserves_invalid_utf8_and_rejects_bad_length_or_digest() {
             .reason,
         Reason::InvalidRecord
     );
-    // Invalid source content must not enter a published version through a WritePlan.
+    // Invalid source content must not enter a published version through a write.
     let mut broken = invalid_digest;
     broken.id = id("broken");
     assert_eq!(
-        store
-            .commit(&create(StoredRecord::Source(broken)))
+        create(&store, StoredRecord::Source(broken))
             .unwrap_err()
             .reason,
         Reason::InvalidRecord
@@ -398,7 +401,7 @@ fn binary_source_preserves_invalid_utf8_and_rejects_bad_length_or_digest() {
 }
 
 #[test]
-fn binary_source_failed_readback_does_not_leave_a_published_record() {
+fn binary_source_failed_readback_preserves_published_record() {
     let dir = Dir::new("binary-readback");
     let store = FsStore::open(&dir.0);
     let bytes = vec![0, 255, 128, 0];
@@ -420,7 +423,7 @@ fn binary_source_failed_readback_does_not_leave_a_published_record() {
     });
     store.fault.set(Some(Fault::CorruptReadback));
     assert_eq!(
-        store.commit(&create(source.clone())).unwrap_err().reason,
+        create(&store, source.clone()).unwrap_err().reason,
         Reason::StorageFailure
     );
     store.fault.set(None);
@@ -428,9 +431,8 @@ fn binary_source_failed_readback_does_not_leave_a_published_record() {
         store
             .latest_version(RecordKind::Source, &id("raw"))
             .unwrap(),
-        None
+        Some(1)
     );
-    store.commit(&create(source.clone())).unwrap();
     assert_eq!(
         store.read(RecordKind::Source, &id("raw"), 1).unwrap(),
         source
@@ -438,30 +440,30 @@ fn binary_source_failed_readback_does_not_leave_a_published_record() {
 }
 
 #[test]
-fn reviewed_dependency_is_re_read_under_the_commit_lock() {
+fn reviewed_dependency_is_re_read_under_the_write_lock() {
     let dir = Dir::new("reviewed-dependency");
     let store = FsStore::open(&dir.0);
-    store.commit(&create(source("s1", "original"))).unwrap();
+    create(&store, source("s1", "original")).unwrap();
     let path = dir.0.join("records/source/s1/v0001.json");
     fs::write(&path, "invalid published content").unwrap();
 
-    let plan = WritePlan {
-        preconditions: vec![
-            Precondition {
-                kind: RecordKind::Discussion,
-                id: id("d1"),
-                latest: None,
-            },
-            Precondition {
-                kind: RecordKind::Source,
-                id: id("s1"),
-                latest: Some(1),
-            },
-        ],
-        writes: vec![discussion("d1", 1)],
-    };
+    let conditions = [
+        Precondition {
+            kind: RecordKind::Discussion,
+            id: id("d1"),
+            latest: None,
+        },
+        Precondition {
+            kind: RecordKind::Source,
+            id: id("s1"),
+            latest: Some(1),
+        },
+    ];
     assert_eq!(
-        store.commit(&plan).unwrap_err().reason,
+        store
+            .write(&discussion("d1", 1), &conditions)
+            .unwrap_err()
+            .reason,
         Reason::InvalidRecord
     );
     assert_eq!(

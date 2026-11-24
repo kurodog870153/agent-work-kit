@@ -119,7 +119,6 @@ fn help_is_derived_from_the_declared_commands_and_has_no_migration() {
         "acceptance",
         "trace",
         "status",
-        "recover",
         "list",
         "describe",
         "scaffold",
@@ -131,7 +130,6 @@ fn help_is_derived_from_the_declared_commands_and_has_no_migration() {
     let sub = run(&["discussion", "round", "--help"]);
     assert_eq!(sub.code, 0);
     assert!(sub.stdout.contains("--root") && sub.stdout.contains("--request"));
-    assert!(run(&["--version"]).stdout.contains("3.0.0"));
     assert!(run(&["migration"]).code == 2);
 }
 
@@ -473,36 +471,13 @@ fn published_history_is_changed_only_by_an_approved_correction() {
 }
 
 #[test]
-fn an_interrupted_write_blocks_until_recover_and_recover_restores_service() {
-    let dir = Dir::new("recover");
+fn abandoned_temporary_write_is_not_a_record_and_is_cleaned_by_next_write() {
+    let dir = Dir::new("temporary-write");
     let root = dir.path("data");
     ok(&send(&root, &["source", "create"], SOURCE));
-
-    // Simulate a crash after the journal was published and one target placed.
-    let txn = dir.0.join("data").join("txn");
-    fs::create_dir_all(&txn).unwrap();
-    let partial = "records/source/half/v0001.json";
-    fs::write(txn.join("journal"), format!("{partial}\n")).unwrap();
-    let target = dir.0.join("data").join(partial);
-    fs::create_dir_all(target.parent().unwrap()).unwrap();
-    fs::write(&target, "{\"half\":").unwrap();
-
-    assert_eq!(
-        reason(&run(&["status", "--root", &root])),
-        "recovery_required"
-    );
-    assert_eq!(
-        reason(&send(
-            &root,
-            &["source", "create"],
-            &SOURCE.replace("src-1", "src-2")
-        )),
-        "recovery_required"
-    );
-
-    let recovered = run(&["recover", "--root", &root]);
-    assert!(ok(&recovered).contains(partial));
-    assert!(!target.exists());
+    let temporary = dir.0.join("data/write.tmp");
+    fs::write(&temporary, "partial").unwrap();
+    fs::create_dir_all(dir.0.join("data/records/source/half")).unwrap();
     let status = run(&["status", "--root", &root]);
     assert!(ok(&status).contains("src-1") && !status.stdout.contains("half"));
     ok(&send(
@@ -510,7 +485,8 @@ fn an_interrupted_write_blocks_until_recover_and_recover_restores_service() {
         &["source", "create"],
         &SOURCE.replace("src-1", "src-2"),
     ));
-    assert!(ok(&run(&["recover", "--root", &root])).contains("\"rolled_back\": []"));
+    assert!(!temporary.exists());
+    assert!(!dir.0.join("data/txn").exists());
 }
 
 const TASK: &str = r#"{"schema":"work-task-create-request","id":"task-1","title":"Export","goal":"Users can export","requirements":["Export as PDF"],"criteria":[{"id":"c1","text":"PDF opens"},{"id":"c2","text":"Docs updated","required":false}],"discussion_ids":["disc-1"],"source_ids":["src-1"]}"#;

@@ -227,7 +227,7 @@ Node 下的 `references/` 按需建立。以上為儲存庫邏輯結構，不限
 
 1. Task、Execute 為同一 Root 的子節點，不另建特殊 `general/`。
 2. 程式語言、應用、框架及能力按責任分類，不要求 Task、Execute 使用相同分支或一對一結構。
-3. Revise、Correction、Recovery 是正式資料功能，其業務約束寫在既有節點，不另建獨立 Node、預建 Reference 或固定流程；不提供資料 Migration。
+3. Revise、Correction 是正式資料功能，其業務約束寫在既有節點，不另建獨立 Node、預建 Reference 或固定流程；不提供資料 Migration。
 4. Host 依需求及 CLI 契約選擇操作，不使用固定操作角色事件映射；CLI 狀態查詢不決定下一步。
 
 ### 4.2 正式資料邊界
@@ -235,16 +235,16 @@ Node 下的 `references/` 按需建立。以上為儲存庫邏輯結構，不限
 1. **資料權威**
    1. 正式保存的 Source、Discussion、TASK、Execution、Attempt、Acceptance、Correction 等紀錄是唯一狀態及歷史權威。
    2. 保存原始需求證據、已確認決策、任務關聯、狀態、執行及驗收結果。
-   3. 正式資料、原始附件、暫存工作區及交易資料責任分離；暫存候選不是已發布紀錄。
+   3. 正式紀錄由 Work CLI 管理；Host 管理非正式 Preview 與執行 Log，分別保存於 `.work/preview/{record-kind}/{record-id}.json`、`.work/log/{task-id}/`，不納入正式狀態及歷史。Infrastructure 內部暫存與鎖由 Work CLI 獨立管理。`.work/` 整體屬本機工作資料，不納入 Git 版本控制。
 2. **完整性與歷史**
    1. Work 驗證資料格式、關聯、版本、完整性、合法狀態轉換及保存規則，不判斷外部回報真實性、工具授權或語意驗收。
    2. 已發布歷史與原始證據不可覆寫；錯誤以合法修訂或新增修正紀錄處理。
-   3. 只接受現行契約的正式紀錄，不提供舊版資料 Migration、格式轉換、舊格式 Parser 或相關公開契約；現行紀錄的錯誤以 Revise、Correction 處理，未完成的交易以 Recovery 處理。
+   3. 只接受現行契約的正式紀錄，不提供舊版資料 Migration、格式轉換、舊格式 Parser 或相關公開契約；現行紀錄的錯誤以 Revise、Correction 處理。
    4. 不得正規化歷史原始 bytes、偽造批准或將未驗證結果標為通過。
 3. **批准與交易**
    1. 使用者決策、Host 權限、正式候選批准三者獨立。
-   2. 批准須綁定實際審查候選及必要相依資料版本；交易須維持一致性及安全復原能力。
-   3. 未批准、無效、衝突或未完成的操作不得視為成功；不強制 Fingerprint、特定 Hash、Journal 或其他固定技術。
+   2. 批准須綁定實際審查候選及必要相依資料版本；單筆正式寫入須維持原子性及歷史完整性。
+   3. 未批准、無效、衝突或未完成的操作不得視為成功；不強制 Fingerprint、特定 Hash或其他固定批准技術。
 
 ### 4.3 上下文與正式需求
 

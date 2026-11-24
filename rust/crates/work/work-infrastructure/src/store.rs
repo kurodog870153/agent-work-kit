@@ -1,10 +1,7 @@
 //! File-system adapter of the formal record store.
 //!
-//! Layout under the Work root:
-//! `records/<kind>/<id>/v0001.json` for every published version, `lock` for
-//! mutual exclusion and `txn/` for the journal and staged files of the
-//! transaction in flight. Published version files are only ever created, never
-//! rewritten.
+//! Published versions live at records/<kind>/<id>/v0001.json. A root lock
+//! protects preconditions, publication and readback; write.tmp is unpublished.
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::Write;
@@ -14,7 +11,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use work_feature::{RecordStore, StoredRecord, WritePlan};
+use work_feature::{Precondition, RecordStore, StoredRecord};
 use work_model::{
     CORRECTION_SCHEMA, DISCUSSION_SCHEMA, EXECUTION_SCHEMA, REQUIREMENT_ACCEPTANCE_SCHEMA, Reason,
     RecordEnvelope, RecordId, RecordKind, SOURCE_SCHEMA, SourceRecord, TASK_ACCEPTANCE_SCHEMA,
@@ -26,10 +23,7 @@ use crate::digest::digest;
 
 const LOCK_FILE: &str = "lock";
 const RECORDS: &str = "records";
-const TXN: &str = "txn";
-const JOURNAL: &str = "journal";
-const JOURNAL_TMP: &str = "journal.tmp";
-const STAGE: &str = "stage";
+const WRITE_TMP: &str = "write.tmp";
 const LOCK_ATTEMPTS: u32 = 100;
 const LOCK_WAIT: Duration = Duration::from_millis(20);
 
@@ -37,9 +31,11 @@ const LOCK_WAIT: Duration = Duration::from_millis(20);
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fault {
-    /// Stop right after the first target was placed, as a crash would.
-    InterruptAfterFirstPlace,
-    /// Make the readback of the first target disagree with the plan.
+    /// Stop after syncing the temporary file, before publication.
+    InterruptBeforePublish,
+    /// Stop after atomic publication, before temporary-file cleanup.
+    InterruptAfterPublish,
+    /// Make the readback disagree with the published content.
     CorruptReadback,
 }
 
@@ -108,10 +104,6 @@ impl FsStore {
         self.root.join(RECORDS).join(kind.code()).join(id.as_str())
     }
 
-    fn txn_dir(&self) -> PathBuf {
-        self.root.join(TXN)
-    }
-
     fn lock(&self, exclusive: bool) -> Result<Option<File>, WorkError> {
         if exclusive {
             fs::create_dir_all(&self.root).map_err(|e| storage(&e, "create root"))?;
@@ -144,18 +136,6 @@ impl FsStore {
             Reason::Locked,
             "another process holds the Work root",
         ))
-    }
-
-    fn ensure_clean(&self) -> Result<(), WorkError> {
-        let txn = self.txn_dir();
-        if txn.join(JOURNAL).exists() || txn.join(JOURNAL_TMP).exists() || txn.join(STAGE).exists()
-        {
-            return Err(WorkError::new(
-                Reason::RecoveryRequired,
-                "an interrupted transaction is pending; run recover",
-            ));
-        }
-        Ok(())
     }
 
     fn versions_of(&self, kind: RecordKind, id: &RecordId) -> Result<Vec<u32>, WorkError> {
@@ -248,87 +228,82 @@ impl FsStore {
         Ok(record)
     }
 
-    fn rollback(&self) -> Result<Vec<String>, WorkError> {
-        let txn = self.txn_dir();
-        let mut removed = Vec::new();
-        if let Ok(journal) = fs::read_to_string(txn.join(JOURNAL)) {
-            for relative in journal.lines().filter(|line| !line.is_empty()) {
-                let target = self.root.join(relative);
-                match fs::remove_file(&target) {
-                    Ok(()) => removed.push(relative.to_owned()),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(storage(&error, "roll back target")),
-                }
-                if let Some(parent) = target.parent() {
-                    let _ = fs::remove_dir(parent);
-                }
-            }
+    fn clear_temporary(&self) -> Result<(), WorkError> {
+        match fs::remove_file(self.root.join(WRITE_TMP)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(storage(&error, "remove temporary write")),
         }
-        for name in [JOURNAL, JOURNAL_TMP] {
-            match fs::remove_file(txn.join(name)) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(storage(&error, "remove journal")),
-            }
-        }
-        match fs::remove_dir_all(txn.join(STAGE)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(storage(&error, "remove stage")),
-        }
-        Ok(removed)
     }
 
-    fn execute(&self, planned: &[(PathBuf, String)]) -> Result<(), WorkError> {
-        let txn = self.txn_dir();
-        let stage = txn.join(STAGE);
-        fs::create_dir_all(&stage).map_err(|e| storage(&e, "create stage"))?;
-        for (index, (_, text)) in planned.iter().enumerate() {
-            let mut file =
-                File::create(stage.join(index.to_string())).map_err(|e| storage(&e, "stage"))?;
+    // Caller holds the root exclusive lock. A hard link publishes a complete
+    // file in one operation without replacing an existing destination on
+    // either Windows or macOS. Unsupported/cross-volume filesystems fail closed.
+    fn publish(&self, target: &Path, text: &str) -> Result<(), WorkError> {
+        let temporary = self.root.join(WRITE_TMP);
+        let result = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+                .map_err(|e| storage(&e, "create temporary write"))?;
             file.write_all(text.as_bytes())
                 .and_then(|()| file.sync_all())
-                .map_err(|e| storage(&e, "stage"))?;
-        }
-        let journal: String = planned
-            .iter()
-            .map(|(relative, _)| format!("{}\n", relative.to_string_lossy().replace('\\', "/")))
-            .collect();
-        fs::write(txn.join(JOURNAL_TMP), journal).map_err(|e| storage(&e, "write journal"))?;
-        fs::rename(txn.join(JOURNAL_TMP), txn.join(JOURNAL))
-            .map_err(|e| storage(&e, "publish journal"))?;
-
-        for (index, (relative, _)) in planned.iter().enumerate() {
-            let target = self.root.join(relative);
+                .map_err(|e| storage(&e, "sync temporary write"))?;
+            drop(file);
+            let staged = fs::read_to_string(&temporary)
+                .map_err(|e| storage(&e, "verify temporary write"))?;
+            if staged != text {
+                return Err(WorkError::new(
+                    Reason::StorageFailure,
+                    "temporary write mismatch",
+                ));
+            }
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent).map_err(|e| storage(&e, "create record dir"))?;
             }
-            fs::rename(stage.join(index.to_string()), &target)
-                .map_err(|e| storage(&e, "place record"))?;
             #[cfg(test)]
-            if index == 0 && self.fault.get() == Some(Fault::InterruptAfterFirstPlace) {
-                return Err(WorkError::new(Reason::StorageFailure, "interrupted"));
+            if self.fault.get() == Some(Fault::InterruptBeforePublish) {
+                return Err(WorkError::new(
+                    Reason::StorageFailure,
+                    "interrupted before publication",
+                ));
             }
-        }
-        for (index, (relative, text)) in planned.iter().enumerate() {
-            let stored = fs::read_to_string(self.root.join(relative))
-                .map_err(|e| storage(&e, "read back"))?;
+            fs::hard_link(&temporary, target).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    WorkError::new(Reason::AlreadyExists, "published history is immutable")
+                } else {
+                    storage(&error, "publish record")
+                }
+            })?;
             #[cfg(test)]
-            let stored = if index == 0 && self.fault.get() == Some(Fault::CorruptReadback) {
+            if self.fault.get() == Some(Fault::InterruptAfterPublish) {
+                return Err(WorkError::new(
+                    Reason::StorageFailure,
+                    "interrupted after publication",
+                ));
+            }
+            let stored = fs::read_to_string(target).map_err(|e| storage(&e, "read back"))?;
+            #[cfg(test)]
+            let stored = if self.fault.get() == Some(Fault::CorruptReadback) {
                 format!("{stored}!")
             } else {
                 stored
             };
-            #[cfg(not(test))]
-            let _ = index;
-            if &stored != text {
-                return Err(WorkError::new(
-                    Reason::StorageFailure,
-                    format!("readback mismatch: {}", relative.display()),
-                ));
+            if stored != text {
+                return Err(WorkError::new(Reason::StorageFailure, "readback mismatch"));
             }
+            Ok(())
+        })();
+        #[cfg(test)]
+        if matches!(
+            self.fault.get(),
+            Some(Fault::InterruptBeforePublish | Fault::InterruptAfterPublish)
+        ) {
+            return result;
         }
-        Ok(())
+        let cleanup = self.clear_temporary();
+        result.and(cleanup)
     }
 }
 
@@ -341,7 +316,6 @@ impl RecordStore for FsStore {
         let Some(_guard) = self.lock(false)? else {
             return Ok(None);
         };
-        self.ensure_clean()?;
         Ok(self.versions_of(kind, id)?.last().copied())
     }
 
@@ -357,7 +331,6 @@ impl RecordStore for FsStore {
                 format!("{} not found: {}", kind.code(), id.as_str()),
             ));
         };
-        self.ensure_clean()?;
         self.read_unlocked(kind, id, version)
     }
 
@@ -365,7 +338,6 @@ impl RecordStore for FsStore {
         let Some(_guard) = self.lock(false)? else {
             return Ok(Vec::new());
         };
-        self.ensure_clean()?;
         let entries = match fs::read_dir(self.root.join(RECORDS).join(kind.code())) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -378,18 +350,24 @@ impl RecordStore for FsStore {
                 .file_name()
                 .to_string_lossy()
                 .into_owned();
-            ids.push(RecordId::parse(&name).map_err(|_| {
+            let id = RecordId::parse(&name).map_err(|_| {
                 WorkError::new(Reason::InvalidRecord, format!("unexpected entry: {name}"))
-            })?);
+            })?;
+            if !self.versions_of(kind, &id)?.is_empty() {
+                ids.push(id);
+            }
         }
         ids.sort();
         Ok(ids)
     }
 
-    fn commit(&self, plan: &WritePlan) -> Result<(), WorkError> {
+    fn write(
+        &self,
+        record: &StoredRecord,
+        preconditions: &[Precondition],
+    ) -> Result<(), WorkError> {
         let _guard = self.lock(true)?;
-        self.ensure_clean()?;
-        for condition in &plan.preconditions {
+        for condition in preconditions {
             let actual = self
                 .versions_of(condition.kind, &condition.id)?
                 .last()
@@ -413,85 +391,42 @@ impl RecordStore for FsStore {
                 ));
             }
         }
-        // Under the same exclusive lock that commits and reads back the writes,
+        // Under the same exclusive lock that publishes and reads back the record,
         // re-read all reviewed dependency versions and check their integrity.
         // A version number alone is not proof that its published content is valid.
-        for condition in &plan.preconditions {
+        for condition in preconditions {
             if let Some(version) = condition.latest {
                 self.read_unlocked(condition.kind, &condition.id, version)?;
             }
         }
-        let mut planned: Vec<(PathBuf, String)> = Vec::new();
-        for record in &plan.writes {
-            let latest = self
-                .versions_of(record.kind(), record.id())?
-                .last()
-                .copied()
-                .unwrap_or(0);
-            let relative = PathBuf::from(RECORDS)
-                .join(record.kind().code())
-                .join(record.id().as_str())
-                .join(version_name(record.version()));
-            if record.version() != latest + 1
-                || planned.iter().any(|(path, _)| path == &relative)
-                || self.root.join(&relative).exists()
-            {
-                return Err(WorkError::new(
-                    Reason::AlreadyExists,
-                    format!("published history is immutable: {}", relative.display()),
-                ));
-            }
-            let text = match record {
-                StoredRecord::Source(value) => {
-                    validate_source(value)?;
-                    seal(value)?
-                }
-                StoredRecord::Discussion(value) => seal(value)?,
-                StoredRecord::Correction(value) => seal(value)?,
-                StoredRecord::Task(value) => seal(value)?,
-                StoredRecord::Execution(value) => seal(value)?,
-                StoredRecord::TaskAcceptance(value) => seal(value)?,
-                StoredRecord::RequirementAcceptance(value) => seal(value)?,
-            };
-            planned.push((relative, text));
+        let latest = self
+            .versions_of(record.kind(), record.id())?
+            .last()
+            .copied()
+            .unwrap_or(0);
+        let target = self
+            .records_dir(record.kind(), record.id())
+            .join(version_name(record.version()));
+        if latest.checked_add(1) != Some(record.version()) || target.exists() {
+            return Err(WorkError::new(
+                Reason::AlreadyExists,
+                format!("published history is immutable: {}", target.display()),
+            ));
         }
-        if let Err(error) = self.execute(&planned) {
-            #[cfg(test)]
-            if self.fault.get() == Some(Fault::InterruptAfterFirstPlace) {
-                return Err(error);
+        let text = match record {
+            StoredRecord::Source(value) => {
+                validate_source(value)?;
+                seal(value)?
             }
-            return match self.rollback() {
-                Ok(_) => Err(error),
-                Err(rollback) => Err(WorkError::new(
-                    Reason::RecoveryRequired,
-                    format!("{error}; rollback failed: {rollback}"),
-                )),
-            };
-        }
-        self.rollback_markers()
-    }
-
-    fn recover(&self) -> Result<Vec<String>, WorkError> {
-        let Some(_guard) = self.lock_for_recovery()? else {
-            return Ok(Vec::new());
+            StoredRecord::Discussion(value) => seal(value)?,
+            StoredRecord::Correction(value) => seal(value)?,
+            StoredRecord::Task(value) => seal(value)?,
+            StoredRecord::Execution(value) => seal(value)?,
+            StoredRecord::TaskAcceptance(value) => seal(value)?,
+            StoredRecord::RequirementAcceptance(value) => seal(value)?,
         };
-        self.rollback()
-    }
-}
-
-impl FsStore {
-    /// Remove the journal and stage of a transaction that completed.
-    fn rollback_markers(&self) -> Result<(), WorkError> {
-        let txn = self.txn_dir();
-        fs::remove_file(txn.join(JOURNAL)).map_err(|e| storage(&e, "remove journal"))?;
-        fs::remove_dir_all(txn.join(STAGE)).map_err(|e| storage(&e, "remove stage"))
-    }
-
-    fn lock_for_recovery(&self) -> Result<Option<File>, WorkError> {
-        if !self.root.is_dir() {
-            return Ok(None);
-        }
-        self.lock(true)
+        self.clear_temporary()?;
+        self.publish(&target, &text)
     }
 }
 
