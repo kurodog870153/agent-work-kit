@@ -21,7 +21,6 @@ pub struct Memory {
     skills: BTreeSet<String>,
     files: BTreeMap<(String, String), String>,
     dirs: BTreeSet<(String, String)>,
-    aliases: BTreeMap<(String, String), (String, String)>,
     reads: RefCell<BTreeMap<String, usize>>,
 }
 
@@ -47,14 +46,6 @@ impl Memory {
         self.dirs.insert((root.to_owned(), path.to_owned()));
     }
 
-    /// Make `path` an alias of `target`: same identity, same content.
-    pub fn alias(&mut self, root: &str, path: &str, target: (&str, &str)) {
-        self.aliases.insert(
-            (root.to_owned(), path.to_owned()),
-            (target.0.to_owned(), target.1.to_owned()),
-        );
-    }
-
     pub fn reads(&self, path: &str) -> usize {
         self.reads
             .borrow()
@@ -71,10 +62,7 @@ impl SourceStore for Memory {
     }
 
     fn read(&self, source: &SourceRef) -> Result<SourceContent, SkillError> {
-        let mut at = (key(&source.root), source.path.clone());
-        if let Some(target) = self.aliases.get(&at) {
-            at = target.clone();
-        }
+        let at = (key(&source.root), source.path.clone());
         *self
             .reads
             .borrow_mut()
@@ -98,12 +86,7 @@ impl SourceStore for Memory {
             format!("{dir}/")
         };
         let mut found: BTreeMap<String, bool> = BTreeMap::new();
-        for (owner, path) in self
-            .files
-            .keys()
-            .chain(self.aliases.keys())
-            .chain(self.dirs.iter())
-        {
+        for (owner, path) in self.files.keys().chain(self.dirs.iter()) {
             if *owner != root {
                 continue;
             }

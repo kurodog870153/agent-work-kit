@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 from release_package_integrity import verify_tree, verify_zip
+from host_simulation import physical, read_installed_entry
 from rust_toolchain import rust_toolchain
 if sys.platform == "win32":
     from windows_job import CREATE_SUSPENDED, WindowsInstallerJob
@@ -334,18 +335,19 @@ class HostLayout:
             files.update({str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                           for p in self.install.rglob("*") if p.is_file()})
         for name in ("work", "tooling"):
-            link = self.discovery / name
-            if (link.is_junction() if sys.platform == "win32" else link.is_symlink()):
-                files[str(link)] = "link:" + str(link.readlink())
-            elif link.exists():
-                files[str(link)] = "unexpected entry"
+            directory = self.discovery / name
+            if physical(directory, directory=True):
+                files.update({str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in directory.rglob("*") if physical(p)})
+            elif os.path.lexists(directory):
+                files[str(directory)] = "unsafe entry"
         if self.global_file.is_file():
             files[str(self.global_file)] = hashlib.sha256(self.global_file.read_bytes()).hexdigest()
         return files
 
 
 def assert_installation(layout, info, global_instructions):
-    """Exact State, resource set, absolute discovery links and runnable binaries."""
+    """Exact State, resource set, physical discovery entries and runnable binaries."""
     state = json.loads(layout.state.read_text(encoding="utf-8"))
     keys = {"host", "version", "rust_workspace_version", "install_dir",
             "global_instructions_dir", "status", "files"}
@@ -354,7 +356,7 @@ def assert_installation(layout, info, global_instructions):
             Path(state["install_dir"]) != layout.install or
             state["global_instructions_dir"] != (str(layout.global_dir) if global_instructions else None)):
         raise AssertionError(f"unexpected installation state: {state!r}")
-    for required in ("work/SKILL.md", "tooling/SKILL.md", "shared/bootstrap.md"):
+    for required in ("work/instructions/instructions.md", "tooling/instructions/instructions.md", "shared/bootstrap.md"):
         if not (layout.skills / required).is_file():
             raise AssertionError(f"installation omitted {required}")
     if {p.name for p in layout.skills.iterdir()} != {"work", "tooling", "shared"}:
@@ -362,12 +364,24 @@ def assert_installation(layout, info, global_instructions):
     if {p.name for p in layout.install.iterdir()} != {"skills", "bin", "install-state.json"}:
         raise AssertionError("unexpected installation root entries (or README installed)")
     for name in ("work", "tooling"):
-        link = layout.discovery / name
-        if not (link.is_junction() if sys.platform == "win32" else link.is_symlink()) or not link.readlink().is_absolute() or link.resolve() != (layout.skills / name).resolve():
-            raise AssertionError(f"missing or invalid absolute Host discovery link: {link}")
-        if not (link / "SKILL.md").is_file():
-            raise AssertionError(f"Host discovery did not expose {name} SKILL.md")
-    for obsolete in ("shared/SKILL.md", "work/scripts", "tooling/scripts", "contract"):
+        paths = read_installed_entry(layout.discovery, name)
+        if paths["state"] != layout.state:
+            raise AssertionError("entry belongs to another installation")
+    manifest = []
+    for part in ("skills", "bin"):
+        for path in (layout.install / part).rglob("*"):
+            if physical(path):
+                manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(layout.install).as_posix()}")
+            elif not physical(path, directory=True):
+                raise AssertionError(f"unsafe managed resource: {path}")
+    for name in ("work", "tooling"):
+        path = layout.discovery / name / "SKILL.md"
+        manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  host-skills/{name}/SKILL.md")
+    if global_instructions:
+        manifest.append(f"{hashlib.sha256(layout.global_file.read_bytes()).hexdigest()}  global/{layout.global_file.name}")
+    if sorted(state["files"]) != sorted(manifest):
+        raise AssertionError("State Manifest differs from installed resources")
+    for obsolete in ("work/SKILL.md", "tooling/SKILL.md", "shared/SKILL.md", "work/scripts", "tooling/scripts", "contract"):
         if (layout.skills / obsolete).exists():
             raise AssertionError(f"obsolete resource installed: {obsolete}")
     if {p.name for p in (layout.install / "bin").iterdir()} != {layout.work.name, layout.skill.name}:
@@ -382,15 +396,16 @@ def assert_installation(layout, info, global_instructions):
 
 def assert_installed_resolution(layout):
     """Both Skills resolve the same Shared tree and CLI independently of Global Instructions."""
-    result = subprocess.run([str(layout.skill), "validate", "--install", str(layout.skills)],
-                            capture_output=True, timeout=60, check=True)
-    body = json.loads(result.stdout)
-    checked = body["data"]["checked"]
-    if not body["data"]["valid"] or sum(item == "shared:bootstrap.md" for item in checked) != 1:
-        raise AssertionError(f"installed Skills failed validation: {body!r}")
     for name in ("work", "tooling"):
-        result = subprocess.run([str(layout.skill), "discover", "--install", str(layout.skills), "--skill", name],
-                                capture_output=True, timeout=60, check=True)
+        paths = read_installed_entry(layout.discovery, name)
+        result = subprocess.run([str(paths["skill"]), "validate", "--install", str(paths["install"])],
+                                cwd=layout.home, capture_output=True, timeout=60, check=True)
+        body = json.loads(result.stdout)
+        checked = body["data"]["checked"]
+        if not body["data"]["valid"] or sum(item == "shared:bootstrap.md" for item in checked) != 1:
+            raise AssertionError(f"installed Skills failed validation: {body!r}")
+        result = subprocess.run([str(paths["skill"]), "discover", "--install", str(paths["install"]), "--skill", name],
+                                cwd=layout.home, capture_output=True, timeout=60, check=True)
         if not json.loads(result.stdout)["data"]["children"]:
             raise AssertionError(f"{name} has no discoverable instructions")
 
@@ -399,8 +414,7 @@ def run_installed_host_simulation(layout, report, zip_path, info, platform):
     scenario = Path(__file__).resolve().with_name("host_simulation.py")
     report.mkdir(parents=True, exist_ok=True)
     evidence = report / f"{layout.host}-{platform}.json"
-    result = subprocess.run([sys.executable, "-B", str(scenario), "--work", str(layout.work), "--skill", str(layout.skill),
-                             "--install", str(layout.skills), "--host-skills-dir", str(layout.discovery), "--evidence", str(evidence)],
+    result = subprocess.run([sys.executable, "-B", str(scenario), "--host-skills-dir", str(layout.discovery), "--evidence", str(evidence)],
                             capture_output=True, text=True, timeout=300)
     if result.returncode:
         raise AssertionError(f"installed Host simulation failed: {result.stdout}\n{result.stderr}")
@@ -482,12 +496,33 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     foreign.mkdir(exist_ok=True)
     layout.discovery.mkdir(parents=True, exist_ok=True)
     foreign_link = layout.discovery / "find-skills"
-    os.symlink(foreign, foreign_link, target_is_directory=True)
+    if sys.platform == "win32":
+        subprocess.run(["cmd.exe", "/D", "/C", "mklink", "/J", str(foreign_link), str(foreign)],
+                       check=True, capture_output=True, timeout=30)
+    else:
+        os.symlink(foreign, foreign_link, target_is_directory=True)
     assert_success(run_installer(script, home, common))
     assert_installation(layout, info, global_instructions=False)
     if foreign_link.resolve() != foreign.resolve():
         raise AssertionError("installer modified unrelated Skill")
     assert_installed_resolution(layout)
+    # Tampered entry paths must fail closed, even when correct binaries still exist.
+    entry = layout.discovery / "work/SKILL.md"
+    original = entry.read_bytes()
+    try:
+        lines = original.decode("utf-8").splitlines()
+        entry.write_text("\n".join(line if not line.startswith("- Skill CLI: ")
+                                   else "- Skill CLI: " + json.dumps(str(home / "missing-cli"))
+                                   for line in lines) + "\n", encoding="utf-8")
+        try:
+            read_installed_entry(layout.discovery, "work")
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("tampered entry path was accepted")
+        assert_failed(run_installer(script, home, common))
+    finally:
+        entry.write_bytes(original)
     first = layout.snapshot()
     assert_success(run_installer(script, home, common))
     assert_installation(layout, info, global_instructions=False)
@@ -523,22 +558,23 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     if stale_layout.snapshot() != before or (stale_layout.skills / "work").exists():
         raise AssertionError("an invalid state was repaired or taken over")
 
-    log_phase("first-install discovery link rollback")
-    link_home = root / "link failure"
-    link_home.mkdir()
-    link_layout = HostLayout(link_home, host, platform)
-    assert_failed(run_installer(script, link_home, common, extra_env={"INSTALLER_TEST_FAILURE": "apply-link-work"}))
-    if link_layout.install.exists() or os.path.lexists(link_layout.discovery / "work"):
-        raise AssertionError("failed install retained managed data or discovery links")
+    log_phase("first-install Host entry rollback")
+    entry_home = root / "entry failure"
+    entry_home.mkdir()
+    entry_layout = HostLayout(entry_home, host, platform)
+    assert_failed(run_installer(script, entry_home, common, extra_env={"INSTALLER_TEST_FAILURE": "apply-host-work"}))
+    if entry_layout.install.exists() or os.path.lexists(entry_layout.discovery / "work"):
+        raise AssertionError("failed install retained managed data or Host entries")
 
     log_phase("custom installation root")
     custom_home = root / "custom installation"
     custom_home.mkdir()
-    custom_root = root / "custom target" / "agent-work-kit"
+    custom_root = root / "自訂 custom target" / "agent-work-kit"
     custom = HostLayout(custom_home, host, platform, install_dir=custom_root)
     custom_options = [*common, "--install-dir", str(custom_root)]
     assert_success(run_installer(script, custom_home, custom_options))
     assert_installation(custom, info, global_instructions=False)
+    assert_installed_resolution(custom)
     before_custom = custom.snapshot()
     assert_failed(run_installer(script, custom_home, common))
     if custom.snapshot() != before_custom:
@@ -552,7 +588,7 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     failure = HostLayout(failure_home, host, platform)
     assert_success(run_installer(script, failure_home, common))
     before = failure.snapshot()
-    for point in ("prepare", "apply-work", "apply-shared", "verify", "commit"):
+    for point in ("prepare", "apply-work", "apply-shared", "apply-host-work", "verify", "commit"):
         assert_failed(run_installer(script, failure_home, common, extra_env={"INSTALLER_TEST_FAILURE": point}))
         if failure.snapshot() != before or any(failure.install.glob(".agent-work-kit-txn*")):
             raise AssertionError(f"failure at {point} did not restore the previous installation")

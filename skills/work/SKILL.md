@@ -5,5 +5,15 @@ description: Manage formal Work records (Source, Discussion, TASK, Execution, Ac
 
 # Work
 
-1. Read the same installation's `shared/bootstrap.md`, then this Skill's `instructions/instructions.md`.
-2. Discover `task` and `execute` branches under `instructions/` on demand. The Host chooses tools, native Subagents and conversation flow; activation grants no write or execution approval.
+
+Use only these installation resources (absolute paths, JSON string notation):
+
+- Shared Bootstrap: {{SHARED_BOOTSTRAP}}
+- Skill Root: {{SKILL_ROOT}}
+- Work CLI: {{WORK_CLI}}
+- Skill CLI: {{SKILL_CLI}}
+- Skill CLI --install: {{SKILL_INSTALL}}
+- Installation State: {{INSTALL_STATE}}
+
+1. Decode each path as a JSON string; use it directly as one argument or file path, independent of the current working directory. Verify the installation and required files before use; stop dependent operations if invalid.
+2. Read Shared Bootstrap, then Skill Root. Discover task and execute branches on demand. The Host chooses and authorizes tools; activation grants no permission.

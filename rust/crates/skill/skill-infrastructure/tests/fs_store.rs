@@ -123,10 +123,8 @@ fn node(name: &str) -> String {
 
 fn base(tree: &Tree) {
     tree.text("shared/bootstrap.md", BOOTSTRAP);
-    tree.text("work/SKILL.md", "entry");
     tree.text("work/instructions/instructions.md", &node("根"));
     tree.text("work/instructions/task/instructions.md", &node("任務"));
-    tree.text("tooling/SKILL.md", "entry");
     tree.text("tooling/instructions/instructions.md", &node("根"));
 }
 
@@ -233,7 +231,7 @@ fn path_escapes_are_rejected_before_touching_the_disk() {
 }
 
 #[test]
-fn links_may_alias_inside_a_boundary_but_never_leave_it() {
+fn links_are_rejected_even_inside_a_boundary() {
     let tree = Tree::new("links");
     base(&tree);
     tree.outside("outside/secret.md", "outside");
@@ -241,25 +239,19 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
     let install = tree.install();
     let store_for = || FsStore::open(&install).unwrap();
 
-    // Inside one Skill: allowed, and the alias shares its identity.
+    // Even a link within the same Skill is rejected.
     assert!(link_dir(
         &install.join("work/instructions/task"),
         &install.join("work/instructions/alias")
     ));
     let store = store_for();
-    let direct = store
-        .read(&SourceRef::skill(
-            "work",
-            "instructions/task/instructions.md",
-        ))
-        .unwrap();
-    let aliased = store
-        .read(&SourceRef::skill(
-            "work",
-            "instructions/alias/instructions.md",
-        ))
-        .unwrap();
-    assert_eq!(direct.id, aliased.id);
+    assert_eq!(
+        reason_of(
+            &store,
+            &SourceRef::skill("work", "instructions/alias/instructions.md")
+        ),
+        Reason::UnsafeLink
+    );
 
     // Out of the installation: link escape.
     assert!(link_dir(
@@ -271,17 +263,17 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
             &store_for(),
             &SourceRef::skill("work", "instructions/leak/secret.md")
         ),
-        Reason::LinkEscape
+        Reason::UnsafeLink
     );
     assert_eq!(
         store_for()
             .entries(&SourceRoot::Skill("work".to_owned()), "instructions/leak")
             .unwrap_err()
             .reason,
-        Reason::LinkEscape
+        Reason::UnsafeLink
     );
 
-    // Into another Skill or Shared: boundary violation.
+    // Into another Skill or Shared: also rejected before following.
     assert!(link_dir(
         &install.join("tooling"),
         &install.join("work/instructions/peer")
@@ -289,9 +281,9 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
     assert_eq!(
         reason_of(
             &store_for(),
-            &SourceRef::skill("work", "instructions/peer/SKILL.md")
+            &SourceRef::skill("work", "instructions/peer/instructions/instructions.md")
         ),
-        Reason::BoundaryViolation
+        Reason::UnsafeLink
     );
     assert!(link_dir(
         &install.join("shared"),
@@ -302,7 +294,7 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
             &store_for(),
             &SourceRef::skill("work", "instructions/shared/bootstrap.md")
         ),
-        Reason::BoundaryViolation
+        Reason::UnsafeLink
     );
     assert!(store_for().read(&SourceRef::shared("bootstrap.md")).is_ok());
 }
@@ -311,7 +303,7 @@ fn links_may_alias_inside_a_boundary_but_never_leave_it() {
 fn a_boundary_that_resolves_outside_the_installation_is_a_mixed_install() {
     let tree = Tree::new("mixed");
     base(&tree);
-    tree.outside("elsewhere/foreign/SKILL.md", "foreign");
+    tree.outside("elsewhere/foreign/instructions/instructions.md", "foreign");
     assert!(link_dir(
         &tree.root.join("elsewhere/foreign"),
         &tree.install().join("foreign")
@@ -336,7 +328,7 @@ fn file_links_are_validated_like_directory_links() {
     let store = FsStore::open(&install).unwrap();
     assert_eq!(
         reason_of(&store, &SourceRef::skill("work", "instructions/secret.md")),
-        Reason::LinkEscape
+        Reason::UnsafeLink
     );
 }
 

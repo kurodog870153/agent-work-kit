@@ -83,6 +83,7 @@ function Invoke-InstallerCore {
     $cliDir = $installDir
     $script:InstallerInstallDir = $installDir
     $script:InstallerHostSkillsDir = $hostSkillsDir
+    $script:InstallerSelectedHost = $selectedHost
     $script:InstallerSkillsDir = $skillsDir
     $script:InstallerCliDir = $cliDir
     $script:InstallerTx = Join-Path $installDir '.agent-work-kit-txn'
@@ -130,7 +131,9 @@ function Invoke-InstallerCore {
         try { $globalDir = [IO.Path]::GetFullPath($globalInput).TrimEnd('\', '/') } catch { throw "invalid --instructions-dir path <$globalInput>: $_" }
         if (-not (Test-InstallerDirectoryPathSafe -Path $globalDir)) { throw 'unsafe Global Instructions directory' }
         $script:InstallerGlobalTarget = Join-Path $globalDir $globalFilename
-        if ((Test-InstallerPathOverlap $script:InstallerGlobalTarget $skillsDir) -or (Test-InstallerPathOverlap $script:InstallerGlobalTarget $cliDir)) {
+        if ((Test-InstallerPathOverlap $script:InstallerGlobalTarget $skillsDir) -or (Test-InstallerPathOverlap $script:InstallerGlobalTarget $cliDir) -or
+            (Test-InstallerPathOverlap $script:InstallerGlobalTarget (Join-Path $hostSkillsDir 'work')) -or
+            (Test-InstallerPathOverlap $script:InstallerGlobalTarget (Join-Path $hostSkillsDir 'tooling'))) {
             throw 'Global Instructions must be outside the Skills and CLI directories'
         }
         if (-not (Test-InstallerPathEqual $globalDir $previousGlobalDir)) { $previousGlobalSha = '' }
@@ -190,7 +193,8 @@ function Invoke-InstallerCore {
         Start-InstallerTx
         $started = $true
         New-InstallerDirectories -Path $skillsDir
-        New-InstallerDirectories -Path $hostSkillsDir
+        New-InstallerDirectories -Path (Join-Path $hostSkillsDir 'work')
+        New-InstallerDirectories -Path (Join-Path $hostSkillsDir 'tooling')
         if ($globalDir -ne '') { New-InstallerDirectories -Path $globalDir }
         Add-InstallerTxCreated -Directories $script:InstallerCreatedDirs -Reset
         Invoke-InstallerInject 'prepare'
@@ -200,8 +204,7 @@ function Invoke-InstallerCore {
         Write-InstallerState -Path $statePath -InstallerHost $selectedHost -Version $version -RustVersion $rustVersion `
             -InstallDir $installDir -GlobalDir $globalDir -Files $entries
         if ($null -eq (Read-InstallerState -Path $statePath)) { throw 'prepared install state is invalid' }
-        $components = @('work', 'tooling', 'shared', 'bin')
-        if ($inspection.Kind -eq 'new') { $components += @('link-work', 'link-tooling') }
+        $components = @('work', 'tooling', 'shared', 'bin', 'host-work', 'host-tooling')
         if ($globalAction -in @('install', 'replace')) { $components += 'global' }
         Write-InstallerTxPlan -Names ($components + 'state')
         foreach ($component in $components) { Invoke-InstallerTxApply -Name $component }

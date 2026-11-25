@@ -168,7 +168,7 @@ impl fmt::Display for SourceRef {
     }
 }
 
-/// Identity of a source: its real path, so aliases collapse to one source.
+/// Identity of a physical source: its normalized real path, shared across selections.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceId(String);
 
@@ -201,7 +201,7 @@ pub enum Reason {
     MissingMarker,
     MultipleMarkers,
     InvalidPath,
-    LinkEscape,
+    UnsafeLink,
     BoundaryViolation,
     MixedInstall,
     UnknownRoot,
@@ -229,7 +229,7 @@ impl Reason {
             Self::MissingMarker => "missing_marker",
             Self::MultipleMarkers => "multiple_markers",
             Self::InvalidPath => "invalid_path",
-            Self::LinkEscape => "link_escape",
+            Self::UnsafeLink => "unsafe_link",
             Self::BoundaryViolation => "boundary_violation",
             Self::MixedInstall => "mixed_install",
             Self::UnknownRoot => "unknown_root",

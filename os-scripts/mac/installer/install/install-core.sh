@@ -169,7 +169,8 @@ if [[ "$global_enabled" == 1 ]]; then
     installer_path_valid "$installer_global_dir" && installer_directory_path_safe "$installer_global_dir" ||
         { installer_fail 'unsafe Global Instructions directory'; exit 1; }
     installer_global_target="$installer_global_dir/$global_filename"
-    if [[ "$installer_global_target" == "$installer_skills_dir"/* || "$installer_global_target" == "$installer_cli_dir"/* ]]; then
+    if [[ "$installer_global_target" == "$installer_skills_dir"/* || "$installer_global_target" == "$installer_cli_dir"/* ||
+          "$installer_global_target" == "$installer_host_skills_dir/work/"* || "$installer_global_target" == "$installer_host_skills_dir/tooling/"* ]]; then
         installer_fail 'Global Instructions must be outside the Skills and CLI directories'; exit 1
     fi
     [[ "$installer_global_dir" == "$previous_global_dir" ]] || previous_global_sha=''
@@ -222,7 +223,9 @@ installer_transaction_failed() {
 }
 installer_create_directories "$installer_install_dir" || { installer_remove_created_directories; installer_fail 'could not create the Skills directory'; exit 1; }
 if ! installer_tx_begin; then installer_remove_created_directories; installer_fail 'could not start the installation transaction'; exit 1; fi
-installer_create_directories "$installer_skills_dir" && installer_create_directories "$installer_host_skills_dir" && { [[ -z "$installer_global_dir" ]] || installer_create_directories "$installer_global_dir"; } &&
+installer_create_directories "$installer_skills_dir" &&
+    installer_create_directories "$installer_host_skills_dir/work" &&
+    installer_create_directories "$installer_host_skills_dir/tooling" && { [[ -z "$installer_global_dir" ]] || installer_create_directories "$installer_global_dir"; } &&
     installer_tx_note_created "${installer_created_dirs[@]+"${installer_created_dirs[@]}"}" ||
     installer_transaction_failed 'could not create installation directories'
 installer_inject prepare || installer_transaction_failed 'prepare failed'
@@ -230,8 +233,7 @@ installer_stage_payload && installer_build_manifest || installer_transaction_fai
 installer_state_write "$installer_tx/staged/state" "$selected_host" "$version" "$rust_version" "$installer_install_dir" \
     "$installer_global_dir" "${installer_new_files[@]}" || installer_transaction_failed 'could not prepare install state'
 installer_state_read "$installer_tx/staged/state" || installer_transaction_failed 'prepared install state is invalid'
-plan=(work tooling shared bin)
-[[ "$installer_target_kind" != new ]] || plan+=(link-work link-tooling)
+plan=(work tooling shared bin host-work host-tooling)
 [[ "$installer_global_action" != install && "$installer_global_action" != replace ]] || plan+=(global)
 plan+=(state)
 installer_tx_write_plan "${plan[@]}" || installer_transaction_failed 'could not record the installation plan'

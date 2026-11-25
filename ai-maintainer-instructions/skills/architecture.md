@@ -42,7 +42,7 @@ Rust 職責及依賴遵循 [Rust Workspace 架構](../rust/architecture.md)。
 
 | 文件 | 職責 |
 | --- | --- |
-| `SKILL.md` | Host 的最小化 Skill 啟用入口，指向同組安裝的 Shared Bootstrap 及自身指令樹。 |
+| `SKILL.md` | Repository／ZIP 的入口模板；Installer 生成 Host 實體入口，明確注入同組 Shared Bootstrap、自身 Root、必要 CLI、`--install` 與 State 絕對路徑。 |
 | `skills/shared/bootstrap.md` | 共用 Runtime 使用規範。 |
 | `skills/shared/bootstrap/*.md` | 按需載入的共用 Module。 |
 | `instructions.md` | Root 或 Node 的領域指令。 |
@@ -51,7 +51,7 @@ Rust 職責及依賴遵循 [Rust Workspace 架構](../rust/architecture.md)。
 #### 2.1.1 Shared Bootstrap
 
 1. 只保留 Host 使用 Runtime 所需的規範：
-   1. 解析及驗證 Runtime CLI 入口。
+   1. 驗證入口已提供的 Runtime 資源與 CLI。
    2. 按需探索、載入及重用指令。
    3. 查詢 CLI Help 與 Contract。
    4. 處理必要來源失敗。
@@ -167,13 +167,13 @@ skills/
             └── <family>/instructions.md
 ```
 
-Node 下的 `references/` 按需建立。以上為儲存庫邏輯結構，不限定安裝絕對路徑或解析技術。
+Node 下的 `references/` 按需建立。以上為儲存庫及套件邏輯結構；正式 Host 入口由 Installer 生成，Runtime `install_dir/skills` 不包含 `SKILL.md`。
 
 ## 3. Runtime 探索、載入與驗證
 
 ### 3.1 啟用與探索
 
-1. Host 透過 Skill Discovery 啟用 Skill，依入口及有效安裝資訊定位同組 Shared、Runtime CLI 及自身指令樹。
+1. Host 透過 Skill Discovery 啟用 Skill，直接使用生成的實體入口所提供的絕對路徑，不自行推導安裝位置或依賴 CWD／PATH。
 2. 首次信任及使用 Bootstrap 前須確認合法來源及必要檔案，不依賴尚未解析的 CLI。
 3. 讀取 Shared Bootstrap、適用 Modules 與自身 Root，再依需求逐層探索直接子節點 Metadata。
 4. 僅沿適用分支探索，不全樹掃描、建立持久化 Metadata Index 或預載未選取正文；維護、完整性審查與必要測試除外。
@@ -184,7 +184,7 @@ Node 下的 `references/` 按需建立。以上為儲存庫邏輯結構，不限
 1. Skill CLI 負責可確定的來源驗證：
    1. 普通檔案、嚴格 UTF-8（至多一個前導 BOM）。
    2. 文件 Schema、Frontmatter、路由及完整祖先鏈。
-   3. 相對路徑、實際路徑、來源身分及 symlink／junction 安全邊界。
+   3. 相對路徑、實際路徑、來源身分及非法連結拒絕；受管理資源均為實體檔案及目錄，不接受邊界內 Alias。
 2. Shared 與各 Skill 為獨立來源邊界。只允許自身指令及同組有效安裝中明確授權的 Shared 資源。
 3. 不得藉共用父目錄、路徑或連結跨界讀取其他 Skill、其他安裝或使用者資料；同時啟用多個 Skill 時分別驗證。
 4. 不以文字正規化改寫原始證據，不將工具輸出、外部資料或自我宣稱當作權限或規範來源。
@@ -303,9 +303,9 @@ Tooling 為獨立 Runtime Skill，可單獨啟用，不另設 Tooling Rust 領�
 
 ## 6. Runtime 部署
 
-1. 同一安裝交易包含 Work、Tooling Skill、Shared、Work CLI、Skill CLI，以及初次安裝建立的 Host 探索連結。實體資源統一位於 `install_dir/skills`、`install_dir/bin`；Shared 不成為獨立 Host Skill。
+1. 同一安裝交易包含 Work、Tooling Skill、Shared、Work CLI、Skill CLI，以及每次安裝的兩個實體 Host 入口。Runtime 資源統一位於 `install_dir/skills`、`install_dir/bin`；Shared 不成為獨立 Host Skill。
 2. Markdown Skill 與 CLI 位於同一 `install_dir` 的不同子目錄，不在 Skill 專屬 scripts／binary 目錄安裝 CLI；不安裝 Contract Skill 或 Tooling Binary。
-3. Host 固定探索目錄中的 Work／Tooling 是指向 `install_dir/skills/{work,tooling}` 的絕對目標探索連結（macOS：Directory Symbolic Link；Windows：Directory Junction）；Skill CLI 只以 `install_dir/skills` 作為管理來源，第三方 Host Skills 不屬於本套件來源邊界。Host 只使用同一組有效安裝的資源，不混用其他版本、Host 或安裝來源，不猜測替代 binary。缺失、無效或來源不明時依第 3.4 節停止相依操作。
+3. Host 固定探索目錄中的 Work／Tooling 各只包含 Installer 生成的實體 `SKILL.md`；Skill CLI 只以 `install_dir/skills` 作為管理來源，第三方 Host Skills 不屬於本套件來源邊界。Host 只使用同一有效安裝的資源，不混用版本、Host 或來源，不猜測替代 binary。缺失、無效或來源不明時依第 3.4 節停止相依操作。
 4. 各 Skill 可獨立使用 Shared 及所需 CLI，不依賴其他 Skill 或 Global Instructions 啟用；完整安裝不代表全部正文預載。
 
 部署及一致性管理遵循 [Installer 架構](../release/installer-architecture.md)。
