@@ -98,13 +98,8 @@ fn sibling_branches_compose_independently_and_deduplicate() {
 }
 
 #[test]
-fn shared_sources_are_reused_across_skills_and_aliases_collapse() {
-    let mut store = installed();
-    store.alias(
-        "tooling",
-        "instructions/mirror.md",
-        ("work", "instructions/execute/instructions.md"),
-    );
+fn shared_sources_are_reused_across_skills() {
+    let store = installed();
     let request = Request {
         selections: vec![select("work", &["execute"]), select("tooling", &[""])],
         modules: Vec::new(),
@@ -116,29 +111,6 @@ fn shared_sources_are_reused_across_skills_and_aliases_collapse() {
         .count();
     assert_eq!(shared, 1);
     assert_eq!(resolution.sources.len(), 4);
-    let mut alias = store;
-    alias.put(
-        "tooling",
-        "instructions/m/instructions.md",
-        &instruction("別名", ""),
-    );
-    alias.alias(
-        "tooling",
-        "instructions/m/instructions.md",
-        ("work", "instructions/execute/instructions.md"),
-    );
-    let both = Request {
-        selections: vec![select("work", &["execute"]), select("tooling", &["m"])],
-        modules: Vec::new(),
-    };
-    let resolution = resolve(&alias, &both).expect("valid");
-    let executes = paths(&resolution)
-        .iter()
-        .filter(|path| {
-            path.ends_with("execute/instructions.md") || path.ends_with("m/instructions.md")
-        })
-        .count();
-    assert_eq!(executes, 1, "{:?}", paths(&resolution));
 }
 
 #[test]

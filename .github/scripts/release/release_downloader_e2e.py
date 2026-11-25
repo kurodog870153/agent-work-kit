@@ -14,7 +14,7 @@ import threading
 import zipfile
 from pathlib import Path
 
-from release_install_e2e import verify_readme_download
+from release_install_e2e import HostLayout, assert_installation, assert_installed_resolution, verify_readme_download
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests/release/common"))
 from downloader_server import build_test_downloaders
 
@@ -39,14 +39,17 @@ def exercise_public_crash(entry, home, environment, platform, info, install_dir,
         raise AssertionError(f"public entry initial install failed: {initial.stdout!r}, {initial.stderr!r}")
     suffix = ".exe" if platform == "windows-x64-msvc" else ""
     binary = install_dir / "bin" / f"work{suffix}"
-    before = {str(path.relative_to(install_dir)): path.read_bytes() for path in install_dir.rglob("*") if path.is_file()}
+    layout = HostLayout(home, info["host"], platform, install_dir=install_dir)
+    assert_installation(layout, info, global_instructions=False)
+    before = layout.snapshot()
     interrupted = invoke(INSTALLER_TEST_CRASH="verify")
     if interrupted.returncode == 0:
         raise AssertionError("public entry did not stop at the injected interruption")
     restarted = invoke()
     if restarted.returncode:
         raise AssertionError(f"public entry recovery failed: {restarted.stdout!r}, {restarted.stderr!r}")
-    after = {str(path.relative_to(install_dir)): path.read_bytes() for path in install_dir.rglob("*") if path.is_file()}
+    after = layout.snapshot()
+    assert_installation(layout, info, global_instructions=False)
     state = json.loads((install_dir / "install-state.json").read_text(encoding="utf-8"))
     if after != before or state["status"] != "installed" or state["version"] != info["version"] or any(install_dir.glob(".agent-work-kit-txn*")):
         raise AssertionError("public entry recovery did not restore the installed resources")
@@ -115,7 +118,6 @@ def main():
             if result.returncode:
                 raise AssertionError(f"Downloader failed: {result.returncode}, {result.stdout!r}, {result.stderr!r}")
             install_dir = target
-            skills_dir = install_dir / "skills"
             state_path = install_dir / "install-state.json"
             state = json.loads(state_path.read_text(encoding="utf-8"))
             if (state["host"] != info["host"] or state["version"] != info["version"] or
@@ -123,11 +125,11 @@ def main():
                     Path(state["install_dir"]) != install_dir or state["status"] != "installed" or
                     state["global_instructions_dir"] != str(global_dir)):
                 raise AssertionError(f"Downloader installed the wrong state: {state!r}")
-            for required in ("work/SKILL.md", "tooling/SKILL.md", "shared/bootstrap.md"):
-                if not (skills_dir / required).is_file():
-                    raise AssertionError(f"Downloader omitted {required}")
-            if any((skills_dir / name).exists() for name in ("contract", "shared/SKILL.md")):
-                raise AssertionError("Downloader installed an obsolete resource")
+            layout = HostLayout(home, info["host"], args.platform, install_dir=install_dir)
+            layout.global_dir = global_dir
+            layout.global_file = global_dir / ("AGENTS.md" if info["host"] == "codex" else "CLAUDE.md")
+            assert_installation(layout, info, global_instructions=True)
+            assert_installed_resolution(layout)
             suffix = ".exe" if sys.platform == "win32" else ""
             cli_bin = install_dir / "bin"
             if {path.name for path in cli_bin.iterdir()} != {f"work{suffix}", f"skill{suffix}"}:
@@ -157,7 +159,7 @@ def main():
                     raise AssertionError(f"Downloader CLI probe changed an installation target: {options!r}")
             if list(scratch.glob("agent-work-kit-release*")):
                 raise AssertionError("Downloader retained temporary files")
-            # A separate Host home is required: discovery links from the first install
+            # A separate Host home is required: physical Host entries from the first install
             # intentionally cannot be repointed to another install root.
             crash_home = root / "crash-home"
             crash_home.mkdir()

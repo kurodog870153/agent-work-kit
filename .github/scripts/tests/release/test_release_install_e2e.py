@@ -34,13 +34,15 @@ class ReleaseInstallE2ETests(unittest.TestCase):
                     self.assertEqual(layout.work.suffix, ".exe" if platform == "windows-x64-msvc" else "")
                     self.assertEqual(layout.snapshot(), {})
                     (layout.skills / "work").mkdir(parents=True)
-                    (layout.skills / "work/SKILL.md").write_text(host, encoding="utf-8")
+                    (layout.skills / "work/instructions.md").write_text(host, encoding="utf-8")
+                    (layout.discovery / "work").mkdir(parents=True)
+                    (layout.discovery / "work/SKILL.md").write_text(host, encoding="utf-8")
                     (layout.cli / "bin").mkdir(parents=True)
                     layout.work.write_text(host, encoding="utf-8")
                     layout.global_dir.mkdir(parents=True, exist_ok=True)
                     layout.global_file.write_text(host, encoding="utf-8")
                     original = layout.snapshot()
-                    self.assertEqual(len(original), 3)
+                    self.assertEqual(len(original), 4)
                     layout.global_file.write_text(host + " updated", encoding="utf-8")
                     self.assertNotEqual(layout.snapshot(), original)
 
@@ -112,7 +114,7 @@ class ReleaseInstallE2ETests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "unexpected installation state"):
                 assert_installation(layout, info, False)
             layout.state.write_text(json.dumps(state), encoding="utf-8")
-            with self.assertRaisesRegex(AssertionError, "omitted work/SKILL.md"):
+            with self.assertRaisesRegex(AssertionError, "omitted work/instructions/instructions.md"):
                 assert_installation(layout, info, False)
 
     def test_claude_host_is_passed_to_installer(self):

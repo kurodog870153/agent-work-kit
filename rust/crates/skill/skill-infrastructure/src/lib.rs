@@ -1,8 +1,7 @@
 //! Skill domain technical facts: a file-system `SourceStore`.
 //!
-//! Every read resolves the real path first. A source is accepted only when its
-//! real path stays inside the boundary that owns it (Shared or one Skill), so
-//! symlinks and junctions may alias inside a boundary but never cross one.
+//! Managed paths are checked without following links, then normalized and
+//! constrained to their owning Shared or Skill boundary.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,6 +25,7 @@ impl FsStore {
     /// directories whose real location is directly inside this installation;
     /// anything else is a mixed installation.
     pub fn open(install: impl AsRef<Path>) -> Result<Self, SkillError> {
+        reject_link(install.as_ref(), Reason::MixedInstall)?;
         let install = fs::canonicalize(install.as_ref()).map_err(|error| {
             SkillError::new(Reason::Unreadable, format!("installation root: {error}"))
         })?;
@@ -44,6 +44,7 @@ impl FsStore {
             if name != SHARED_DIR && !is_kebab(&name) {
                 continue;
             }
+            reject_link(&entry.path(), Reason::MixedInstall)?;
             let Ok(real) = fs::canonicalize(entry.path()) else {
                 continue;
             };
@@ -78,6 +79,12 @@ impl FsStore {
             }
         };
         let path = self.install.join(name);
+        if fs::symlink_metadata(&path).is_ok_and(|metadata| is_link(&metadata)) {
+            return Err(SkillError::new(
+                Reason::MixedInstall,
+                format!("{name} is not a physical source boundary"),
+            ));
+        }
         let real = fs::canonicalize(&path).map_err(|_| {
             SkillError::new(
                 Reason::UnknownRoot,
@@ -98,7 +105,10 @@ impl FsStore {
         let mut path = boundary.to_path_buf();
         if !relative.is_empty() {
             validate_relative(relative)?;
-            path.extend(relative.split('/'));
+            for part in relative.split('/') {
+                path.push(part);
+                reject_link(&path, Reason::UnsafeLink)?;
+            }
         }
         let real = fs::canonicalize(&path)
             .map_err(|error| SkillError::new(Reason::Unreadable, format!("{relative}: {error}")))?;
@@ -111,11 +121,35 @@ impl FsStore {
             ))
         } else {
             Err(SkillError::new(
-                Reason::LinkEscape,
+                Reason::BoundaryViolation,
                 format!("{relative} resolves outside the installation"),
             ))
         }
     }
+}
+
+fn is_link(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+fn reject_link(path: &Path, reason: Reason) -> Result<fs::Metadata, SkillError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| SkillError::new(Reason::Unreadable, error.to_string()))?;
+    if is_link(&metadata) {
+        return Err(SkillError::new(
+            reason,
+            format!("{} is not a physical source", path.display()),
+        ));
+    }
+    Ok(metadata)
 }
 
 fn same_name(path: &Path, name: &str) -> bool {
@@ -124,6 +158,7 @@ fn same_name(path: &Path, name: &str) -> bool {
 
 impl SourceStore for FsStore {
     fn skills(&self) -> Result<Vec<String>, SkillError> {
+        self.verify_boundaries()?;
         let mut skills = Vec::new();
         let entries = fs::read_dir(&self.install)
             .map_err(|error| SkillError::new(Reason::Unreadable, error.to_string()))?;
@@ -133,7 +168,7 @@ impl SourceStore for FsStore {
             };
             if name != SHARED_DIR
                 && is_kebab(&name)
-                && fs::canonicalize(entry.path()).is_ok_and(|real| real.is_dir())
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
             {
                 skills.push(name);
             }
@@ -188,8 +223,8 @@ impl SourceStore for FsStore {
                     format!("file name is not UTF-8: {name:?}"),
                 )
             })?;
-            // Follow links here only to classify; the real path is checked on read.
-            let is_dir = fs::metadata(entry.path()).is_ok_and(|metadata| metadata.is_dir());
+            let metadata = reject_link(&entry.path(), Reason::UnsafeLink)?;
+            let is_dir = metadata.is_dir();
             found.push(DirEntry { name, is_dir });
         }
         found.sort_by(|a, b| a.name.cmp(&b.name));

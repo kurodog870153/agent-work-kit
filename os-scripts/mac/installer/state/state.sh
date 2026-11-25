@@ -21,7 +21,7 @@ installer_state_clear() {
 }
 
 installer_state_read() {
-    local file="$1" line index=0 count last hash relative comma
+    local file="$1" line index=0 count last hash relative comma seen="|" global_count=0 global_name
     local re_host='^  "host": "(codex|claude)",$'
     local re_version='^  "version": "([0-9]+\.[0-9]+\.[0-9]+)",$'
     local re_rust='^  "rust_workspace_version": "([0-9]+\.[0-9]+\.[0-9]+)",$'
@@ -44,6 +44,8 @@ installer_state_read() {
     [[ "${lines[6]}" == '  "status": "installed",' && "${lines[7]}" == '  "files": [' ]] || return 1
     installer_path_valid "$installer_state_install_dir" || return 1
     [[ -z "$installer_state_global_dir" ]] || installer_path_valid "$installer_state_global_dir" || return 1
+    global_name=AGENTS.md
+    [[ "$installer_state_host" != claude ]] || global_name=CLAUDE.md
     last=$((count - 3))
     for ((index=8; index<=last; index++)); do
         [[ "${lines[index]}" =~ $re_entry ]] || { installer_state_clear; return 1; }
@@ -51,9 +53,22 @@ installer_state_read() {
         if (( index == last )); then [[ -z "$comma" ]] || { installer_state_clear; return 1; }
         else [[ -n "$comma" ]] || { installer_state_clear; return 1; }; fi
         installer_relative_valid "$relative" || { installer_state_clear; return 1; }
+        [[ "$seen" != *"|$relative|"* ]] || return 1
+        seen="$seen$relative|"
+        case "$relative" in
+            skills/work/*|skills/tooling/*|skills/shared/*|bin/*|host-skills/work/SKILL.md|host-skills/tooling/SKILL.md) ;;
+            "global/$global_name") global_count=$((global_count + 1)) ;;
+            *) return 1 ;;
+        esac
         installer_state_files+=("$hash  $relative")
     done
-    (( ${#installer_state_files[@]} > 0 ))
+    if [[ -n "$installer_state_global_dir" ]]; then [[ "$global_count" == 1 ]] || return 1
+    else [[ "$global_count" == 0 ]] || return 1; fi
+    local name matches
+    for name in work tooling; do
+        matches="$(printf '%s\n' "${installer_state_files[@]}" | grep -c "^[0-9a-f]\{64\}  host-skills/$name/SKILL\.md$")" || return 1
+        [[ "$matches" == 1 ]] || return 1
+    done
 }
 
 # installer_state_write FILE HOST VERSION RUST_VERSION INSTALL_DIR GLOBAL_DIR_OR_EMPTY ENTRY...
@@ -77,7 +92,15 @@ installer_state_write() {
 
 # Exact SHA-256 manifest of managed Skills and CLI files; never scan the Host Skills parent.
 installer_actual_manifest() {
-    local install="$1" staged="${2:-0}" name dir file relative
+    local install="$1" staged="${2:-0}" name dir file relative source
+    if [[ "$staged" == 1 ]]; then source="$install"; else
+        source="$install/skills"
+        installer_directory_path_safe "$source" || return 1
+        [[ -d "$source" && -z "$(find "$source" -mindepth 1 -maxdepth 1 ! -name work ! -name tooling ! -name shared -print -quit)" ]] || return 1
+    fi
+    for file in "$source/work/instructions/instructions.md" "$source/tooling/instructions/instructions.md" "$source/shared/bootstrap.md" "$install/bin/work" "$install/bin/skill"; do
+        [[ -f "$file" && ! -L "$file" ]] || return 1
+    done
     for name in work tooling shared; do
         if [[ "$staged" == 1 ]]; then dir="$install/$name"; else dir="$install/skills/$name"; fi
         [[ -e "$dir" || -L "$dir" ]] || continue
@@ -87,9 +110,25 @@ installer_actual_manifest() {
             if [[ "$staged" == 1 ]]; then relative="skills/$name/${file#"$dir"/}"
             else relative="${file#"$install"/}"; fi
             installer_relative_valid "$relative" || return 1
-            printf '%s  %s\n' "$(installer_sha256 "$file")" "$relative"
+            [[ "$relative" != skills/*/SKILL.md ]] || return 1
+            local digest
+            digest="$(installer_sha256 "$file")" || return 1
+            printf '%s  %s\n' "$digest" "$relative"
         done < <(find "$dir" -type f -print0)
         [[ -z "$(find "$dir" ! -type f ! -type d -print -quit)" ]] || return 1
+    done
+    for name in work tooling; do
+        if [[ "$staged" == 1 ]]; then file="$install/host-$name"
+        else
+            dir="$installer_host_skills_dir/$name"
+            installer_directory_path_safe "$dir" && [[ -d "$dir" ]] || return 1
+            file="$dir/SKILL.md"
+            [[ -z "$(find "$dir" -mindepth 1 ! -path "$file" -print -quit)" ]] || return 1
+        fi
+        [[ -f "$file" && ! -L "$file" ]] || return 1
+        local digest
+        digest="$(installer_sha256 "$file")" || return 1
+        printf '%s  host-skills/%s/SKILL.md\n' "$digest" "$name"
     done
     dir="$install/bin"
     if [[ -e "$dir" || -L "$dir" ]]; then
@@ -98,7 +137,9 @@ installer_actual_manifest() {
             [[ -f "$file" && ! -L "$file" ]] || return 1
             relative="${file#"$install"/}"
             installer_relative_valid "$relative" || return 1
-            printf '%s  %s\n' "$(installer_sha256 "$file")" "$relative"
+            local digest
+            digest="$(installer_sha256 "$file")" || return 1
+            printf '%s  %s\n' "$digest" "$relative"
         done < <(find "$dir" -type f -print0)
         [[ -z "$(find "$dir" ! -type f ! -type d -print -quit)" ]] || return 1
     fi

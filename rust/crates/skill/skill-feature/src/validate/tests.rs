@@ -9,7 +9,6 @@ fn valid() -> Memory {
     );
     store.shared("bootstrap/source-failure.md", &module());
     store.skill("work");
-    store.put("work", "SKILL.md", "entry");
     store.put(
         "work",
         "instructions/instructions.md",

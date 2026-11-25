@@ -56,14 +56,6 @@ installer_sources_safe() {
         { installer_fail 'Shared source is missing or unsafe'; return 1; }
 }
 
-# Host discovery links are special: only the two known entry points may be inspected.
-installer_host_link_matches() {
-    local name="$1" link target
-    link="$installer_host_skills_dir/$name"
-    target="$installer_install_dir/skills/$name"
-    [[ -L "$link" && "$(readlink "$link")" == "$target" && -d "$link" && "$link" -ef "$target" ]]
-}
-
 # One root owns all managed files; Host Skills may contain arbitrary unrelated Skills.
 installer_inspect_targets() {
     local install="$1" name entry
@@ -76,10 +68,6 @@ installer_inspect_targets() {
             { installer_target_reason='install state belongs to another Host or installation directory'; return; }
         installer_manifest_matches "$install" "${installer_state_files[@]}" ||
             { installer_target_reason='installed content differs from the recorded installation'; return; }
-        for name in work tooling; do
-            installer_host_link_matches "$name" ||
-                { installer_target_reason="missing or invalid Host discovery link: $name"; return; }
-        done
         installer_target_kind=managed
         return
     fi

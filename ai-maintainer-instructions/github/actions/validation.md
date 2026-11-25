@@ -35,4 +35,4 @@ metadata:
 3. 驗證失敗時讀取實際 Job Log，修正後重新觸發；僅依受驗 Commit SHA 的可追溯證據判斷完成。失敗、取消、跳過的必要 Job 或缺少證據不得視為通過。
 4. Branch Validation 不取代 PR 合併前驗證；無法觸發 Workflow 時須回報限制，不自行改用臨時 Push Workflow。新 workflow_dispatch 入口須先存在於預設分支；正式入口已由 PR #135 部署後，開發分支應在建立 PR 前執行正式驗證。
 5. 沿用既有報告、Artifact 命名、保存期限及彙整方式；驗證 Rust、已安裝 CLI、Package 及 Checksum 等證據與受驗 SHA 一致。不得為 Branch 另造報告格式或放寬 PR／Release 驗收。
-6. 兩平台的 Package Workflow 採相同驗收順序：原生回歸與建置、套件及 Downloader 驗證、代表性 Package 權限 Smoke Test、一般完整 Release E2E、報告及 Artifact。權限 Smoke Test 共用 Codex ZIP、首次／重新安裝、Global Instructions、探索連結、Install State、CLI 驗證；Windows 臨時 Standard User 與實際 Profile、Developer Mode 關閉，macOS 既有非管理員 UID 與臨時 Home。管理員僅準備、切換身分、監督及清理，不使用 Restricted Token 或模擬權限替代。不複製完整原始碼、Rust 建置環境或重跑三入口／雙 Host E2E；一般 CI 保留既有完整功能驗收、跨磁碟、交易復原、安裝鎖回歸及 Release E2E 網路隔離。安裝鎖僅驗證同使用者互斥、正常／異常退出後重新取得及 SID／UID 輕量識別；不新增跨使用者隔離或目標鎖測試。
+6. 兩平台的 Package Workflow 採相同驗收順序：原生回歸與建置、套件及 Downloader 驗證、一般完整 Release E2E、報告及 Artifact。保留跨磁碟、交易復原、安裝鎖及 Release E2E 網路隔離。已安裝 Host 模擬必須在非安裝 CWD 使用實體 SKILL.md 注入的路徑，不以預傳 Runtime 路徑替代入口；不要求真實 Host 或非管理員專項測試。安裝鎖僅驗證同使用者互斥、正常／異常退出後重新取得及 SID／UID 輕量識別；不新增跨使用者隔離或目標鎖測試。

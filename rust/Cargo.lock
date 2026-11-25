@@ -10,7 +10,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "architecture-guard"
-version = "3.1.0"
+version = "3.1.1"
 
 [[package]]
 name = "block-buffer"
@@ -54,7 +54,7 @@ checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "contract-core"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "clap",
  "serde",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "skill-cli"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "clap",
  "contract-core",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "skill-feature"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "skill-model",
  "skill-operations",
@@ -253,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "skill-flow"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "serde_json",
  "skill-feature",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "skill-infrastructure"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "skill-feature",
  "skill-model",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "skill-model"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "contract-core",
  "serde",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "skill-operations"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "serde_yaml_ng",
  "skill-model",
@@ -322,7 +322,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "work-cli"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "clap",
  "contract-core",
@@ -335,7 +335,7 @@ dependencies = [
 
 [[package]]
 name = "work-feature"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "work-model",
  "work-operations",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "work-flow"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "work-feature",
  "work-model",
@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "work-infrastructure"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "serde",
  "sha2",
@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "work-model"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "contract-core",
  "serde",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "work-operations"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "serde",
  "serde_json",

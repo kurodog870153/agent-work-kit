@@ -65,7 +65,6 @@ fn node(name: &str) -> String {
 fn install() -> Dir {
     let dir = Dir::new("install");
     dir.put("install/shared/bootstrap.md", "- [Required] 解析入口。\n");
-    dir.put("install/work/SKILL.md", "entry");
     dir.put("install/work/instructions/instructions.md", &node("根"));
     dir.put(
         "install/work/instructions/task/instructions.md",

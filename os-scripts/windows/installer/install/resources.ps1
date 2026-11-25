@@ -8,12 +8,41 @@ function Get-InstallerReleaseField {
     return $value.Value
 }
 
+# Generate the physical entry from the existing source template.
+function Write-InstallerSkillEntry {
+    param([string] $Root, [string] $Name, [string] $Destination)
+    $paths = @{
+        SHARED_BOOTSTRAP = (Join-Path $script:InstallerSkillsDir 'shared/bootstrap.md')
+        SKILL_ROOT = (Join-Path $script:InstallerSkillsDir "$Name/instructions/instructions.md")
+        SKILL_CLI = (Join-Path $script:InstallerCliDir 'bin/skill.exe')
+        SKILL_INSTALL = $script:InstallerSkillsDir
+        INSTALL_STATE = (Join-Path $script:InstallerInstallDir 'install-state.json')
+    }
+    if ($Name -ceq 'work') { $paths.WORK_CLI = Join-Path $script:InstallerCliDir 'bin/work.exe' }
+    $template = [IO.File]::ReadAllText((Join-Path $Root "skills/$Name/SKILL.md"))
+    $matches = [regex]::Matches($template, '\{\{([A-Z_]+)\}\}')
+    if ($matches.Count -ne $paths.Count) { throw "invalid Skill entry template: $Name" }
+    foreach ($key in $paths.Keys) {
+        if (@($matches | Where-Object { $_.Groups[1].Value -ceq $key }).Count -ne 1) { throw "missing or duplicate Skill path: $key" }
+        if (-not (Test-InstallerAbsolutePath $paths[$key])) { throw "Skill path is not absolute: $key" }
+    }
+    $entry = [regex]::Replace($template, '\{\{([A-Z_]+)\}\}', [Text.RegularExpressions.MatchEvaluator] {
+        param($match)
+        ConvertTo-Json -InputObject ([string] $paths[$match.Groups[1].Value]) -Compress
+    })
+    [IO.File]::WriteAllText($Destination, $entry, [Text.UTF8Encoding]::new($false))
+}
+
 # Copies the verified sources into the transaction. Shared is copied once and used by both Skills.
 function Copy-InstallerPayload {
     param([string] $Root, [string] $WorkBinary, [string] $SkillBinary, [string] $GlobalSource, [string] $GlobalAction)
     $staged = Join-Path $script:InstallerTx 'staged'
     foreach ($name in 'work', 'tooling', 'shared') {
         Copy-Item -LiteralPath (Join-Path $Root "skills/$name") -Destination (Join-Path $staged $name) -Recurse -ErrorAction Stop
+    }
+    foreach ($name in 'work', 'tooling') {
+        Write-InstallerSkillEntry -Root $Root -Name $name -Destination (Join-Path $staged "host-$name")
+        Remove-Item -LiteralPath (Join-Path $staged "$name/SKILL.md") -ErrorAction Stop
     }
     New-Item -ItemType Directory -Path (Join-Path $staged 'bin') -ErrorAction Stop | Out-Null
     Copy-Item -LiteralPath $WorkBinary -Destination (Join-Path $staged 'bin/work.exe') -ErrorAction Stop
@@ -26,7 +55,7 @@ function Get-InstallerNewManifest {
     param([string] $GlobalDir, [string] $GlobalTarget, [string] $GlobalSourceSha)
     $staged = Join-Path $script:InstallerTx 'staged'
     $entries = @(Get-InstallerActualManifest -InstallDir $staged -Staged)
-    if ($entries.Count -eq 0) { throw 'no installation resources were prepared' }
+    if ($entries.Count -eq 0 -or $null -eq $entries[0]) { throw 'no installation resources were prepared' }
     if (-not [string]::IsNullOrEmpty($GlobalDir)) { $entries += "$GlobalSourceSha  global/$([IO.Path]::GetFileName($GlobalTarget))" }
     return $entries
 }
@@ -35,9 +64,6 @@ function Get-InstallerNewManifest {
 function Test-InstallerInstallation {
     param([string[]] $Entries, [string] $GlobalDir, [string] $GlobalTarget, [string] $GlobalSourceSha)
     if (-not (Test-InstallerManifestMatches -InstallDir $script:InstallerInstallDir -Entries $Entries)) { return $false }
-    foreach ($name in 'work', 'tooling') {
-        if (-not (Test-InstallerHostLink -Name $name -InstallDir $script:InstallerInstallDir -HostSkillsDir $script:InstallerHostSkillsDir)) { return $false }
-    }
     foreach ($name in 'work', 'skill') {
         & (Join-Path $script:InstallerCliDir "bin/$name.exe") --help *> $null
         if ($LASTEXITCODE -ne 0) { return $false }

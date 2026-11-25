@@ -5,7 +5,7 @@ use skill_model::{SkillError, SourceId, SourceRef, SourceRoot};
 /// A validated, decoded source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceContent {
-    /// Real-path identity; aliases of one file share it.
+    /// Normalized physical source identity; repeated selections of the same source share it.
     pub id: SourceId,
     pub text: String,
 }

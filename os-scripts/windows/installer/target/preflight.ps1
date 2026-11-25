@@ -1,11 +1,18 @@
 Set-StrictMode -Version Latest
 
 # Read-only checks of the environment, sources and installation targets.
+# Windows PowerShell 5.1 uses .NET Framework, where IsPathFullyQualified is absent.
+function Test-InstallerAbsolutePath {
+    param([string] $Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    return $Path -match '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+(?:[\\/]|$))'
+}
+
 function Test-InstallerDirectoryPathSafe {
     param([string] $Path)
     $probe = $Path
     while (-not [string]::IsNullOrEmpty($probe)) {
-        if (Test-Path -LiteralPath $probe) {
+        if (Test-InstallerExists $probe) {
             $item = Get-Item -LiteralPath $probe -Force
             if (-not $item.PSIsContainer -or (Test-InstallerReparse $item)) { return $false }
         }
@@ -48,20 +55,6 @@ function Assert-InstallerSources {
         (Test-Path -LiteralPath (Join-Path $shared 'SKILL.md'))) { throw 'Shared source is missing or unsafe' }
 }
 
-# Validate the exact absolute target and Directory Junction type; SymbolicLink is never accepted.
-function Test-InstallerHostLink {
-    param([string] $Name, [string] $InstallDir, [string] $HostSkillsDir)
-    $link = Join-Path $HostSkillsDir $Name
-    $expected = Join-Path $InstallDir "skills/$Name"
-    if (-not (Test-InstallerExists $link)) { return $false }
-    $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item -or -not (Test-InstallerReparse $item) -or $item.LinkType -cne 'Junction') { return $false }
-    $targets = @($item.Target)
-    if ($targets.Count -ne 1 -or -not [IO.Path]::IsPathRooted([string] $targets[0]) -or
-        -not (Test-InstallerPathEqual ([string] $targets[0]) $expected)) { return $false }
-    return (Test-Path -LiteralPath $link -PathType Container)
-}
-
 function Get-InstallerTargetInspection {
     param([string] $InstallDir, [string] $HostSkillsDir, [string] $InstallerHost)
     $statePath = Join-Path $InstallDir 'install-state.json'
@@ -74,11 +67,6 @@ function Get-InstallerTargetInspection {
         if (-not (Test-InstallerManifestMatches -InstallDir $InstallDir -Entries @($state.files))) {
             return @{ Kind = 'unsafe'; Reason = 'installed content differs from the recorded installation'; State = $null }
         }
-        foreach ($name in 'work', 'tooling') {
-            if (-not (Test-InstallerHostLink -Name $name -InstallDir $InstallDir -HostSkillsDir $HostSkillsDir)) {
-                return @{ Kind = 'unsafe'; Reason = "missing or invalid Host discovery link: $name"; State = $null }
-            }
-        }
         return @{ Kind = 'managed'; Reason = ''; State = $state }
     }
     if (Test-Path -LiteralPath $InstallDir -PathType Container) {
@@ -87,9 +75,9 @@ function Get-InstallerTargetInspection {
         }
     }
     foreach ($name in 'work', 'tooling') {
-        $link = Join-Path $HostSkillsDir $name
-        if (Test-InstallerExists $link) {
-            return @{ Kind = 'unsafe'; Reason = "Host discovery entry is occupied: $link"; State = $null }
+        $entry = Join-Path $HostSkillsDir $name
+        if (Test-InstallerExists $entry) {
+            return @{ Kind = 'unsafe'; Reason = "Host discovery entry is occupied: $entry"; State = $null }
         }
     }
     return @{ Kind = 'new'; Reason = ''; State = $null }

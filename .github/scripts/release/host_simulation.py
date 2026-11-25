@@ -6,6 +6,9 @@ recovery. All requests are generated here; no fixture files are read.
 """
 
 import argparse
+import hashlib
+import os
+import stat
 import json
 import shutil
 import subprocess
@@ -19,11 +22,12 @@ TIMEOUT = 60
 class Cli:
     """One CLI binary; every call is a new process and returns (exit_code, parsed JSON)."""
 
-    def __init__(self, binary):
+    def __init__(self, binary, cwd=None):
         self.binary = Path(binary).resolve()
+        self.cwd = cwd
 
     def raw(self, *args, stdin=None):
-        return subprocess.run([str(self.binary), *map(str, args)], capture_output=True, timeout=TIMEOUT,
+        return subprocess.run([str(self.binary), *map(str, args)], capture_output=True, timeout=TIMEOUT, cwd=self.cwd,
                               input=stdin.encode("utf-8") if stdin is not None else None, check=False)
 
     def call(self, *args, stdin=None):
@@ -275,21 +279,97 @@ def correction_preview(work, root, evidence):
     evidence["host_correction_preview"] = True
 
 
-def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
+def physical(path, directory=False):
+    """Check physical files/directories without following a reparse point."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return (not stat.S_ISLNK(info.st_mode)
+            and not (getattr(info, "st_file_attributes", 0) & 0x400)
+            and (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)))
+
+
+def read_installed_entry(discovery, name):
+    """Read actual entry paths; no alternate CLI or install root is supplied."""
+    discovery = Path(discovery)
+    directory = discovery / name
+    entry = directory / "SKILL.md"
+    check(physical(directory, directory=True) and physical(entry), f"invalid physical entry: {entry}")
+    check({p.name for p in directory.iterdir()} == {"SKILL.md"}, f"unexpected entry contents: {directory}")
+    text = entry.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    check(lines and lines[0] == "---" and f"name: {name}" in lines[1:4], f"invalid entry Frontmatter: {entry}")
+    labels = {"Shared Bootstrap": "bootstrap", "Skill Root": "root", "Skill CLI": "skill",
+              "Skill CLI --install": "install", "Installation State": "state"}
+    if name == "work":
+        labels["Work CLI"] = "work"
+    paths = {}
+    for line in lines:
+        if not line.startswith("- "):
+            continue
+        label, separator, encoded = line[2:].partition(": ")
+        if label not in labels:
+            check(label != "Work CLI", "Tooling entry must not depend on Work CLI")
+            continue
+        key = labels[label]
+        check(separator and key not in paths, f"invalid or duplicate entry path: {label}")
+        value = json.loads(encoded)
+        check(isinstance(value, str), f"entry path is not a string: {label}")
+        path = Path(value)
+        check(path.is_absolute(), f"entry path is not absolute: {label}")
+        paths[key] = path
+    check(set(paths) == set(labels.values()), f"missing entry paths: {entry}")
+    check(physical(paths["state"]), "missing or unsafe State")
+    state = json.loads(paths["state"].read_text(encoding="utf-8"))
+    base = Path(state["install_dir"])
+    expected_host = {".agents": "codex", ".claude": "claude"}.get(discovery.parent.name)
+    check(expected_host is not None and state["host"] == expected_host and state["status"] == "installed",
+          "invalid installation State or Host")
+    suffix = ".exe" if sys.platform == "win32" else ""
+    expected = {"bootstrap": base / "skills/shared/bootstrap.md",
+                "root": base / "skills" / name / "instructions/instructions.md",
+                "skill": base / "bin" / f"skill{suffix}",
+                "install": base / "skills", "state": base / "install-state.json"}
+    if name == "work":
+        expected["work"] = base / "bin" / f"work{suffix}"
+    check(paths == expected and physical(base, directory=True), "entry paths do not belong to the same installation")
+    check(not os.path.lexists(base / ".agent-work-kit-txn"), "installation has a pending transaction")
+    for key, path in paths.items():
+        check(physical(path, directory=key == "install"), f"missing or unsafe {key}: {path}")
+        for parent in path.parents:
+            if parent == base:
+                break
+            check(physical(parent, directory=True), f"unsafe entry path component: {parent}")
+    digest = hashlib.sha256(entry.read_bytes()).hexdigest()
+    check(state["files"].count(f"{digest}  host-skills/{name}/SKILL.md") == 1, "entry not in State Manifest")
+    check(paths["bootstrap"].read_text(encoding="utf-8").strip(), "empty Bootstrap")
+    check(paths["root"].read_text(encoding="utf-8").strip(), "empty Skill Root")
+    return paths
+
+
+def run(work_binary=None, skill_binary=None, skills_dir=None, host_skills_dir=None):
     evidence = {}
-    work, skill = Cli(work_binary), Cli(skill_binary)
-    skills_dir = Path(skills_dir).resolve()
-    if host_skills_dir is not None:
-        discovery = Path(host_skills_dir)
-        for name in ("work", "tooling"):
-            link = discovery / name
-            if not (link.is_junction() if sys.platform == "win32" else link.is_symlink()) or not link.readlink().is_absolute() or link.resolve() != (skills_dir / name):
-                raise AssertionError(f"invalid Host discovery link: {link}")
-            if not (link / "SKILL.md").is_file():
-                raise AssertionError(f"Host discovery did not expose {name}")
-        evidence["host_discovery_links"] = ["work", "tooling"]
     with tempfile.TemporaryDirectory(prefix="host-simulation-") as directory:
         scratch = Path(directory)
+        if host_skills_dir is not None:
+            check(work_binary is None and skill_binary is None and skills_dir is None,
+                  "installed Host simulation must use only entry paths")
+            work_paths = read_installed_entry(host_skills_dir, "work")
+            tooling_paths = read_installed_entry(host_skills_dir, "tooling")
+            check(work_paths["state"] == tooling_paths["state"], "mixed installation entries")
+            work_binary, skill_binary, skills_dir = work_paths["work"], work_paths["skill"], work_paths["install"]
+            tooling = Cli(tooling_paths["skill"], scratch)
+            tooling.ok("discover", "--install", tooling_paths["install"], "--skill", "tooling")
+            tooling.ok("resolve", "--install", tooling_paths["install"], "--request", "-",
+                       stdin=request(schema="skill-resolve-request", selections=[{"skill": "tooling", "nodes": [""]}]))
+            evidence["physical_host_entries"] = ["work", "tooling"]
+            evidence["entry_paths_from_non_install_cwd"] = True
+        else:
+            check(all(value is not None for value in (work_binary, skill_binary, skills_dir)),
+                  "source simulation requires explicit binaries and source root")
+        work, skill = Cli(work_binary, scratch), Cli(skill_binary, scratch)
+        skills_dir = Path(skills_dir).resolve()
         cli_contract_smoke(work, skill, evidence)
         skill.ok("validate", "--install", skills_dir)
         on_demand_loading(skill, skills_dir, scratch, evidence)
@@ -302,9 +382,9 @@ def run(work_binary, skill_binary, skills_dir, host_skills_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--work", required=True, type=Path)
-    parser.add_argument("--skill", required=True, type=Path)
-    parser.add_argument("--install", required=True, type=Path, help="managed root holding work, tooling and shared")
+    parser.add_argument("--work", type=Path)
+    parser.add_argument("--skill", type=Path)
+    parser.add_argument("--install", type=Path, help="managed root holding work, tooling and shared")
     parser.add_argument("--host-skills-dir", type=Path, help="fixed Host discovery directory")
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()

@@ -38,7 +38,7 @@ Work 正式狀態與歷史查詢以已保存的正式紀錄為唯一權威。已
 
 Skill 使用統一 Root／Node／Reference 階層模型及文件格式契約，每個採用指令階層的 Skill 只有直接位於其 `instructions/` 的單一 Root；Work 的 Task、Execute 為子節點，不保留 Work 的 general 特殊 Root、模式專屬 Root 或 Workflow 專屬載入機制。普通 Runtime 探索只讀直接子節點 Metadata，不全樹掃描或建立持久化 Metadata Index。按選取集合解析完整祖先、適用 Reference 與 Module，驗證來源、去重與增量載入；集合異動須重新驗證完整候選，不強制 SHA 或 Fingerprint。
 
-Skill 提供 Shared Bootstrap／選用 Module 的通用來源驗證與載入能力。Shared 及每個啟用的 Skill 各自具備明確合法來源邊界，Shared 不屬於 Skill 指令樹；僅接受同一有效安裝的 Shared 資源與指定的 Skill 來源，Module／Reference 不得任意跨界或經連結逃逸，其他 Skill 按 Host 啟用分別處理。同一有效 Shared 來源可跨 Skill 去重及增量重用，不建立跨 Skill 的繼承、持久化上下文或正式選取權威。Host 負責初始入口解析、適用性、語意衝突與上下文切換；Rust 提供確定性事實及驗證，不接管 Host 的語意決策。共用文件契約及 Runtime 使用規則遵循 [Skill 架構](../skills/architecture.md)。
+Skill 提供 Shared Bootstrap／選用 Module 的通用來源驗證與載入能力。Shared 及每個啟用的 Skill 各自具備明確合法來源邊界，Shared 不屬於 Skill 指令樹；僅接受同一有效安裝的 Shared 資源與指定的 Skill 來源，受管理來源均須為實體檔案與目錄，拒絕包含邊界內 Alias 的連結；Module／Reference 不得跨界，其他 Skill 按 Host 啟用分別處理。同一有效 Shared 來源可跨 Skill 去重及增量重用，不建立跨 Skill 的繼承、持久化上下文或正式選取權威。Host 負責初始入口解析、適用性、語意衝突與上下文切換；Rust 提供確定性事實及驗證，不接管 Host 的語意決策。共用文件契約及 Runtime 使用規則遵循 [Skill 架構](../skills/architecture.md)。
 
 Work CLI 與 Skill CLI 作為共用 Runtime 資源安裝，與 Work、Tooling Markdown Skill 及 Shared 共用 Markdown 資源分離，不由 Skill 專屬目錄持有 binary；部署責任遵循 [Installer 架構](../release/installer-architecture.md)。
 

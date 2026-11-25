@@ -81,8 +81,6 @@ jobs:
             zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
             python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
           done
-      - name: Verify macOS package permission smoke
-        run: bash .github/scripts/release/mac/verify_non_admin.sh
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
       - name: Upload macOS Host simulation evidence
@@ -195,8 +193,6 @@ jobs:
             python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-      - name: Verify Windows package permission smoke
-        run: pwsh -NoProfile -File .github/scripts/release/windows/verify_non_admin.ps1
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
       - name: Upload Windows Host simulation evidence
