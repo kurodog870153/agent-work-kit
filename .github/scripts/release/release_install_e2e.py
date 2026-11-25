@@ -414,17 +414,27 @@ def run_installed_host_simulation(layout, report, zip_path, info, platform):
     scenario = Path(__file__).resolve().with_name("host_simulation.py")
     report.mkdir(parents=True, exist_ok=True)
     evidence = report / f"{layout.host}-{platform}.json"
-    result = subprocess.run([sys.executable, "-B", str(scenario), "--host-skills-dir", str(layout.discovery), "--evidence", str(evidence)],
-                            capture_output=True, text=True, timeout=300)
-    if result.returncode:
-        raise AssertionError(f"installed Host simulation failed: {result.stdout}\n{result.stderr}")
-    text = (f"# Installed Rust CLI smoke evidence\n\n"
-            f"ZIP: `{zip_path.name}`\n\nZIP SHA-256: `{hashlib.sha256(zip_path.read_bytes()).hexdigest()}`\n\n"
-            f"Release version: `{info['version']}`\n\nHost: `{layout.host}`; platform: `{platform}`\n\n"
-            f"Installed Work CLI: `{layout.work}`\n\nInstalled Skill CLI: `{layout.skill}`\n\n"
-            f"## Host simulation\n\n```json\n{evidence.read_text(encoding='utf-8').rstrip()}\n```\n")
-    (report / f"{layout.host}-{platform}.md").write_text(text, encoding="utf-8")
-    evidence.unlink()
+    raw_evidence = report / f"{layout.host}-{platform}.tmp"
+    record = {"host": layout.host, "platform": platform, "version": info["version"],
+              "zip": zip_path.name, "zip_sha256": hashlib.sha256(zip_path.read_bytes()).hexdigest(),
+              "installed_work": str(layout.work), "installed_skill": str(layout.skill),
+              "commit": os.environ.get("GITHUB_SHA"), "run_id": os.environ.get("GITHUB_RUN_ID"),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"), "status": "failed"}
+    started = time.monotonic()
+    try:
+        result = subprocess.run([sys.executable, "-B", str(scenario), "--host-skills-dir", str(layout.discovery),
+                                 "--evidence", str(raw_evidence)], capture_output=True, text=True, timeout=300)
+        if result.returncode:
+            raise AssertionError(f"installed Host simulation failed: {result.stdout}\n{result.stderr}")
+        record["simulation"] = json.loads(raw_evidence.read_text(encoding="utf-8"))
+        record["status"] = "passed"
+    except subprocess.TimeoutExpired:
+        record["status"] = "timed_out"
+        raise
+    finally:
+        record["duration_seconds"] = round(time.monotonic() - started, 3)
+        evidence.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        raw_evidence.unlink(missing_ok=True)
 
 
 def exercise_cli_entries(entries, root, run_installer):
@@ -453,7 +463,7 @@ def exercise_cli_entries(entries, root, run_installer):
             raise AssertionError("read-only CLI actions wrote installation data")
 
 
-def exercise_package(package, root, platform, source_install=False, smoke_report=None, zip_path=None):
+def exercise_package(package, root, platform, source_install=False, host_evidence=None, zip_path=None):
     info = json.loads((package / "release-info.json").read_text(encoding="utf-8"))
     host = info["host"]
     if host not in ("codex", "claude"):
@@ -598,9 +608,9 @@ def exercise_package(package, root, platform, source_install=False, smoke_report
     if failure.snapshot() != before:
         raise AssertionError("recovering an interrupted installation changed the resources")
 
-    if smoke_report is not None:
+    if host_evidence is not None:
         log_phase("Host simulation on the installed CLIs")
-        run_installed_host_simulation(layout, smoke_report, zip_path, info, platform)
+        run_installed_host_simulation(layout, host_evidence, zip_path, info, platform)
 
     if source_install:
         log_phase("Source installation")
@@ -656,7 +666,7 @@ def main():
     parser.add_argument("--platform", required=True, choices=("macos-arm64", "windows-x64-msvc"))
     parser.add_argument("--source-install", action="store_true", help="also build and install through Source")
     parser.add_argument("--peer-zip", type=Path, help="exercise both Host ZIPs in one home")
-    parser.add_argument("--cli-smoke-report", type=Path,
+    parser.add_argument("--installed-host-evidence", type=Path,
                         help="save the Host simulation evidence produced against the installed CLIs")
     args = parser.parse_args()
     if args.peer_zip and args.source_install:
@@ -694,7 +704,7 @@ def main():
             exercise_coexistence(packages, root, args.platform)
         else:
             exercise_package(package, root, args.platform, args.source_install,
-                             args.cli_smoke_report, args.zip)
+                             args.installed_host_evidence, args.zip)
     print(f"Final ZIP E2E passed: {args.platform}")
     return 0
 

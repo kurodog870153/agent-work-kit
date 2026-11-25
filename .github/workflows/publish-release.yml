@@ -31,6 +31,8 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
+      macos-rust-attempt: ${{ needs.rust-ci.outputs.macos-rust-attempt }}
+      windows-rust-attempt: ${{ needs.rust-ci.outputs.windows-rust-attempt }}
     steps:
       - name: Check out source for release content
         uses: actions/checkout@v7
@@ -77,6 +79,8 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       release-content-artifact-attempt: ${{ needs.prepare-release-content.outputs.artifact-attempt }}
+      macos-rust-attempt: ${{ needs.prepare-release-content.outputs.macos-rust-attempt }}
+      windows-rust-attempt: ${{ needs.prepare-release-content.outputs.windows-rust-attempt }}
     steps:
       - name: Check out source for version tag
         uses: actions/checkout@v7
@@ -112,6 +116,8 @@ jobs:
       tag: ${{ needs.create-release-tag.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       release-content-artifact-attempt: ${{ needs.create-release-tag.outputs.release-content-artifact-attempt }}
+      macos-rust-attempt: ${{ needs.create-release-tag.outputs.macos-rust-attempt }}
+      windows-rust-attempt: ${{ needs.create-release-tag.outputs.windows-rust-attempt }}
     steps:
       - name: Check out source for tag validation
         uses: actions/checkout@v7
@@ -146,12 +152,14 @@ jobs:
       release: true
       tag: ${{ needs.validate-release-publication.outputs.tag }}
       release-content-artifact-attempt: ${{ needs.validate-release-publication.outputs.release-content-artifact-attempt }}
+      macos-rust-attempt: ${{ needs.validate-release-publication.outputs.macos-rust-attempt }}
+      windows-rust-attempt: ${{ needs.validate-release-publication.outputs.windows-rust-attempt }}
     permissions:
       contents: read
       actions: read
 
-  rust-validation-report:
-    name: rust validation report
+  rust-validation-evidence:
+    name: rust validation evidence
     needs: package-ci
     runs-on: ubuntu-latest
     outputs:
@@ -164,20 +172,21 @@ jobs:
       contents: read
       actions: read
     steps:
-      - name: Check out source for rust validation report
+      - name: Check out source for rust validation evidence
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Validate evidence and upload report
-        uses: ./.github/actions/rust-validation-report
+      - name: Validate Rust and installed Host evidence
+        uses: ./.github/actions/rust-validation-evidence
         with:
-          release: 'true'
+          macos-rust-attempt: ${{ needs.package-ci.outputs.macos-rust-attempt }}
+          windows-rust-attempt: ${{ needs.package-ci.outputs.windows-rust-attempt }}
           macos-artifact-attempt: ${{ needs.package-ci.outputs.macos-artifact-attempt }}
           windows-artifact-attempt: ${{ needs.package-ci.outputs.windows-artifact-attempt }}
 
   verify-and-attest-release-assets:
     name: verify and attest release assets
-    needs: rust-validation-report
+    needs: rust-validation-evidence
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -186,9 +195,9 @@ jobs:
       attestations: write
       artifact-metadata: write
     outputs:
-      tag: ${{ needs.rust-validation-report.outputs.tag }}
-      version: ${{ needs.rust-validation-report.outputs.version }}
-      release-content-artifact-attempt: ${{ needs.rust-validation-report.outputs.release-content-artifact-attempt }}
+      tag: ${{ needs.rust-validation-evidence.outputs.tag }}
+      version: ${{ needs.rust-validation-evidence.outputs.version }}
+      release-content-artifact-attempt: ${{ needs.rust-validation-evidence.outputs.release-content-artifact-attempt }}
       manifest_sha256: ${{ steps.digest.outputs.manifest_sha256 }}
       artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     steps:
@@ -199,12 +208,12 @@ jobs:
       - name: Download macOS release ZIPs
         uses: actions/download-artifact@v8
         with:
-          name: release-macos-arm64-attempt-${{ needs.rust-validation-report.outputs.macos-artifact-attempt }}
+          name: release-macos-arm64-attempt-${{ needs.rust-validation-evidence.outputs.macos-artifact-attempt }}
           path: dist
       - name: Download Windows release ZIPs
         uses: actions/download-artifact@v8
         with:
-          name: release-windows-x64-msvc-attempt-${{ needs.rust-validation-report.outputs.windows-artifact-attempt }}
+          name: release-windows-x64-msvc-attempt-${{ needs.rust-validation-evidence.outputs.windows-artifact-attempt }}
           path: dist
       - name: Check immutable releases setting
         env:
@@ -215,7 +224,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.rust-validation-report.outputs.tag }}
+          TAG: ${{ needs.rust-validation-evidence.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: python3 .github/scripts/release/release_publication_checks.py identity --repository "$REPOSITORY" --tag "$TAG" --expected-sha "$EXPECTED_SHA"
       - name: Verify ZIPs and create outer checksums
@@ -228,10 +237,10 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-codex-macos-arm64.zip
-            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-claude-macos-arm64.zip
-            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-codex-windows-x64-msvc.zip
-            dist/agent-work-kit-v${{ needs.rust-validation-report.outputs.version }}-claude-windows-x64-msvc.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-evidence.outputs.version }}-codex-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-evidence.outputs.version }}-claude-macos-arm64.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-evidence.outputs.version }}-codex-windows-x64-msvc.zip
+            dist/agent-work-kit-v${{ needs.rust-validation-evidence.outputs.version }}-claude-windows-x64-msvc.zip
             dist/install-agent-work-kit-from-github-release.command
             dist/install-agent-work-kit-from-github-release.bat
             dist/SHA256SUMS.txt
@@ -239,7 +248,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TAG: ${{ needs.rust-validation-report.outputs.tag }}
+          TAG: ${{ needs.rust-validation-evidence.outputs.tag }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           for asset in dist/*.zip dist/*.command dist/*.bat dist/SHA256SUMS.txt; do
@@ -352,6 +361,8 @@ jobs:
     name: verify published release
     if: always()
     needs: prepare-and-publish-release
+    outputs:
+      verification-artifact-key: ${{ needs.prepare-and-publish-release.outputs.tag || github.sha }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -400,3 +411,23 @@ jobs:
             release-verification.json
             release-checks.json
           if-no-files-found: error
+
+  generate-workflow-summary:
+    name: generate workflow summary
+    if: always()
+    needs: verify-published-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    continue-on-error: true
+    steps:
+      - name: Check out source for workflow summary
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Generate workflow summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 -B .github/scripts/ci/workflow_summary.py publish

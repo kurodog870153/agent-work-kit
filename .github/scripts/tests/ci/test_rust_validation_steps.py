@@ -44,7 +44,7 @@ class RustValidationTests(unittest.TestCase):
                 self.assertIn(f"target/release/work{suffix}", command)
                 self.assertIn(f"target/release/skill{suffix}", command)
                 self.assertIn("../skills", command)
-                self.assertIn(".ci-perf/host-simulation.json", command)
+                self.assertIn(".ci-results/binary-host-simulation.json", command)
 
     def test_platform_jobs_have_the_same_steps_and_doc_test_gate(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/rust-validation.yml").read_text(encoding="utf-8"))
@@ -62,7 +62,7 @@ class RustValidationTests(unittest.TestCase):
         for steps in (mac, windows):
             setup = next(step for step in steps if step.get("name") == "Set up Python for CI tests")
             self.assertEqual(setup["uses"], "./.github/actions/setup-rust-validation-python")
-            for name in ("Report Rust performance", "Enforce Rust test results"):
+            for name in ("Collect Rust test results", "Enforce Rust test results"):
                 step = next(step for step in steps if step.get("name") == name)
                 self.assertIn("--min-doc-tests 1", step["run"])
 

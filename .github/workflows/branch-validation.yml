@@ -40,34 +40,57 @@ jobs:
       contents: read
       actions: read
 
-  rust-validation-report:
-    name: rust validation report
+  rust-validation-evidence:
+    name: rust validation evidence
     needs: [rust-ci, package-ci]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     steps:
-      - name: Check out source for rust validation report
+      - name: Check out source for rust validation evidence
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Validate evidence and upload report
-        uses: ./.github/actions/rust-validation-report
+      - name: Validate Rust and installed Host evidence
+        uses: ./.github/actions/rust-validation-evidence
         with:
-          release: 'false'
+          macos-artifact-attempt: ${{ needs.package-ci.outputs.macos-artifact-attempt }}
+          windows-artifact-attempt: ${{ needs.package-ci.outputs.windows-artifact-attempt }}
+          macos-rust-attempt: ${{ needs.rust-ci.outputs.macos-rust-attempt }}
+          windows-rust-attempt: ${{ needs.rust-ci.outputs.windows-rust-attempt }}
 
   confirm-branch-validation:
     name: confirm branch validation
     if: always()
-    needs: rust-validation-report
+    needs: rust-validation-evidence
     runs-on: ubuntu-latest
     steps:
-      - name: Require Rust workspace report to pass
+      - name: Require Rust workspace evidence to pass
         env:
-          REPORT_VALIDATION: ${{ needs.rust-validation-report.result }}
+          EVIDENCE_VALIDATION: ${{ needs.rust-validation-evidence.result }}
         run: |
-          if [[ "$REPORT_VALIDATION" != success ]]; then
-            echo "Rust workspace report did not pass: $REPORT_VALIDATION"
+          if [[ "$EVIDENCE_VALIDATION" != success ]]; then
+            echo "Rust workspace evidence did not pass: $EVIDENCE_VALIDATION"
             exit 1
           fi
+
+  generate-workflow-summary:
+    name: generate workflow summary
+    if: always()
+    needs: confirm-branch-validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    continue-on-error: true
+    steps:
+      - name: Check out source for workflow summary
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Generate workflow summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 -B .github/scripts/ci/workflow_summary.py branch

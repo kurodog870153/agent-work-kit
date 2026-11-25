@@ -71,10 +71,10 @@ class BranchValidationTests(unittest.TestCase):
 
     def test_report_display_names(self):
         for data in (self.branch, self.pr, workflow("publish-release.yml")):
-            self.assertEqual("rust validation report",
-                             data["jobs"]["rust-validation-report"]["name"])
-        action = ROOT / ".github/actions/rust-validation-report/action.yml"
-        self.assertEqual("rust validation report",
+            self.assertEqual("rust validation evidence",
+                             data["jobs"]["rust-validation-evidence"]["name"])
+        action = ROOT / ".github/actions/rust-validation-evidence/action.yml"
+        self.assertEqual("rust validation evidence",
                          parse_yaml(action.read_text(encoding="utf-8"))["name"])
 
     def test_shared_checks_and_job_dependencies(self):
@@ -89,17 +89,22 @@ class BranchValidationTests(unittest.TestCase):
             self.assertEqual("preflight", jobs[name]["needs"])
         self.assertEqual("validate-release-preflight", pr_jobs["rust-ci"]["needs"])
         self.assertEqual("rust-ci", pr_jobs["package-ci"]["needs"])
-        self.assertEqual({"rust-ci", "package-ci"}, set(jobs["rust-validation-report"]["needs"]))
-        self.assertEqual(pr_jobs["rust-validation-report"]["steps"],
-                         jobs["rust-validation-report"]["steps"])
+        self.assertEqual({"rust-ci", "package-ci"}, set(jobs["rust-validation-evidence"]["needs"]))
+        self.assertEqual("package-ci", pr_jobs["rust-validation-evidence"]["needs"])
+        for platform in ("macos", "windows"):
+            key = f"{platform}-rust-attempt"
+            self.assertEqual(pr_jobs["package-ci"]["with"][key],
+                             f"${{{{ needs.rust-ci.outputs.{key} }}}}")
+            self.assertEqual(pr_jobs["rust-validation-evidence"]["steps"][-1]["with"][key],
+                             f"${{{{ needs.package-ci.outputs.{key} }}}}")
         confirm = jobs["confirm-branch-validation"]
         self.assertEqual("always()", confirm["if"])
-        self.assertEqual("rust-validation-report", confirm["needs"])
+        self.assertEqual("rust-validation-evidence", confirm["needs"])
         self.assertEqual(pr_jobs["confirm-release-validation"]["steps"], confirm["steps"])
         # The default success condition propagates upstream failure or skip to the report.
-        for name in ("rust-ci", "package-ci", "rust-validation-report"):
+        for name in ("rust-ci", "package-ci", "rust-validation-evidence"):
             self.assertEqual("success()", jobs[name].get("if", "success()"))
-        for name in ("preflight", "rust-ci", "package-ci", "rust-validation-report"):
+        for name in ("preflight", "rust-ci", "package-ci", "rust-validation-evidence"):
             self.assertFalse(jobs[name].get("continue-on-error", False))
         shared = ROOT / ".github/actions/validation-preflight/action.yml"
         steps = parse_yaml(shared.read_text(encoding="utf-8"))["runs"]["steps"]
@@ -111,6 +116,103 @@ class BranchValidationTests(unittest.TestCase):
         for forbidden in ("version_guard.py", "release_version_availability.py",
                           "release_content.py", "publish-release.yml", "secrets."):
             self.assertNotIn(forbidden, branch_text + commands)
+
+    def test_direct_dependency_topologies_and_forwarded_attempts(self):
+        release = workflow("publish-release.yml")
+        expected = {
+            "branch": {"preflight": [], "rust-ci": ["preflight"], "package-ci": ["preflight"],
+                       "rust-validation-evidence": ["rust-ci", "package-ci"],
+                       "confirm-branch-validation": ["rust-validation-evidence"],
+                       "generate-workflow-summary": ["confirm-branch-validation"]},
+            "pr": dict(zip(("validate-release-preflight", "rust-ci", "package-ci", "rust-validation-evidence",
+                            "confirm-release-validation", "generate-workflow-summary"),
+                           ([], ["validate-release-preflight"], ["rust-ci"], ["package-ci"],
+                            ["rust-validation-evidence"], ["confirm-release-validation"]))),
+        }
+        chain = ("rust-ci", "prepare-release-content", "create-release-tag", "validate-release-publication",
+                 "package-ci", "rust-validation-evidence", "verify-and-attest-release-assets",
+                 "prepare-and-publish-release", "verify-published-release", "generate-workflow-summary")
+        expected["publish"] = {name: [chain[i - 1]] if i else [] for i, name in enumerate(chain)}
+        for kind, data in (("branch", self.branch), ("pr", self.pr), ("publish", release)):
+            jobs = data["jobs"]
+            self.assertEqual(set(jobs), set(expected[kind]))
+            for name, job in jobs.items():
+                with self.subTest(kind=kind, job=name):
+                    needs = job.get("needs", [])
+                    needs = [needs] if isinstance(needs, str) else needs
+                    self.assertEqual(needs, expected[kind][name])
+                    references = re.findall(r"needs\.([a-z0-9-]+)\.", json.dumps(job))
+                    self.assertLessEqual(set(references), set(needs))
+            final = jobs["generate-workflow-summary"]
+            self.assertEqual(final["if"], "always()")
+            self.assertTrue(final["continue-on-error"])
+            self.assertEqual(final["permissions"], {"contents": "read", "actions": "read"})
+        package = workflow("build-and-validate-packages.yml")
+        call = triggers(package)["workflow_call"]
+        for platform in ("macos", "windows"):
+            key = f"{platform}-rust-attempt"
+            for producer, consumer in zip(chain, chain[1:4]):
+                self.assertEqual(release["jobs"][consumer]["outputs"][key],
+                                 f"${{{{ needs.{producer}.outputs.{key} }}}}")
+            self.assertEqual(release["jobs"]["package-ci"]["with"][key],
+                             f"${{{{ needs.validate-release-publication.outputs.{key} }}}}")
+            self.assertEqual(release["jobs"]["rust-validation-evidence"]["steps"][-1]["with"][key],
+                             f"${{{{ needs.package-ci.outputs.{key} }}}}")
+            self.assertEqual(call["inputs"][key]["type"], "string")
+            self.assertEqual(call["outputs"][key]["value"],
+                             f"${{{{ jobs.verify-windows-release-package-checksums.outputs.{key} }}}}")
+            self.assertEqual(package["jobs"]["verify-windows-release-package-checksums"]["outputs"][key],
+                             f"${{{{ inputs.{key} }}}}")
+        verification = release["jobs"]["verify-published-release"]
+        self.assertEqual(verification["outputs"]["verification-artifact-key"],
+                         "${{ needs.prepare-and-publish-release.outputs.tag || github.sha }}")
+
+    def test_installed_host_artifact_upload_uses_valid_job_status_context(self):
+        jobs = workflow("build-and-validate-packages.yml")["jobs"]
+        for platform in ("macos", "windows"):
+            with self.subTest(platform=platform):
+                steps = jobs[f"build-and-verify-{platform}-package"]["steps"]
+                uploads = [step for step in steps if step.get("with", {}).get("path")
+                           == "dist/installed-host-simulation/*.json"]
+                self.assertEqual(len(uploads), 1)
+                upload = uploads[0]
+                self.assertEqual(upload["if"], "always()")
+                self.assertEqual(upload["with"]["if-no-files-found"],
+                                 "${{ job.status == 'success' && 'error' || 'warn' }}")
+                self.assertFalse(upload.get("continue-on-error", False))
+
+    def test_package_artifacts_use_producer_attempt_for_all_workflows(self):
+        jobs = workflow("build-and-validate-packages.yml")["jobs"]
+        for os_name, platform in (("macos", "macos-arm64"), ("windows", "windows-x64-msvc")):
+            producer = f"build-and-verify-{os_name}-package"
+            consumer = f"verify-{os_name}-release-package-checksums"
+            names = [step.get("with", {}).get("name", "") for step in jobs[producer]["steps"]
+                     if step.get("uses", "").startswith("actions/upload-artifact@")]
+            verify = next(step["with"] for step in jobs[consumer]["steps"]
+                          if step.get("uses") == "./.github/actions/verify-release-package-checksums")
+            for prefix, key in (("", "package-artifact"), ("checksums-", "checksum-artifact")):
+                for release in ("release", "pr-release"):
+                    pattern = f"format('{prefix}{release}-{platform}-attempt-{{0}}', "
+                    self.assertTrue(any(pattern + "github.run_attempt)" in name for name in names))
+                    self.assertIn(pattern + f"needs.{producer}.outputs.artifact-attempt)", verify[key])
+            self.assertEqual(f"${{{{ needs.{producer}.outputs.artifact-attempt }}}}",
+                             jobs[consumer]["outputs"]["artifact-attempt"])
+
+    def test_credentials_summary_trusted_source_and_token_isolation(self):
+        data = workflow("pr-release-credentials-validation.yml")
+        self.assertEqual({}, data["permissions"])
+        job = data["jobs"]["validate-release-credentials"]
+        self.assertNotIn("permissions", job)
+        check, render = job["steps"]
+        self.assertEqual({"CREDENTIALS_RESULT": "${{ steps.credentials.outcome }}",
+                          "WORKFLOW_SHA": "${{ github.workflow_sha }}"}, render["env"])
+        self.assertEqual("always()", render["if"])
+        self.assertTrue(render["continue-on-error"])
+        self.assertIn("secrets.RELEASE_ADMIN_READ_TOKEN", check["env"]["RELEASE_ADMIN_TOKEN"])
+        self.assertIn("raw.githubusercontent.com/$GITHUB_REPOSITORY/$WORKFLOW_SHA/", render["run"])
+        self.assertNotIn("pull_request.head", render["run"])
+        self.assertNotIn("RELEASE_ADMIN", render["run"])
+        self.assertTrue(all("uses" not in step for step in job["steps"]))
 
     @unittest.skipUnless(shutil.which("bash"), "bash required for Workflow result gate")
     def test_gate_rejects_incomplete_report(self):

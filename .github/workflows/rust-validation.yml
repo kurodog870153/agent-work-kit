@@ -2,11 +2,18 @@ name: rust validation
 
 on:
   workflow_call:
+    outputs:
+      macos-rust-attempt:
+        value: ${{ jobs.validate-and-build-rust-macos.outputs.artifact-attempt }}
+      windows-rust-attempt:
+        value: ${{ jobs.validate-and-build-rust-windows.outputs.artifact-attempt }}
 
 jobs:
   validate-and-build-rust-macos:
     name: validate and build rust (macOS)
     runs-on: macos-latest
+    outputs:
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     permissions:
       contents: read
       actions: read
@@ -33,7 +40,6 @@ jobs:
       - name: Test CI scripts
         run: |
           python3 -B -m unittest discover -s ../.github/scripts/tests/ci -p 'test_*.py'
-          python3 -B -m unittest discover -s ../.github/scripts/tests/ci-performance -p 'test_*.py'
       - name: Set up Rust toolchain
         run: python3 -B ../.github/scripts/ci/rust_validation_steps.py setup
       - &install_nextest
@@ -43,7 +49,11 @@ jobs:
           tool: nextest@0.9.148
           fallback: none
       - name: Record runner environment
-        run: python3 -B ../.github/scripts/ci-performance/ci_perf.py environment --platform macos --target native
+        run: python3 -B ../.github/scripts/ci/rust_test_results.py environment --directory .ci-results --platform macos-arm64 --target native
+      - name: Record artifact attempt
+        id: artifact-attempt
+        shell: bash
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Check all Rust targets
@@ -53,44 +63,33 @@ jobs:
       - name: Compile Rust tests
         id: mac_test_compile
         continue-on-error: true
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --timings
-      - name: Investigate Rust compilation
-        if: steps.mac_test_compile.outcome == 'success'
-        run: python3 -B ../.github/scripts/ci-performance/investigate/compile.py --directory .ci-perf
+        run: python3 ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase compile -- cargo test --workspace --locked --no-run
       - name: Run Rust unit and integration tests
         if: steps.mac_test_compile.outcome == 'success'
         continue-on-error: true
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast
+        run: python3 ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast
       - name: Run Rust doc tests
         if: steps.mac_test_compile.outcome == 'success'
         continue-on-error: true
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc
-      - name: Probe Rust process costs
-        if: steps.mac_test_compile.outcome == 'success'
-        run: python3 -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10
-      - name: Report Rust performance
+        run: python3 ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase doc -- cargo test --workspace --locked --doc
+      - name: Collect Rust test results
         if: always()
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform macos --target native --min-doc-tests 1
-      - name: Upload Rust performance report
+        run: python3 ../.github/scripts/ci/rust_test_results.py report --directory .ci-results --junit target/nextest/ci/junit.xml --output .ci-results/test-results.json --platform macos-arm64 --target native --min-doc-tests 1
+      - name: Upload Rust test evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: rust-perf-macos
+          name: rust-test-results-macos-arm64-attempt-${{ github.run_attempt }}
           path: |
-            rust/.ci-perf/
+            rust/.ci-results/*.json
+            rust/.ci-results/doc.log
             rust/target/nextest/ci/junit.xml
           retention-days: 90
           if-no-files-found: warn
           include-hidden-files: true
-      - name: Compare with main history
-        if: always() && github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow publish-release.yml --artifact rust-perf-macos
       - name: Enforce Rust test results
         if: always()
-        run: python3 ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
+        run: python3 ../.github/scripts/ci/rust_test_results.py enforce --directory .ci-results --junit target/nextest/ci/junit.xml --min-doc-tests 1
       - name: Build Work and Skill release binaries
         run: python3 -B ../.github/scripts/ci/rust_validation_steps.py build
       - name: Smoke test Rust binaries
@@ -101,13 +100,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: host-simulation-macos
-          path: rust/.ci-perf/host-simulation.json
+          name: rust-binary-host-simulation-macos-arm64-attempt-${{ github.run_attempt }}
+          path: rust/.ci-results/binary-host-simulation.json
           if-no-files-found: warn
 
   validate-and-build-rust-windows:
     name: validate and build rust (Windows)
     runs-on: windows-latest
+    outputs:
+      artifact-attempt: ${{ steps.artifact-attempt.outputs.value }}
     permissions:
       contents: read
       actions: read
@@ -132,13 +133,15 @@ jobs:
         run: |
           python -B -m unittest discover -s ../.github/scripts/tests/ci -p 'test_*.py'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B -m unittest discover -s ../.github/scripts/tests/ci-performance -p 'test_*.py'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Set up Rust toolchain
         run: python -B ../.github/scripts/ci/rust_validation_steps.py setup
       - *install_nextest
       - name: Record runner environment
-        run: python -B ../.github/scripts/ci-performance/ci_perf.py environment --platform windows --target $env:WORK_RUST_TARGET
+        run: python -B ../.github/scripts/ci/rust_test_results.py environment --directory .ci-results --platform windows-x64-msvc --target $env:WORK_RUST_TARGET
+      - name: Record artifact attempt
+        id: artifact-attempt
+        shell: bash
+        run: echo "value=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Check all Rust targets
@@ -148,44 +151,33 @@ jobs:
       - name: Compile Rust tests
         id: windows_test_compile
         continue-on-error: true
-        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase compile -- cargo test --workspace --locked --no-run --timings --target $env:WORK_RUST_TARGET
-      - name: Investigate Rust compilation
-        if: steps.windows_test_compile.outcome == 'success'
-        run: python -B ../.github/scripts/ci-performance/investigate/compile.py --directory .ci-perf --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase compile -- cargo test --workspace --locked --no-run --target $env:WORK_RUST_TARGET
       - name: Run Rust unit and integration tests
         if: steps.windows_test_compile.outcome == 'success'
         continue-on-error: true
-        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast --target $env:WORK_RUST_TARGET
+        run: python ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase test -- cargo nextest run --workspace --locked --profile ci --no-fail-fast --target $env:WORK_RUST_TARGET
       - name: Run Rust doc tests
         if: steps.windows_test_compile.outcome == 'success'
         continue-on-error: true
-        run: python ../.github/scripts/ci-performance/ci_perf.py measure --directory .ci-perf --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
-      - name: Probe Rust process costs
-        if: steps.windows_test_compile.outcome == 'success'
-        run: python -B ../.github/scripts/ci-performance/investigate/probes.py --output .ci-perf/probes --repetitions 10 --target $env:WORK_RUST_TARGET
-      - name: Report Rust performance
+        run: python ../.github/scripts/ci/rust_test_results.py measure --directory .ci-results --phase doc -- cargo test --workspace --locked --doc --target $env:WORK_RUST_TARGET
+      - name: Collect Rust test results
         if: always()
-        run: python ../.github/scripts/ci-performance/ci_perf.py report --directory .ci-perf --junit target/nextest/ci/junit.xml --output .ci-perf/performance.json --platform windows --target $env:WORK_RUST_TARGET --min-doc-tests 1
-      - name: Upload Rust performance report
+        run: python ../.github/scripts/ci/rust_test_results.py report --directory .ci-results --junit target/nextest/ci/junit.xml --output .ci-results/test-results.json --platform windows-x64-msvc --target $env:WORK_RUST_TARGET --min-doc-tests 1
+      - name: Upload Rust test evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: rust-perf-x86_64-pc-windows-msvc
+          name: rust-test-results-windows-x64-msvc-attempt-${{ github.run_attempt }}
           path: |
-            rust/.ci-perf/
+            rust/.ci-results/*.json
+            rust/.ci-results/doc.log
             rust/target/nextest/ci/junit.xml
           retention-days: 90
           if-no-files-found: warn
           include-hidden-files: true
-      - name: Compare with main history
-        if: always() && github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python ../.github/scripts/ci-performance/ci_perf.py compare --report .ci-perf/performance.json --workflow publish-release.yml --artifact rust-perf-$env:WORK_RUST_TARGET
       - name: Enforce Rust test results
         if: always()
-        run: python ../.github/scripts/ci-performance/ci_perf.py enforce --directory .ci-perf --junit target/nextest/ci/junit.xml --min-doc-tests 1
+        run: python ../.github/scripts/ci/rust_test_results.py enforce --directory .ci-results --junit target/nextest/ci/junit.xml --min-doc-tests 1
       - name: Build Work and Skill release binaries
         run: python -B ../.github/scripts/ci/rust_validation_steps.py build
       - name: Smoke test Rust binaries
@@ -196,6 +188,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: host-simulation-windows
-          path: rust/.ci-perf/host-simulation.json
+          name: rust-binary-host-simulation-windows-x64-msvc-attempt-${{ github.run_attempt }}
+          path: rust/.ci-results/binary-host-simulation.json
           if-no-files-found: warn

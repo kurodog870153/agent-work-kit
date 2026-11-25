@@ -33,7 +33,7 @@ $RECYCLE.BIN/
 
 ### Rust
 /rust/target/
-/rust/.ci-perf/
+/rust/.ci-results/
 
 # Transport only; runtime and formal evidence remain visible.
 /outputs/work/transactions/

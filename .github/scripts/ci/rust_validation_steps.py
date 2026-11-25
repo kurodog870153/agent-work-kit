@@ -41,7 +41,7 @@ def simulate_host():
         "--install",
         "../skills",
         "--evidence",
-        ".ci-perf/host-simulation.json",
+        ".ci-results/binary-host-simulation.json",
     )
 
 

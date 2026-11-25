@@ -16,3 +16,9 @@ runs:
     - name: Test release scripts
       shell: bash
       run: python3 -B -m unittest discover -s .github/scripts/tests/release -p 'test_*.py'
+    - name: Test workflow summary and validation evidence
+      shell: bash
+      run: |
+        python3 -B -m unittest discover -s .github/scripts/tests/ci -p 'test_workflow_summary*.py'
+        python3 -B -m unittest discover -s .github/scripts/tests/ci -p 'test_rust_validation_evidence.py'
+        python3 -B -m unittest discover -s .github/scripts/tests/ci -p 'test_package_validation_results.py'
