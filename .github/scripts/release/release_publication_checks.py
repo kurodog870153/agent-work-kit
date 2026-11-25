@@ -3,7 +3,6 @@
 import argparse
 import hashlib
 import json
-import os
 import re
 import subprocess
 import sys
@@ -277,9 +276,6 @@ def main():
                                           args.title_file, args.notes_file, args.manifest_file)
             summary = (f"### Release content\n\nBaseline: {manifest['baseline_label']}\n\n"
                        f"Target: {args.tag} ({args.expected_sha})\n\nSources: {manifest['sources']}\n\n")
-            if summary_path := os.environ.get("GITHUB_STEP_SUMMARY"):
-                with open(summary_path, "a", encoding="utf-8") as stream:
-                    stream.write(summary)
             print(summary)
         elif args.action == "first-attempt":
             check_first_publish_attempt(args.repository, args.tag, args.expected_sha, args.run_id or "", args.run_attempt or "",

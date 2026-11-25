@@ -13,6 +13,10 @@ on:
         value: ${{ jobs.verify-windows-release-package-checksums.outputs.artifact-attempt }}
       release-content-artifact-attempt:
         value: ${{ jobs.verify-windows-release-package-checksums.outputs.release-content-artifact-attempt }}
+      macos-rust-attempt:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.macos-rust-attempt }}
+      windows-rust-attempt:
+        value: ${{ jobs.verify-windows-release-package-checksums.outputs.windows-rust-attempt }}
     inputs:
       release:
         type: boolean
@@ -21,6 +25,12 @@ on:
         type: string
         default: ''
       release-content-artifact-attempt:
+        type: string
+        default: ''
+      macos-rust-attempt:
+        type: string
+        default: ''
+      windows-rust-attempt:
         type: string
         default: ''
 
@@ -73,32 +83,41 @@ jobs:
           fi
           for host in codex claude; do
             zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
-            python3 .github/scripts/release/release_package.py package --output dist --host "$host" --platform macos-arm64 --work-binary rust/target/release/work --skill-binary rust/target/release/skill --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
-            python3 .github/scripts/release/release_package_integrity.py verify-zip "$zip"
+            python3 -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "package-build-$host" -- python3 -B .github/scripts/release/release_package.py package --output dist --host "$host" --platform macos-arm64 --work-binary rust/target/release/work --skill-binary rust/target/release/skill --commit "$GITHUB_SHA" --runner-label macos-latest --runner-os "$RUNNER_OS" --runner-arch "$RUNNER_ARCH" --runner-image "${ImageOS:?missing runner image}" --runner-image-version "${ImageVersion:?missing runner image version}" --os-name "$(sw_vers -productName)" --os-version "$(sw_vers -productVersion)" --os-build "$(sw_vers -buildVersion)"
+            python3 -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "package-integrity-$host" -- python3 -B .github/scripts/release/release_package_integrity.py verify-zip "$zip"
             (cd dist && shasum -a 256 "${zip##*/}") >> dist/SHA256SUMS.txt
           done
           for host in codex claude; do
             zip="dist/agent-work-kit-v${version}-${host}-macos-arm64.zip"
-            python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
+            python3 -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "downloader-$host" -- python3 -B .github/scripts/release/release_downloader_e2e.py --zip "$zip" --checksums dist/SHA256SUMS.txt --platform macos-arm64
           done
       - name: Verify macOS release installation
         run: bash .github/scripts/release/mac/verify_install.sh
-      - name: Upload macOS Host simulation evidence
+      - name: Upload macOS package validation results
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('cli-smoke-macos-arm64-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-macos-arm64' }}
-          path: dist/cli-smoke/*.md
-          if-no-files-found: error
+          name: package-validation-macos-arm64-attempt-${{ github.run_attempt }}
+          path: dist/package-validation/*.json
+          if-no-files-found: warn
+      - name: Upload macOS Host simulation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installed-host-simulation-macos-arm64-attempt-${{ github.run_attempt }}
+          path: dist/installed-host-simulation/*.json
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
       - name: Upload macOS release ZIPs
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', github.run_attempt) || 'pr-release-macos-arm64' }}
+          name: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', github.run_attempt) || format('pr-release-macos-arm64-attempt-{0}', github.run_attempt) }}
           path: dist/*.zip
           if-no-files-found: error
       - name: Upload macOS ZIP checksums
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', github.run_attempt) || 'checksums-pr-release-macos-arm64' }}
+          name: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', github.run_attempt) || format('checksums-pr-release-macos-arm64-attempt-{0}', github.run_attempt) }}
           path: dist/SHA256SUMS.txt
           if-no-files-found: error
       - name: Record artifact attempt
@@ -179,10 +198,10 @@ jobs:
           $os = Get-CimInstance Win32_OperatingSystem
           $checksumLines = @()
           foreach ($installerHost in @('codex', 'claude')) {
-            python -B .github/scripts/release/release_package.py package --output dist --host $installerHost --platform windows-x64-msvc --work-binary rust/target/release/work.exe --skill-binary rust/target/release/skill.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
+            python -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "package-build-$installerHost" -- python -B .github/scripts/release/release_package.py package --output dist --host $installerHost --platform windows-x64-msvc --work-binary rust/target/release/work.exe --skill-binary rust/target/release/skill.exe --commit $env:GITHUB_SHA --runner-label windows-latest --runner-os $env:RUNNER_OS --runner-arch $env:RUNNER_ARCH --runner-image $env:ImageOS --runner-image-version $env:ImageVersion --os-name $os.Caption --os-version $os.Version --os-build $os.BuildNumber
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
-            python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
+            python -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "package-integrity-$installerHost" -- python -B .github/scripts/release/release_package_integrity.py verify-zip $zip
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
             $checksumLines += "$hash  $(Split-Path $zip -Leaf)"
@@ -190,27 +209,36 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path (Resolve-Path dist) 'SHA256SUMS.txt'), (($checksumLines -join "`n") + "`n"))
           foreach ($installerHost in @('codex', 'claude')) {
             $zip = "dist/agent-work-kit-v${version}-${installerHost}-windows-x64-msvc.zip"
-            python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
+            python -B .github/scripts/ci/package_validation_results.py run --directory dist/package-validation --phase "downloader-$installerHost" -- python -B .github/scripts/release/release_downloader_e2e.py --zip $zip --checksums dist/SHA256SUMS.txt --platform windows-x64-msvc
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Verify Windows release installation
         run: pwsh -NoProfile -File .github/scripts/release/windows/verify_install.ps1
-      - name: Upload Windows Host simulation evidence
+      - name: Upload Windows package validation results
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('cli-smoke-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'cli-smoke-pr-windows-x64-msvc' }}
-          path: dist/cli-smoke/*.md
-          if-no-files-found: error
+          name: package-validation-windows-x64-msvc-attempt-${{ github.run_attempt }}
+          path: dist/package-validation/*.json
+          if-no-files-found: warn
+      - name: Upload Windows Host simulation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installed-host-simulation-windows-x64-msvc-attempt-${{ github.run_attempt }}
+          path: dist/installed-host-simulation/*.json
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
       - name: Upload Windows release ZIPs
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'pr-release-windows-x64-msvc' }}
+          name: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', github.run_attempt) || format('pr-release-windows-x64-msvc-attempt-{0}', github.run_attempt) }}
           path: dist/*.zip
           if-no-files-found: error
       - name: Upload Windows ZIP checksums
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', github.run_attempt) || 'checksums-pr-release-windows-x64-msvc' }}
+          name: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', github.run_attempt) || format('checksums-pr-release-windows-x64-msvc-attempt-{0}', github.run_attempt) }}
           path: dist/SHA256SUMS.txt
           if-no-files-found: error
       - name: Record artifact attempt
@@ -236,8 +264,8 @@ jobs:
         uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: macos-arm64
-          package-artifact: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || 'pr-release-macos-arm64' }}
-          checksum-artifact: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || 'checksums-pr-release-macos-arm64' }}
+          package-artifact: ${{ inputs.release && format('release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || format('pr-release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) }}
+          checksum-artifact: ${{ inputs.release && format('checksums-release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) || format('checksums-pr-release-macos-arm64-attempt-{0}', needs.build-and-verify-macos-package.outputs.artifact-attempt) }}
 
   verify-windows-release-package-checksums:
     name: verify Windows checksums
@@ -251,6 +279,8 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       artifact-attempt: ${{ needs.build-and-verify-windows-package.outputs.artifact-attempt }}
       release-content-artifact-attempt: ${{ inputs.release-content-artifact-attempt }}
+      macos-rust-attempt: ${{ inputs.macos-rust-attempt }}
+      windows-rust-attempt: ${{ inputs.windows-rust-attempt }}
     steps:
       - name: Check out source for Windows checksum verification
         uses: actions/checkout@v7
@@ -260,8 +290,8 @@ jobs:
         uses: ./.github/actions/verify-release-package-checksums
         with:
           platform: windows-x64-msvc
-          package-artifact: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || 'pr-release-windows-x64-msvc' }}
-          checksum-artifact: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || 'checksums-pr-release-windows-x64-msvc' }}
+          package-artifact: ${{ inputs.release && format('release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || format('pr-release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) }}
+          checksum-artifact: ${{ inputs.release && format('checksums-release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) || format('checksums-pr-release-windows-x64-msvc-attempt-{0}', needs.build-and-verify-windows-package.outputs.artifact-attempt) }}
       - name: Record verified package identity
         id: identity
         shell: bash

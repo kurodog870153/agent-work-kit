@@ -1,0 +1,56 @@
+name: rust validation evidence
+description: Validate Rust workspace and installed Host evidence.
+inputs:
+  macos-rust-attempt:
+    description: Attempt producing macOS Rust test evidence.
+    required: true
+  windows-rust-attempt:
+    description: Attempt producing Windows Rust test evidence.
+    required: true
+  macos-artifact-attempt:
+    description: Attempt producing macOS installed Host evidence.
+    required: true
+  windows-artifact-attempt:
+    description: Attempt producing Windows installed Host evidence.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download macOS Rust workspace results
+      uses: actions/download-artifact@v8
+      with:
+        name: rust-test-results-macos-arm64-attempt-${{ inputs.macos-rust-attempt }}
+        path: evidence/rust-macos
+    - name: Download Windows Rust workspace results
+      uses: actions/download-artifact@v8
+      with:
+        name: rust-test-results-windows-x64-msvc-attempt-${{ inputs.windows-rust-attempt }}
+        path: evidence/rust-windows
+    - name: Download macOS installed Host evidence
+      uses: actions/download-artifact@v8
+      with:
+        name: installed-host-simulation-macos-arm64-attempt-${{ inputs.macos-artifact-attempt }}
+        path: evidence/installed-host-macos
+    - name: Download Windows installed Host evidence
+      uses: actions/download-artifact@v8
+      with:
+        name: installed-host-simulation-windows-x64-msvc-attempt-${{ inputs.windows-artifact-attempt }}
+        path: evidence/installed-host-windows
+    - name: Validate Rust and installed Host evidence
+      shell: bash
+      env:
+        MACOS_RUST_ATTEMPT: ${{ inputs.macos-rust-attempt }}
+        WINDOWS_RUST_ATTEMPT: ${{ inputs.windows-rust-attempt }}
+        MACOS_HOST_ATTEMPT: ${{ inputs.macos-artifact-attempt }}
+        WINDOWS_HOST_ATTEMPT: ${{ inputs.windows-artifact-attempt }}
+      run: |
+        python3 -B .github/scripts/ci/rust_validation_evidence.py \
+          --rust-macos-arm64 evidence/rust-macos \
+          --rust-windows-x64-msvc evidence/rust-windows \
+          --installed-host-macos-arm64 evidence/installed-host-macos \
+          --installed-host-windows-x64-msvc evidence/installed-host-windows \
+          --attempt-macos-arm64 "$MACOS_RUST_ATTEMPT" \
+          --attempt-windows-x64-msvc "$WINDOWS_RUST_ATTEMPT" \
+          --host-attempt-macos-arm64 "$MACOS_HOST_ATTEMPT" \
+          --host-attempt-windows-x64-msvc "$WINDOWS_HOST_ATTEMPT" \
+          --commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID"

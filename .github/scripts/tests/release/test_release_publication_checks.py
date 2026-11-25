@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -39,7 +38,7 @@ class ReleaseGateTests(unittest.TestCase):
             argv = ["release_publication_checks.py", "notes", "--repository", "owner/repo", "--tag", "v1.2.3",
                     "--expected-sha", "a" * 40, "--notes-file", str(notes_file), "--title-file", str(title_file),
                     "--manifest-file", str(manifest_file)]
-            with patch.object(sys, "argv", argv), patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}), \
+            with patch.object(sys, "argv", argv), \
                  patch("release_publication_checks.prepare_content", return_value={"baseline_label": "v1.2.2", "sources": {"title": "test"}}) as prepared:
                 self.assertEqual(main(), 0)
             prepared.assert_called_once()

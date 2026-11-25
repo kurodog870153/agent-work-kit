@@ -4,13 +4,11 @@ import argparse
 from collections import Counter
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from report_charts import pie_chart
 
 from release_publication_checks import expected_assets
 
@@ -64,13 +62,6 @@ def required_checks(version):
         if name.endswith((".command", ".bat")):
             checks.update({("download_url_fixed", name), ("download_url_latest", name)})
     return checks
-
-
-def check_chart_counts(version, checks):
-    counts = Counter(item["status"] for item in checks)
-    observed = Counter((item["check"], item.get("asset")) for item in checks)
-    counts["missing"] = sum(not observed[key] for key in required_checks(version))
-    return counts
 
 
 def build_report(version, commit, run_url, stages, expected_dir, actual_dir, checks=None):
@@ -130,25 +121,9 @@ def main():
     checks = json.loads(args.checks.read_text(encoding="utf-8")) if args.checks and args.checks.is_file() else []
     report = build_report(args.version, args.commit, args.run_url, stages, args.expected_dir, args.actual_dir, checks)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    summary = (
-        f"### Release verification: {report['result']}\n\n"
-        f"Tag: {report['tag']}  \nCommit: {report['commit']}  \n"
-        f"Run: {report['run_url']}\n\n"
-        + pie_chart("Release stage results", [(status, count) for status, count in Counter(stages.values()).items()])
-        + "\n"
-        + pie_chart("Asset check results", list(check_chart_counts(args.version, checks).items()))
-        + "\n"
-        + "\n".join(f"- {name}: {status}" for name, status in stages.items())
-        + "\n\n"
-        + "\n".join(f"- {item['name']}: expected={item['expected_sha256']}, actual={item['actual_sha256']}"
-                    for item in report["assets"])
-        + "\n\n" + "\n".join(f"- {reason}" for reason in report["failure_reasons"])
-        + "\n"
-    )
-    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(path, "a", encoding="utf-8") as stream:
-            stream.write(summary)
-    print(summary)
+    print(f"Release verification: {report['result']}")
+    for reason in report["failure_reasons"]:
+        print(reason, file=sys.stderr)
     return 0 if report["result"] == "success" else 1
 
 
