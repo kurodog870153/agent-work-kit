@@ -348,7 +348,8 @@ class HostLayout:
 
 def assert_installation(layout, info, global_instructions):
     """Exact State, resource set, physical discovery entries and runnable binaries."""
-    state = json.loads(layout.state.read_text(encoding="utf-8"))
+    raw_state = layout.state.read_bytes().decode("utf-8")
+    state = json.loads(raw_state)
     keys = {"host", "version", "rust_workspace_version", "install_dir",
             "global_instructions_dir", "status", "files"}
     if (set(state) != keys or state["host"] != layout.host or state["version"] != info["version"] or
@@ -371,16 +372,22 @@ def assert_installation(layout, info, global_instructions):
     for part in ("skills", "bin"):
         for path in (layout.install / part).rglob("*"):
             if physical(path):
-                manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(layout.install).as_posix()}")
+                manifest.append({"path": path.relative_to(layout.install).as_posix(), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
             elif not physical(path, directory=True):
                 raise AssertionError(f"unsafe managed resource: {path}")
     for name in ("work", "tooling"):
         path = layout.discovery / name / "SKILL.md"
-        manifest.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  host-skills/{name}/SKILL.md")
+        manifest.append({"path": f"host-skills/{name}/SKILL.md", "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
     if global_instructions:
-        manifest.append(f"{hashlib.sha256(layout.global_file.read_bytes()).hexdigest()}  global/{layout.global_file.name}")
-    if sorted(state["files"]) != sorted(manifest):
+        manifest.append({"path": f"global/{layout.global_file.name}", "sha256": hashlib.sha256(layout.global_file.read_bytes()).hexdigest()})
+    if state["files"] != sorted(manifest, key=lambda file: file["path"]):
         raise AssertionError("State Manifest differs from installed resources")
+    # Normalize equivalent JSON string escapes only; whitespace, key order, LF and EOF remain observable.
+    normalized = re.sub(r'"(?:[^"\\]|\\.)*"', lambda token: json.dumps(json.loads(token.group()), ensure_ascii=False), raw_state)
+    if (list(state) != ["host", "version", "rust_workspace_version", "install_dir", "global_instructions_dir", "status", "files"] or
+            any(list(file) != ["path", "sha256"] for file in state["files"]) or
+            normalized != json.dumps(state, ensure_ascii=False, indent=2) + "\n"):
+        raise AssertionError("State JSON serialization is not canonical Pretty JSON")
     for obsolete in ("work/SKILL.md", "tooling/SKILL.md", "shared/SKILL.md", "work/scripts", "tooling/scripts", "contract"):
         if (layout.skills / obsolete).exists():
             raise AssertionError(f"obsolete resource installed: {obsolete}")

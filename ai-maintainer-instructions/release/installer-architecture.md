@@ -88,7 +88,7 @@ Global Instructions 未啟用時，不參與其目標檢查或安裝交易；啟
 ## 5. 安裝狀態
 
 1. 每組安裝的正式狀態僅有一個權威來源，對應 Runtime CLI、Shared、Skill 的同一組有效安裝及 Host。所有正式狀態及必要暫存資訊由整體交易集中管理，各元件不得獨立管理或提交安裝狀態。
-2. Source、Package 與各平台遵循共用狀態契約。唯一狀態檔位於 `install_dir/install-state.json`，僅以 `install_dir` 記錄實體安裝根路徑，取代 `skill_install_dir` 與 `cli_install_dir`；保留 Host、整體發布版本、Rust workspace 版本、Global Instructions、完成狀態及受管理檔案 Manifest，不增加 `host_skills_dir` 或連結專用欄位。`files` Manifest 新增 `host-skills/work/SKILL.md` 與 `host-skills/tooling/SKILL.md` 邏輯路徑及渲染後實際 SHA-256，由 Host 與使用者 Home 推導實體入口。保留既有七欄位，不另存探索目錄；舊版 Manifest 不視為有效。
+2. Source、Package 與各平台遵循共用狀態契約。唯一狀態檔位於 `install_dir/install-state.json`，僅以 `install_dir` 記錄實體安裝根路徑，取代 `skill_install_dir` 與 `cli_install_dir`；保留 Host、整體發布版本、Rust workspace 版本、Global Instructions、完成狀態及受管理檔案 Manifest，不增加 `host_skills_dir` 或連結專用欄位。`files` Manifest 新增 `host-skills/work/SKILL.md` 與 `host-skills/tooling/SKILL.md` 邏輯路徑及渲染後實際 SHA-256，由 Host 與使用者 Home 推導實體入口。保留既有七欄位，不另存探索目錄；`files` 為非空物件陣列，每筆僅包含 `path`（唯一合法邏輯相對路徑）及 `sha256`（64 字元小寫十六進位字串）。固定以 Pretty JSON 寫入：UTF-8 without BOM、兩個空格縮排、LF、檔尾換行，根欄位維持既有順序、檔案欄位依 path／sha256 順序、files 依 path ordinal 升冪。讀取依 JSON 語意驗證，不限制空白、欄位或陣列順序；拒絕未知、缺少或重複欄位及不合法型別、內容。舊版字串陣列 Manifest 不視為有效，不提供遷移。不要求內部集合型別一致或新增執行依賴。
 3. 發布版本以根目錄 VERSION 為準；Rust workspace 版本以 Cargo workspace 的版本為準，兩者不得混用。安裝狀態、發布套件與 Work／Skill CLI 的 Rust host 中繼資料須使用一致的 Rust workspace 版本語意。
 4. 暫存資訊僅供交易判斷及必要復原使用，不是正式安裝狀態；完成後清理不再需要的交易資訊。狀態檔存在不代表安裝有效，須同時驗證實際安裝內容。
 5. 重新安裝時僅沿用同一 Host 的有效既有設定，明確的使用者選擇優先。目標目錄不存在或為空且無既有安裝時視為首次安裝，預設啟用 Global Instructions；目標已有內容但無有效狀態時，保留原內容並拒絕接管，但已確認屬於未完成交易的內容可依交易失敗處理原則安全處理。

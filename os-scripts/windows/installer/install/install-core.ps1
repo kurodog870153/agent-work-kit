@@ -103,7 +103,7 @@ function Invoke-InstallerCore {
     $previousGlobalSha = ''
     if ($inspection.Kind -eq 'managed' -and $null -ne $inspection.State.global_instructions_dir) {
         $previousGlobalDir = [string] $inspection.State.global_instructions_dir
-        foreach ($entry in @($inspection.State.files)) { if ($entry -cmatch '^([0-9a-f]{64})  global/') { $previousGlobalSha = $Matches[1] } }
+        foreach ($entry in $inspection.State.files) { if ($entry.path.StartsWith('global/', [StringComparison]::Ordinal)) { $previousGlobalSha = $entry.sha256 } }
     }
 
     # --- Global Instructions ---

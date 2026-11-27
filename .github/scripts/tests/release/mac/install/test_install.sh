@@ -43,6 +43,57 @@ done
 run --instructions-dir "$globaldir" || fail 'reinstall'
 grep -q 'unchanged' "$scratch/out" || fail 'reinstall should keep Global Instructions'
 
+
+# State reader contract: reordered keys/records, escaped keys, and malformed or ambiguous JSON.
+source "$repo_root/os-scripts/mac/installer/state/state.sh"
+state="$cli/install-state.json"
+cp -- "$state" "$scratch/state.orig"
+hash="$(printf '%064d' 0)"
+fixture='{"files":[{"sha256":"'"$hash"'","path":"host-skills/tooling/SKILL.md"},{"path":"host-skills/work/SKILL.md","sha256":"'"$hash"'"}],"status":"installed","global_instructions_dir":null,"install_dir":"/tmp/state","rust_workspace_version":"1.2.3","version":"1.2.3","host":"codex"}'
+printf '%s\n' "$fixture" > "$scratch/state.fixture"
+installer_state_read "$scratch/state.fixture" || fail 'reordered compact State rejected'
+printf '%s\n' "$fixture" | sed 's/"host":/"\\u0068ost":/' > "$scratch/state.fixture"
+installer_state_read "$scratch/state.fixture" || fail 'valid escaped JSON key rejected'
+reject_state() {
+    printf '%s\n' "$2" > "$scratch/state.fixture"
+    if installer_state_read "$scratch/state.fixture"; then fail "accepted $1 State"; fi
+}
+reject_state duplicate-root "$(printf '%s' "$fixture" | sed 's/"host":"codex"/"host":"codex","\\u0068ost":"codex"/')"
+reject_state duplicate-field "$(printf '%s' "$fixture" | sed 's/"path":"host-skills\/work\/SKILL.md"/"path":"host-skills\/work\/SKILL.md","\\u0070ath":"host-skills\/work\/SKILL.md"/')"
+reject_state unknown-field "$(printf '%s' "$fixture" | sed 's/"status":"installed"/"extra":"x","status":"installed"/')"
+reject_state unknown-file-field "$(printf '%s' "$fixture" | sed 's/"path":"host-skills\/work\/SKILL.md"/"extra":"x","path":"host-skills\/work\/SKILL.md"/')"
+reject_state wrong-type "$(printf '%s' "$fixture" | sed 's/"version":"1.2.3"/"version":null/')"
+reject_state empty-files "$(printf '%s' "$fixture" | sed 's/\[{.*}\]/[]/')"
+reject_state wrong-files-type "$(printf '%s' "$fixture" | sed 's/\[{.*}\]/null/')"
+reject_state duplicate-path "$(printf '%s' "$fixture" | sed 's@host-skills/tooling/SKILL.md@host-skills/work/SKILL.md@')"
+reject_state invalid-path "$(printf '%s' "$fixture" | sed 's@host-skills/tooling/SKILL.md@skills/../tooling/SKILL.md@')"
+reject_state missing-entry "$(printf '%s' "$fixture" | sed 's@host-skills/tooling/SKILL.md@bin/work@')"
+reject_state wrong-hash "$(printf '%s' "$fixture" | sed "s/$hash/abc/")"
+reject_state wrong-host "$(printf '%s' "$fixture" | sed 's/"host":"codex"/"host":"other"/')"
+reject_state wrong-global "$(printf '%s' "$fixture" | sed 's@"global_instructions_dir":null@"global_instructions_dir":"/tmp/global"@')"
+reject_state invalid-json "$fixture,"
+reject_state missing-field "$(printf '%s' "$fixture" | sed 's/,"host":"codex"//')"
+
+# Reinstall accepts equivalent non-pretty State, then restores deterministic pretty output.
+tr -d '\n' < "$scratch/state.orig" > "$state"
+run --instructions-dir "$globaldir" || { cat "$scratch/out"; fail 'compact State reinstall'; }
+cmp -s "$state" "$scratch/state.orig" || fail 'State output is not stable'
+# A legacy manifest with all the original data must be rejected, not migrated.
+installer_state_read "$state" || fail 'read original State'
+{
+    printf '{\n  "host": "%s",\n  "version": "%s",\n  "rust_workspace_version": "%s",\n' "$installer_state_host" "$installer_state_version" "$installer_state_rust_version"
+    printf '  "install_dir": "%s",\n  "global_instructions_dir": "%s",\n  "status": "installed",\n  "files": [\n' "$installer_state_install_dir" "$installer_state_global_dir"
+    for ((i=0; i<${#installer_state_files[@]}; i++)); do
+        printf '    "%s"' "${installer_state_files[i]}"
+        if (( i+1 < ${#installer_state_files[@]} )); then printf ',\n'; else printf '\n'; fi
+    done
+    printf '  ]\n}\n'
+} > "$state"
+before="$(snapshot)"
+run --instructions-dir "$globaldir" && fail 'legacy string-array State accepted'
+[[ "$(snapshot)" == "$before" ]] || fail 'legacy State was modified'
+cp -- "$scratch/state.orig" "$state"
+
 # Failure injection: each stage fails, the previous installation stays intact.
 before="$(snapshot)"
 for stage in prepare apply-work-moved apply-work apply-shared apply-bin apply-host-work-moved apply-host-work apply-host-tooling verify; do

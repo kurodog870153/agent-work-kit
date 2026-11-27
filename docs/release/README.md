@@ -141,7 +141,7 @@ macOS Terminal：
 
 ### 3.6 安裝狀態與重新安裝
 
-安裝器在 `<install_dir>/install-state.json` 管理唯一的正式安裝狀態，以 `install_dir` 記錄套件根目錄，Skill／CLI 位置由它推導；探索目錄由 Host 固定決定，不另記錄 `host_skills_dir`。Manifest 以 `host-skills/work/SKILL.md`、`host-skills/tooling/SKILL.md` 記錄生成入口的 SHA-256。不需要手動建立或修改。
+安裝器在 `<install_dir>/install-state.json` 管理唯一的正式安裝狀態，以 `install_dir` 記錄套件根目錄，Skill／CLI 位置由它推導；探索目錄由 Host 固定決定，不另記錄 `host_skills_dir`。`files` Manifest 為包含 `path` 與 `sha256` 的物件陣列，以 Pretty JSON 保存；其中 `host-skills/work/SKILL.md`、`host-skills/tooling/SKILL.md` 記錄生成入口的 SHA-256。舊版字串陣列 State 不相容。不需要手動建立或修改。
 
 | Host | 預設狀態檔位置 |
 | --- | --- |

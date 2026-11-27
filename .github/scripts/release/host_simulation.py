@@ -342,7 +342,7 @@ def read_installed_entry(discovery, name):
                 break
             check(physical(parent, directory=True), f"unsafe entry path component: {parent}")
     digest = hashlib.sha256(entry.read_bytes()).hexdigest()
-    check(state["files"].count(f"{digest}  host-skills/{name}/SKILL.md") == 1, "entry not in State Manifest")
+    check(state["files"].count({"path": f"host-skills/{name}/SKILL.md", "sha256": digest}) == 1, "entry not in State Manifest")
     check(paths["bootstrap"].read_text(encoding="utf-8").strip(), "empty Bootstrap")
     check(paths["root"].read_text(encoding="utf-8").strip(), "empty Skill Root")
     return paths
