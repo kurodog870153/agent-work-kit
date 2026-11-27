@@ -64,7 +64,7 @@ function Get-InstallerTargetInspection {
         if (-not (Test-InstallerPathEqual $state.install_dir $InstallDir) -or $state.host -cne $InstallerHost) {
             return @{ Kind = 'unsafe'; Reason = 'install state belongs to another Host or installation directory'; State = $null }
         }
-        if (-not (Test-InstallerManifestMatches -InstallDir $InstallDir -Entries @($state.files))) {
+        if (-not (Test-InstallerManifestMatches -InstallDir $InstallDir -Entries @(ConvertTo-InstallerManifestLines -Files $state.files))) {
             return @{ Kind = 'unsafe'; Reason = 'installed content differs from the recorded installation'; State = $null }
         }
         return @{ Kind = 'managed'; Reason = ''; State = $state }

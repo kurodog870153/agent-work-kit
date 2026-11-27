@@ -255,7 +255,7 @@ function Complete-InstallerTx {
     if ($null -eq $plan) { throw 'committed installation transaction has no plan' }
     if (Test-InstallerExists (Join-Path $script:InstallerTx 'staged/state')) { Invoke-InstallerTxApply -Name 'state' }
     $state = Read-InstallerState -Path (Join-Path $script:InstallerInstallDir 'install-state.json')
-    if ($null -eq $state -or -not (Test-InstallerManifestMatches -InstallDir $script:InstallerInstallDir -Entries @($state.files))) { throw 'published installation is invalid' }
+    if ($null -eq $state -or -not (Test-InstallerManifestMatches -InstallDir $script:InstallerInstallDir -Entries @(ConvertTo-InstallerManifestLines -Files $state.files))) { throw 'published installation is invalid' }
     try { Remove-InstallerTx } catch { [Console]::Error.WriteLine("Warning: installation transaction awaits cleanup: $($script:InstallerTx)") }
 }
 

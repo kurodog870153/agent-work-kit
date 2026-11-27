@@ -84,6 +84,57 @@ try {
     $result = Run ($codex + @('--instructions-dir', $globalDir))
     if ($result.Code -ne 0 -or $result.Output -notmatch 'unchanged') { Fail "reinstall: $($result.Output)" }
 
+
+    & {
+        # State reader contract; the actual installer must also safely reject the old schema.
+        . (Join-Path $repoRoot 'os-scripts/windows/installer/state/state.ps1')
+        . (Join-Path $repoRoot 'os-scripts/windows/installer/target/preflight.ps1')
+        $statePath = Join-Path $cliDir 'install-state.json'
+        $originalState = [IO.File]::ReadAllText($statePath)
+        $fixturePath = Join-Path $scratch 'state.fixture'
+        $utf8 = [Text.UTF8Encoding]::new($false)
+        $hash = '0' * 64
+        $fixture = '{"files":[{"sha256":"' + $hash + '","path":"host-skills/tooling/SKILL.md"},{"path":"host-skills/work/SKILL.md","sha256":"' + $hash + '"}],"status":"installed","global_instructions_dir":null,"install_dir":"C:\\state","rust_workspace_version":"1.2.3","version":"1.2.3","host":"codex"}'
+        [IO.File]::WriteAllText($fixturePath, $fixture, $utf8)
+        if ($null -eq (Read-InstallerState -Path $fixturePath)) { Fail 'reordered compact State rejected' }
+        [IO.File]::WriteAllText($fixturePath, $fixture.Replace('"host":', '"\u0068ost":'), $utf8)
+        if ($null -eq (Read-InstallerState -Path $fixturePath)) { Fail 'valid escaped JSON key rejected' }
+        $invalid = [ordered]@{
+            duplicateRoot = $fixture.Replace('"host":"codex"', '"host":"codex","\u0068ost":"codex"')
+            duplicateField = $fixture.Replace('"path":"host-skills/work/SKILL.md"', '"path":"host-skills/work/SKILL.md","\u0070ath":"host-skills/work/SKILL.md"')
+            unknownField = $fixture.Replace('"status":"installed"', '"extra":"x","status":"installed"')
+            unknownFileField = $fixture.Replace('"path":"host-skills/work/SKILL.md"', '"extra":"x","path":"host-skills/work/SKILL.md"')
+            caseCollision = $fixture.Replace('"host":"codex"', '"HOST":"codex","host":"codex"')
+            wrongType = $fixture.Replace('"version":"1.2.3"', '"version":null')
+            emptyFiles = [regex]::Replace($fixture, '\[\{.*\}\]', '[]')
+            wrongFilesType = [regex]::Replace($fixture, '\[\{.*\}\]', 'null')
+            duplicatePath = $fixture.Replace('host-skills/tooling/SKILL.md', 'host-skills/work/SKILL.md')
+            invalidPath = $fixture.Replace('host-skills/tooling/SKILL.md', 'skills/../tooling/SKILL.md')
+            missingEntry = $fixture.Replace('host-skills/tooling/SKILL.md', 'bin/work.exe')
+            wrongHash = $fixture.Replace($hash, 'abc')
+            wrongHost = $fixture.Replace('"host":"codex"', '"host":"other"')
+            wrongGlobal = $fixture.Replace('"global_instructions_dir":null', '"global_instructions_dir":"C:\\global"')
+            invalidJson = $fixture + ','
+            missingField = $fixture.Replace(',"host":"codex"', '')
+        }
+        foreach ($case in $invalid.GetEnumerator()) {
+            [IO.File]::WriteAllText($fixturePath, $case.Value, $utf8)
+            if ($null -ne (Read-InstallerState -Path $fixturePath)) { Fail "accepted $($case.Key) State" }
+        }
+
+        $parsedState = ConvertFrom-Json -InputObject $originalState
+        [IO.File]::WriteAllText($statePath, (ConvertTo-Json -InputObject $parsedState -Depth 4 -Compress), $utf8)
+        $result = Run ($codex + @('--instructions-dir', $globalDir))
+        if ($result.Code -ne 0) { Fail "compact State reinstall: $($result.Output)" }
+        if ([IO.File]::ReadAllText($statePath) -cne $originalState) { Fail 'State output is not stable' }
+        $parsedState.files = @(foreach ($entry in $parsedState.files) { "$($entry.sha256)  $($entry.path)" })
+        [IO.File]::WriteAllText($statePath, (ConvertTo-Json -InputObject $parsedState -Depth 4), $utf8)
+        $before = Get-Snapshot
+        if ((Run ($codex + @('--instructions-dir', $globalDir))).Code -eq 0) { Fail 'legacy string-array State accepted' }
+        if ((Get-Snapshot) -cne $before) { Fail 'legacy State was modified' }
+        [IO.File]::WriteAllText($statePath, $originalState, $utf8)
+    }
+
     # Reject legacy links and missing or modified physical entries, preserving foreign content.
     $workEntry = Join-Path $hostEntries 'work'
     $entryFile = Join-Path $workEntry 'SKILL.md'
